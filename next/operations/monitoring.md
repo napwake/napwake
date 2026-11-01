@@ -35,7 +35,7 @@ Metrics are served over HTTPS, only to a scraper whose token may `get` the `/met
   Apply the ServiceMonitors and alerting rules into `napwake-system` from the `config/prometheus` base, pinned to your release:
 
   ```bash
-  kubectl apply -k "https://github.com/napwake/napwake//config/prometheus?ref=v0.2.0-rc.11"
+  kubectl apply -k "https://github.com/napwake/napwake//config/prometheus?ref=v0.2.0-rc.13"
   ```
 
   Then bind your Prometheus’s ServiceAccount to the `napwake-metrics-reader` ClusterRole:
@@ -53,7 +53,7 @@ Metrics are served over HTTPS, only to a scraper whose token may `get` the `/met
 
   ```yaml
   resources:
-    - https://github.com/napwake/napwake//config/prometheus?ref=v0.2.0-rc.11
+    - https://github.com/napwake/napwake//config/prometheus?ref=v0.2.0-rc.13
   ```
 
   Then bind your Prometheus’s ServiceAccount to the `napwake-metrics-reader` ClusterRole:

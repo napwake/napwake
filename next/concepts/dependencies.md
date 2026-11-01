@@ -152,7 +152,7 @@ Napwake learns dependencies from each workload’s environment, and from the req
 | Followed to                   | The workload the Service selects                                                                                                          |
 | Read again                    | When the pod template changes, and hourly for ConfigMaps changed since                                                                    |
 | Never read                    | Secrets. An address set only in a Secret isn’t learned from the environment                                                               |
-| Reported                      | A `DependenciesLearned` event when the set changes                                                                                        |
+| Reported                      | A `DependenciesLearned` event when the set changes, and on each workload that learned one once Napwake takes it on                        |
 | The event says                | Whether each is woken with the workload. Only one Napwake manages, in a namespace that [allows it](https://docs.napwake.dev/next/concepts/dependencies/#across-namespaces), is                |
 
 status.learnedDependencies
@@ -170,6 +170,12 @@ Opt the dependency in too, to have them paused and woken together:
 
 ```plaintext
 api: depends on preview-42/postgres (PGHOST), which isn't managed by Napwake, so it isn't woken with api: opt it in to have them paused and woken together
+```
+
+Once Napwake takes it on, another event says so:
+
+```plaintext
+api: depends on preview-42/postgres (PGHOST), now managed by Napwake, so woken and held with it
 ```
 
 ### From wakes

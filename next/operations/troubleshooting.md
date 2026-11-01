@@ -18,6 +18,7 @@ Waking
 * [Wake it doesn't wake it](https://docs.napwake.dev/next/operations/troubleshooting/#wake-it-doesnt-wake-the-workload)
 * [Stuck in Resuming](https://docs.napwake.dev/next/operations/troubleshooting/#workload-stuck-in-resuming)
 * [Running, replicas not Ready](https://docs.napwake.dev/next/operations/troubleshooting/#workload-resumed-with-replicas-not-ready)
+* [`IngressTimeoutShort`](https://docs.napwake.dev/next/operations/troubleshooting/#an-ingresstimeoutshort-warning)
 * [Keeps waking up](https://docs.napwake.dev/next/operations/troubleshooting/#workload-keeps-cycling-between-paused-and-running)
 * [Paused while in use](https://docs.napwake.dev/next/operations/troubleshooting/#workload-paused-while-in-use)
 * [Need it awake now](https://docs.napwake.dev/next/operations/troubleshooting/#you-need-a-paused-workload-awake-now)
@@ -47,6 +48,7 @@ Installing and removing
 
 * [`helm uninstall` refused](https://docs.napwake.dev/next/operations/troubleshooting/#helm-uninstall-fails-with-job-napwake-uninstall-guard-failed)
 * [`helm upgrade` refused](https://docs.napwake.dev/next/operations/troubleshooting/#helm-upgrade-fails-with-job-napwake-upgrade-guard-failed)
+* [Not `deployed` after a refusal](https://docs.napwake.dev/next/operations/troubleshooting/#after-a-refusal-the-release-isnt-deployed)
 * [At zero, operator gone](https://docs.napwake.dev/next/operations/troubleshooting/#workloads-stay-at-zero-after-the-operator-was-removed)
 * [None of these](https://docs.napwake.dev/next/operations/troubleshooting/#debug-checklist)
 
@@ -211,17 +213,17 @@ kubectl get managedworkload my-api -n staging \
 
 If it’s `DoormanRouted` and requests still fail ([What the caller sees](https://docs.napwake.dev/next/concepts/wake-on-request/#what-the-caller-sees)):
 
-| The caller sees                                                          | Cause and fix                                                                                                                                                                                                                                                                                                   |
-| ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A close after a while, no response                                       | Not Ready by `wake.maxWait`, or pods unreachable, as a `RequestNotServed` warning says. Raise `maxWait`, or see why pods are slow. Counted by `napwake_doorman_wakes_total{result=~"timeout\|error"}`                                                                                                           |
-| A close at once, nothing sent                                            | A [limit](https://docs.napwake.dev/next/concepts/wake-on-request/#limits), counted by `napwake_doorman_wakes_total{result="limited"}`                                                                                                                                                                                                   |
-| The app’s own error, such as a `503`, right after a wake                 | Pods Ready before the app was, as with no readiness probe. A `NoReadinessProbe` warning, and the `WakeOnRequest` message, say so. Add a [readiness probe](https://docs.napwake.dev/next/concepts/wake-on-request/#readiness-probes) that passes once it can serve                                                                       |
-| A `503` with no body                                                     | A health check or scraper `User-Agent`, such as `kube-probe/` or `Prometheus/`, which never wakes it                                                                                                                                                                                                            |
-| A `503` saying it’s asleep and how to wake it                            | The workload [asks before waking](https://docs.napwake.dev/next/operations/troubleshooting/#wake-it-doesnt-wake-the-workload). Only a person’s click on **Wake it**, or tooling, wakes it. For a caller that isn’t a browser, such as another service or a webhook, set `napwake.dev/wake: "request"`. `status.turnedAway` counts these requests                         |
-| A `502` from ingress-nginx, or a refused request, as the workload paused | A pod exited the moment it got `SIGTERM`, before kube-proxy and nginx dropped it. The doorman stands in front of the Service before the pods stop, so it’s the pod’s shutdown. Give the app a `preStop` sleep of a few seconds ([Work in progress at a pause](https://docs.napwake.dev/next/guides/pause/#work-in-progress-at-a-pause)) |
-| A `502` from a GKE Ingress or Gateway while paused                       | In NEGs without the forwarder, so there’s no healthy backend. Right after a pause, GKE takes a while, usually under a minute, to see health checks pass                                                                                                                                                         |
-| A `504` from an Ingress at 60 seconds                                    | Raise its upstream timeout, for ingress-nginx `nginx.ingress.kubernetes.io/proxy-read-timeout`                                                                                                                                                                                                                  |
-| A refusal or timeout at once, every time                                 | A NetworkPolicy blocking the doorman (ports 20000-29999), or it to the pods ([Network policies](https://docs.napwake.dev/next/concepts/wake-on-request/#network-policies))                                                                                                                                                              |
+| The caller sees                                                                                                                            | Cause and fix                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A close after a while, no response, or a `502` from ingress-nginx                                                                          | Not Ready by `wake.maxWait`, or pods unreachable, as a `RequestNotServed` warning says. Raise `maxWait`, or see why pods are slow. Counted by `napwake_doorman_wakes_total{result=~"timeout\|error"}`                                                                                                                                                                                                                                                                           |
+| A close at once, nothing sent                                                                                                              | A [limit](https://docs.napwake.dev/next/concepts/wake-on-request/#limits), counted by `napwake_doorman_wakes_total{result="limited"}`                                                                                                                                                                                                                                                                                                                                                                   |
+| The app’s own error, such as a `503`, right after a wake                                                                                   | Pods Ready before the app was, as with no readiness probe. A `NoReadinessProbe` warning, and the `WakeOnRequest` message, say so. Add a [readiness probe](https://docs.napwake.dev/next/concepts/wake-on-request/#readiness-probes) that passes once it can serve                                                                                                                                                                                                                                       |
+| A `503` with no body                                                                                                                       | A health check or scraper `User-Agent`, such as `kube-probe/` or `Prometheus/`, which never wakes it                                                                                                                                                                                                                                                                                                                                                                            |
+| A `503` saying it’s asleep and how to wake it                                                                                              | The workload [asks before waking](https://docs.napwake.dev/next/operations/troubleshooting/#wake-it-doesnt-wake-the-workload). Only a person’s click on **Wake it**, or tooling, wakes it. For a caller that isn’t a browser, such as another service or a webhook, set `napwake.dev/wake: "request"`. `status.turnedAway` counts these requests                                                                                                                                                                                         |
+| A `502` from ingress-nginx, or a refused request, as the workload paused                                                                   | A pod exited the moment it got `SIGTERM`, before kube-proxy and nginx dropped it. The doorman stands in front of the Service before the pods stop, so it’s the pod’s shutdown. Give the app a `preStop` sleep of a few seconds ([Work in progress at a pause](https://docs.napwake.dev/next/guides/pause/#work-in-progress-at-a-pause))                                                                                                                                                                 |
+| A `502` from a GKE Ingress or Gateway while paused                                                                                         | In NEGs without the forwarder, so there’s no healthy backend. Right after a pause, GKE takes a while, usually under a minute, to see health checks pass                                                                                                                                                                                                                                                                                                                         |
+| A `504` from an Ingress at 60 seconds or from ingress-nginx at 3 minutes, or the client’s own timeout, with a `499` in ingress-nginx’s log | The workload took longer to start than the Ingress’s upstream timeout, 60 seconds by default. ingress-nginx tries a `POST` or `PATCH` once, and other requests up to 3 times. Raise the timeout to match `maxWait`, for ingress-nginx `nginx.ingress.kubernetes.io/proxy-read-timeout` ([How long a connection is held](https://docs.napwake.dev/next/concepts/wake-on-request/#how-long-a-connection-is-held)). Behind ingress-nginx, [`IngressTimeoutShort`](https://docs.napwake.dev/next/operations/troubleshooting/#an-ingresstimeoutshort-warning) says so |
+| A refusal or timeout at once, every time                                                                                                   | A NetworkPolicy blocking the doorman (ports 20000-29999), or it to the pods ([Network policies](https://docs.napwake.dev/next/concepts/wake-on-request/#network-policies))                                                                                                                                                                                                                                                                                                                              |
 
 The doorman’s logs name the workload and Service of each held connection (in your install’s namespace):
 
@@ -276,6 +278,31 @@ The `NapwakeWorkloadStuck` alert fires at 15 minutes, and `kubectl napwake statu
 
 It’s common when it wasn’t wholly Ready before the pause, with a pod crash-looping or unschedulable. `kubectl describe` its pods. Once every replica is Ready, later or at the next resume, it turns `False` with an `AllReplicasReady` event.
 
+### An `IngressTimeoutShort` warning
+
+`IngressTimeoutShort=True`, with a warning event of that name, means a wake by a request took longer than ingress-nginx waits for an answer through an Ingress in front. So a write held that long gets a `504` from ingress-nginx, which tries a `GET` again. `kubectl napwake status` lists it under Needs attention.
+
+```text
+Warning  IngressTimeoutShort  a wake by a request took 85 seconds to its first Ready replica, longer than
+ingress-nginx waits for an answer through Ingress my-api (60 seconds, its default), so a write held that long gets
+a 504 from ingress-nginx. Set nginx.ingress.kubernetes.io/proxy-read-timeout: "120" on it, its maxWait (2
+minutes, the default) in seconds. ingress-nginx's ConfigMap may already set a longer proxy-read-timeout, which
+Napwake can't see: the annotation settles it. If F5's NGINX Ingress Controller, which also takes the class nginx,
+serves it, set nginx.org/proxy-read-timeout: "120s" instead
+```
+
+Set the annotation it names, `maxWait` in seconds, on each Ingress it names:
+
+```bash
+kubectl annotate ingress my-api -n staging nginx.ingress.kubernetes.io/proxy-read-timeout=120 --overwrite
+```
+
+F5’s NGINX Ingress Controller can take the class `nginx` too, and with that alone its Ingress looks like ingress-nginx’s. It ignores that annotation, so the warning would clear while it still waits 60 seconds. If it serves the Ingress, set `nginx.org/proxy-read-timeout` instead, such as `"120s"`.
+
+It turns `False`, `TimeoutsCoverMaxWait`, once every ingress-nginx Ingress in front waits at least `maxWait`. If a timeout under `maxWait` comes back before another slow wake, the condition goes, as before any. If the wake outlasted `maxWait` too, the message says so. Raise `maxWait`, then the annotation to match.
+
+Napwake can’t see ingress-nginx’s ConfigMap. If that already sets a longer `proxy-read-timeout`, the warning is wrong, and the annotation clears it all the same. Which Ingresses it reads, and when, are in [A wake that outlasts ingress-nginx’s timeout](https://docs.napwake.dev/next/concepts/wake-on-request/#a-wake-that-outlasts-ingress-nginxs-timeout).
+
 ### Workload keeps cycling between paused and running
 
 The events say what woke it:
@@ -304,7 +331,9 @@ without activity before pausing, not 5 minutes, until a pause holds. It used up 
 in use, and up to 0.2% idle: try napwake.dev/cpu-threshold: "0.4"
 ```
 
-Meanwhile its idle clock waits longer, doubling with each wrong pause up to `idleAfter` plus an hour. So it’s paused in use less often. Fix the cause, and it pauses on time again:
+Meanwhile its idle clock waits longer, doubling with each wrong pause up to `idleAfter` plus an hour. So it’s paused in use less often, but the wait doesn’t last: a pause that holds overnight ends it. Until you fix the cause, the wrong pauses come back every working day, about 10 a day with `idleAfter: 5m`. Each costs at most a cold start for the request that woke it, which the doorman holds through the wake. Behind the doorman with `wake.mode: Request`, the forecast learns the hours when requests undid a pause. Once it acts, it holds pauses off in those hours ([What an hour records](https://docs.napwake.dev/next/concepts/forecasting/#what-an-hour-records)).
+
+Fix the cause, and it pauses on time again:
 
 | You see                                                                                                 | Fix                                                                                                                                                                               |
 | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -472,7 +501,7 @@ It lets go rather than block the deletion, and the workload goes with the namesp
 
 ### `helm uninstall` fails with `job napwake-uninstall-guard failed`
 
-Or, in Helm 4, `resource Job/napwake-system/napwake-uninstall-guard not ready`. ManagedWorkloads are left, whose workloads would stay paused.
+Or, in Helm 4, `resource Job/napwake-system/napwake-uninstall-guard not ready`. ManagedWorkloads are left. With no operator, each would be stuck on its finalizer, and its workload, if paused, would stay at 0 replicas.
 
 Helm 3.18 and later list them after `Napwake refuses to uninstall:`. Before 3.18, or in any Helm after a `helm rollback` with one, the guard’s log does:
 
@@ -482,12 +511,12 @@ kubectl logs job/napwake-uninstall-guard -n napwake-system
 
 Remove the `napwake.dev/managed` label from those workloads and their namespaces, delete the ManagedWorkloads you wrote, and uninstall again.
 
-| You want, or see                                | What to do, or why                                                                                                                                   |
-| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| To keep Napwake                                 | `helm rollback napwake -n napwake-system` marks the release deployed again. Until then, `helm upgrade` fails with `has no deployed releases`         |
-| A ManagedWorkload still listed as being deleted | The operator didn’t finish it, usually as it isn’t running. Uninstall with `--no-hooks`, and restore the workloads by hand                           |
-| No CRD (`crds.install: false`)                  | Nothing is guarded                                                                                                                                   |
-| Argo CD 3.3 and later                           | It refuses to delete the Application the same way ([When `helm uninstall` refuses](https://docs.napwake.dev/next/getting-started/installation/#when-helm-uninstall-refuses)) |
+| You want, or see                                | What to do, or why                                                                                                                                                                              |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| To keep Napwake                                 | Mark the release deployed again ([After a refusal](https://docs.napwake.dev/next/operations/troubleshooting/#after-a-refusal-the-release-isnt-deployed)). Until then, if no revision is `deployed`, `helm upgrade` fails with `has no deployed releases` |
+| A ManagedWorkload still listed as being deleted | The operator didn’t finish it, usually as it isn’t running. Uninstall with `--no-hooks`, and restore the workloads by hand                                                                      |
+| No CRD (`crds.install: false`)                  | Nothing is guarded                                                                                                                                                                              |
+| Argo CD 3.3 and later                           | It refuses to delete the Application the same way ([When `helm uninstall` refuses](https://docs.napwake.dev/next/getting-started/installation/#when-helm-uninstall-refuses))                                            |
 
 ### `helm upgrade` fails with `job napwake-upgrade-guard failed`
 
@@ -499,11 +528,41 @@ kubectl logs job/napwake-upgrade-guard -n napwake-system
 
 Keep those namespaces, or stop managing their workloads first ([Narrowing `watchNamespaces`](https://docs.napwake.dev/next/operations/upgrading/#narrowing-watchnamespaces)). Under Argo CD it fails the sync, in the PreSync hook.
 
+Helm marks the release `failed`, though the operator runs on unchanged. An upgrade with `--reuse-values` alone marks it deployed again ([After a refusal](https://docs.napwake.dev/next/operations/troubleshooting/#after-a-refusal-the-release-isnt-deployed)).
+
 After a refused `helm rollback`
 
 A rollback to a narrower `watchNamespaces` is refused the same way, by the pre-rollback hook. Helm still records a revision, `pending-rollback` in `helm history napwake`, while the operator runs on unchanged. Until another revision replaces it, `helm upgrade` fails with `another operation (install/upgrade/rollback) is in progress`.
 
-`helm rollback napwake -n napwake-system`, with no revision, goes back to the one before, the release as it runs. It marks that deployed.
+Roll back to the `deployed` revision, by its number ([After a refusal](https://docs.napwake.dev/next/operations/troubleshooting/#after-a-refusal-the-release-isnt-deployed)).
+
+### After a refusal, the release isn’t `deployed`
+
+A refused `helm upgrade`, `helm uninstall` or `helm rollback` changes nothing in the cluster. The operator runs on with the values it had. Helm still records the refusal, in the release’s last revision. To mark the release deployed again, find what `helm history napwake -n napwake-system` shows:
+
+| It shows                                                              | Run                                                                                                                                                                              |
+| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A `deployed` revision, then a refused one, `failed` or `uninstalling` | The upgrade below                                                                                                                                                                |
+| No `deployed` revision, after a refused uninstall                     | `helm rollback napwake <revision> -n napwake-system`, with the last revision’s number, the `uninstalling` one                                                                    |
+| `pending-rollback` last, after a refused rollback                     | `helm rollback napwake <revision> -n napwake-system`, with the `deployed` revision’s number. On Helm 3 the first try fails with `no Role ... found`. Run it again, and it passes |
+
+The upgrade takes `--reuse-values` alone, with no `--set`. For `X.Y.Z`, use the version in the `deployed` revision’s `CHART` column, `0.2.0` for `napwake-0.2.0`:
+
+```bash
+helm upgrade napwake oci://ghcr.io/napwake/charts/napwake \
+  --version X.Y.Z \
+  --namespace napwake-system \
+  --reuse-values
+```
+
+`--reuse-values` takes the `deployed` revision’s values, not the refused one’s, so it keeps whichever namespaces the operator watches now. It marks the release deployed, and leaves the operator’s pods running.
+
+When `helm rollback` fails
+
+* On Helm 3, a `helm rollback` straight after a refused upgrade or rollback fails with `no Role with the name "napwake-manager" found`. Helm 3 compares the rollback with the refused revision, which doesn’t list the Roles the cluster has. Nothing in the cluster changes. Helm 4 compares it with the cluster, so it passes.
+* Run it again with the `deployed` revision’s number, and it passes. Run it again with no revision, and it goes to the refused revision. The guard refuses that, and leaves the release `pending-rollback`.
+* With no revision, `helm rollback` goes to the revision before the last. After a refused uninstall, that isn’t always the one that runs. With only one revision, it fails on every Helm with `release has no 0 version`.
+* After a refused upgrade or rollback, `helm get values napwake -n napwake-system` shows the refused values. For the values that run, add `--revision` and the `deployed` revision’s number.
 
 ### Workloads stay at zero after the operator was removed
 

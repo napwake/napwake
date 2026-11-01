@@ -160,11 +160,30 @@ kubectl get deployment my-api -n dev
 
 Wait 5 minutes after READY reads `0/0`. A request or a wake sooner makes it a [wrong pause](https://docs.napwake.dev/next/concepts/idle-detection/#paused-while-in-use). Napwake would then warn `PausedWhileInUse`, and wait 10 minutes before pausing again.
 
+Start a pod to send the request from, and wait until it runs:
+
 ```bash
-kubectl run curl --rm -it --image=curlimages/curl:8.7.1 -n dev --restart=Never -- curl -s http://my-api
+kubectl run curl -n dev --image=curlimages/curl:8.7.1 --restart=Never --command -- sleep 600
+kubectl wait pod/curl -n dev --for=condition=Ready --timeout=2m
 ```
 
-The [doorman](https://docs.napwake.dev/next/concepts/wake-on-request/) holds the request and wakes `my-api`. A browser coming through an Ingress or a Gateway gets a waking-up page, which loads the app once it’s up.
+Send the request, timed:
+
+```bash
+kubectl exec -n dev curl -- curl -s -o /dev/null -w '%{http_code} after %{time_total}s\n' http://my-api
+```
+
+```text
+200 after 1.084523s
+```
+
+The [doorman](https://docs.napwake.dev/next/concepts/wake-on-request/) holds the request and wakes `my-api`. The request waits a second or two, while `my-api`’s pods start and pass their readiness probe. A browser coming through an Ingress or a Gateway gets a waking-up page, which loads the app once it’s up.
+
+Then remove the pod:
+
+```bash
+kubectl delete pod curl -n dev --now
+```
 
 `kubectl port-forward` goes straight to a pod, so it can’t reach a paused workload. Wake it first:
 
@@ -174,7 +193,7 @@ kubectl napwake wake my-api -n dev
 
 CheckpointAwake
 
-curl gets its answer once `my-api` is Ready.
+curl printed `200 after` a second or two, once `my-api` was Ready.
 
 ## 7. Stop managing it
 
@@ -182,9 +201,15 @@ curl gets its answer once `my-api` is Ready.
 kubectl label deployment my-api -n dev napwake.dev/managed-
 ```
 
+`my-api` keeps the settings annotations `napwake.dev/dry-run`, now `"false"`, `idle-after` and `last-activity`. Labelled again, it’s taken on with them, so it’s live from the start, with no dry-run. To start again from step 3, remove them:
+
+```bash
+kubectl annotate deployment my-api -n dev napwake.dev/dry-run- napwake.dev/idle-after- napwake.dev/last-activity-
+```
+
 CheckpointAwake · not managed
 
-`my-api` has no ManagedWorkload. Had it been paused, it would be scaled back to its replicas first, never left switched off.
+Within a minute, as the doorman’s port drains, `my-api`’s ManagedWorkload is gone. Had it been paused, it would be scaled back to its replicas at once, never left switched off.
 
 Next
 

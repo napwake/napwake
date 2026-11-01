@@ -143,6 +143,10 @@ A pause that lasts the window ends the wait. So do these, which no pause can las
 
 A would-be pause in dry-run never waits longer. The count is kept in `status.idleWait`, so a restart keeps it. The wait only ever delays a pause.
 
+So the longer wait doesn’t fix anything by itself. A workload quiet overnight has a pause that holds, and the next working day starts again at `idleAfter`. Its wrong pauses come back every working day until you fix the cause, about 10 a day with `idleAfter: 5m` and steady light use. Behind the doorman with `wake.mode: Request`, the forecast learns the hours when requests undid a pause. Once it acts, it holds pauses off in those hours ([What an hour records](https://docs.napwake.dev/next/concepts/forecasting/#what-an-hour-records)). [What Napwake tells you](https://docs.napwake.dev/next/concepts/idle-detection/#what-napwake-tells-you) says what to change.
+
+Each costs a user little. If what wakes the workload comes while it’s still pausing, the pause is [called off](https://docs.napwake.dev/next/guides/pause/#a-request-calls-the-pause-off): its pods carry on, or are scaled back up if they’d begun to stop. If a request wakes it after it reached zero, that request waits for a cold start. The doorman holds it through the wake, as it holds any request to a paused workload.
+
 These don’t make a pause wrong, since Napwake didn’t misjudge the workload’s use:
 
 * a pause someone asked for
@@ -218,7 +222,7 @@ A target at zero isn’t an error, as no usage is real data. Nor are new pods, w
 
 After a `MetricsUnavailable`, the API isn’t read again for a minute. So every workload’s check fails at once, instead of waiting out a timeout.
 
-For queries, `PrometheusAvailable` reports `EndpointNotConfigured` or `QueryFailed`.
+For queries, `PrometheusAvailable` reports `EndpointNotConfigured`, `QueryFailed`, or `SeriesLost` while a query that lost its series, as after Prometheus restarts without its data, keeps the workload from pausing, for up to 5 minutes.
 
 Some queries answer but have never matched a series, as with a missing metric or label. Such a query can never keep the workload awake. `PrometheusQueryEmpty=True` and a warning event say so ([When a query can’t be evaluated](https://docs.napwake.dev/next/guides/prometheus-signals/#when-a-query-cant-be-evaluated)).
 

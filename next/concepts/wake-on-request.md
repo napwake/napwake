@@ -10,6 +10,8 @@ A paused workload has no pods, so nothing answers its Service. The first request
 
 The doorman holds the connection until a pod is Ready, then passes it through. The caller usually sees one slow response ([the exceptions](https://docs.napwake.dev/next/concepts/wake-on-request/#what-the-caller-sees)).
 
+The wait is as long as the pods take to start and pass their readiness probe. For the [Quickstart’s](https://docs.napwake.dev/next/getting-started/quickstart/#6-wake-it-with-a-request) nginx, that’s a second or two.
+
 On a public URL, the doorman can [ask before waking](https://docs.napwake.dev/next/concepts/wake-on-request/#asking-before-waking) instead. Then only a person’s click wakes it.
 
 * Default
@@ -369,13 +371,46 @@ spec:
 
 Callers time out too. Most HTTP clients wait at least 30 seconds, and browsers minutes.
 
-A proxy can give up sooner, and ingress-nginx closes an upstream request after 60 seconds by default. For a slower starter, raise it to match `maxWait`:
+A proxy can give up sooner. ingress-nginx waits 60 seconds for an answer by default. Then it tries again, up to 3 tries in all, unless the request is a `POST` or `PATCH`:
+
+| With ingress-nginx’s defaults, the workload is Ready | A `GET` gets                           | A `POST` or `PATCH` gets |
+| ---------------------------------------------------- | -------------------------------------- | ------------------------ |
+| Within 60 seconds                                    | Its answer                             | Its answer               |
+| Within 3 minutes                                     | Its answer, on the second or third try | A `504` at 60 seconds    |
+| Later                                                | A `504` at 3 minutes                   | A `504` at 60 seconds    |
+
+Each try reaches the same doorman pod or another, which holds it. Each try ingress-nginx gives up on is counted as `canceled` ([Metrics](https://docs.napwake.dev/next/reference/metrics/#doorman)). A client that gives up first gets no answer, and ingress-nginx logs a `499`.
+
+For a slower starter, raise the timeout to match `maxWait`. The doorman then holds each request once, until a pod is Ready or `maxWait` runs out:
 
 ```yaml
 metadata:
   annotations:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
 ```
+
+Set it higher than `maxWait`, and the doorman lets go first. A `GET` is then tried again, and a `POST` gets a `502`.
+
+### A wake that outlasts ingress-nginx’s timeout
+
+Napwake reads how long ingress-nginx waits in front of a workload, and says once a wake has taken longer. Until then, `kubectl napwake status` notes each Ingress in front that waits less than `maxWait`:
+
+```text
+Behind ingress-nginx, which answers a write held longer than it waits with a 504, if a wake takes that long:
+  staging/my-api   Ingress my-api waits 60s, maxWait is 120s
+```
+
+Most wakes take seconds, so that’s only a note. Once a wake by a request, or a click, takes longer than an Ingress waits, while that’s under `maxWait`, the workload gets `IngressTimeoutShort=True` and a warning event. `kubectl napwake status` and its page list it under Needs attention, with the annotation to set. It clears once every ingress-nginx Ingress in front waits at least `maxWait` ([An `IngressTimeoutShort` warning](https://docs.napwake.dev/next/operations/troubleshooting/#an-ingresstimeoutshort-warning)).
+
+| What                          | How Napwake reads it                                                                                                                                                                                                                                                                                                                                                         |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| How long the wake took        | From when the doorman took the first request to the first Ready pod, when it lets requests through. A wake the forecast, a wake request or an activity annotation began isn’t timed, since no request began it. It holds any request that comes during it all the same                                                                                                       |
+| The Ingresses                 | Those in the workload’s namespace whose rules or default backend send to a port the doorman routes for it, by the Service port’s name or number. One to a port in `napwake.dev/doorman-ignore-ports` isn’t counted. Read at each pause, and again while it’s awake                                                                                                           |
+| Which are ingress-nginx’s     | A class with `nginx` in its name, in `spec.ingressClassName` or the `kubernetes.io/ingress.class` annotation. With no class, any `nginx.ingress.kubernetes.io/` annotation. So once ingress-nginx no longer serves an Ingress with no class, remove those annotations, or it’s still counted                                                                                 |
+| Not checked                   | An Ingress whose class is named otherwise, whatever its annotations, such as a Traefik one with an ingress-nginx annotation left over. One with no class and no such annotation, even where ingress-nginx is the default class. Napwake isn’t allowed to read IngressClasses, which are cluster-wide. Nor are other ingress controllers, Gateway API or cloud load balancers |
+| F5’s NGINX Ingress Controller | It can take the class `nginx` too. An Ingress with an `nginx.org/` or `nginx.com/` annotation is taken for its and not checked. With the class alone, its Ingress can’t be told from ingress-nginx’s, so it’s counted, and the warning says what to set if it’s F5’s. It reads `nginx.org/proxy-read-timeout`, so set that to `maxWait` there, such as `"120s"`              |
+| The timeout                   | `nginx.ingress.kubernetes.io/proxy-read-timeout`, in whole seconds, or 60 without it. ingress-nginx ignores a value that isn’t a whole number, such as `"120s"`, and waits its default. So Napwake takes it as 60 too, and the warning and `status` say to write `"120"`. Status keeps the value as written. A whole number at or below zero isn’t checked                   |
+| ingress-nginx’s ConfigMap     | Its `proxy-read-timeout` can raise the default. Napwake can’t see it, so it may warn anyway. The annotation on the Ingress settles it                                                                                                                                                                                                                                        |
 
 ### Limits
 
@@ -419,12 +454,12 @@ A browser gets the waking-up page, or with [`Ask`](https://docs.napwake.dev/next
 
 | When                                                                                             | The caller gets                                                                                                                                                                                                                                                                                                                                                                                |
 | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Behind ingress-nginx, a workload slower to start than the 60-second default `proxy-read-timeout` | A `504`. [Raise the timeout](https://docs.napwake.dev/next/concepts/wake-on-request/#how-long-a-connection-is-held)                                                                                                                                                                                                                                                                                                                                   |
+| Behind ingress-nginx, a workload slower to start than the 60-second default `proxy-read-timeout` | A `POST` or `PATCH` gets a `504` at 60 seconds. Anything else is tried up to 3 times. So it gets its answer if the workload is Ready within 3 minutes, or a `504` then. [Raise the timeout](https://docs.napwake.dev/next/concepts/wake-on-request/#how-long-a-connection-is-held)                                                                                                                                                                    |
 | Istio’s STRICT mTLS                                                                              | A `503`. The woken pod’s sidecar refuses the doorman ([Compatibility](https://docs.napwake.dev/next/reference/compatibility/#service-meshes))                                                                                                                                                                                                                                                                          |
 | Right after a wake, with no readiness probe, or one that passes too soon                         | An error from the app itself, such as a `503` ([Readiness probes](https://docs.napwake.dev/next/concepts/wake-on-request/#readiness-probes))                                                                                                                                                                                                                                                                                                          |
 | As it pauses                                                                                     | An answer from a pod. A request that reaches the doorman is passed on to a Ready pod, or held, and [calls the pause off](https://docs.napwake.dev/next/guides/pause/#a-request-calls-the-pause-off). Some go straight to the pods, unseen, and the pause goes on. That page lists which. The doorman is in front of the Service before the pods stop. So a new connection through it isn’t refused for want of a route |
 | As it pauses, a pod that exits the moment it gets `SIGTERM`                                      | A refused connection, when kube-proxy sends it there in the second before it drops the pod, as in any rollout. Give the pod a `preStop` sleep of a few seconds, or have it go on serving briefly after `SIGTERM`                                                                                                                                                                               |
-| Held past `maxWait`, or the woken pods can’t be reached                                          | No response. Most clients report an empty reply or a connection reset. A `RequestNotServed` warning event names the Service, the wait and why. Each doorman pod emits it at most once a minute per workload                                                                                                                                                                                    |
+| Held past `maxWait`, or the woken pods can’t be reached                                          | No response. Most clients report an empty reply or a connection reset. Through ingress-nginx, a `GET` is [tried again](https://docs.napwake.dev/next/concepts/wake-on-request/#how-long-a-connection-is-held), and a `POST` gets a `502`. A `RequestNotServed` warning event names the Service, the wait and why. Each doorman pod emits it at most once a minute per workload                                                                        |
 | Over a [limit](https://docs.napwake.dev/next/concepts/wake-on-request/#limits)                                                                          | Closed at once, or held while the wake is retried                                                                                                                                                                                                                                                                                                                                              |
 | The workload [asks before waking](https://docs.napwake.dev/next/concepts/wake-on-request/#asking-before-waking), for anything but a person’s browser    | A `503` saying it’s asleep and how to wake it, until someone does                                                                                                                                                                                                                                                                                                                              |
 

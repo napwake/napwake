@@ -87,7 +87,7 @@ The signatures are made with cosign 3, so verify them with cosign 3 or later.
   Its signature, an SBOM for each platform, and build provenance. The SBOMs, a few megabytes, are saved to `sbom.intoto.jsonl`:
 
   ```bash
-  IMAGE=ghcr.io/napwake/napwake:v0.2.0-rc.11
+  IMAGE=ghcr.io/napwake/napwake:v0.2.0-rc.13
   cosign verify $IMAGE \
     --certificate-identity-regexp '^https://github.com/napwake/napwake/.github/workflows/release.yml@refs/tags/v' \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com
@@ -102,7 +102,7 @@ The signatures are made with cosign 3, so verify them with cosign 3 or later.
 * Helm chart
 
   ```bash
-  cosign verify ghcr.io/napwake/charts/napwake:0.2.0-rc.11 \
+  cosign verify ghcr.io/napwake/charts/napwake:0.2.0-rc.13 \
     --certificate-identity-regexp '^https://github.com/napwake/napwake/.github/workflows/release.yml@refs/tags/v' \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com
   ```

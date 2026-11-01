@@ -6,25 +6,28 @@ Source: https://docs.napwake.dev/next/
 
 Napwake docs
 
-# Non-prod environments that sleep when nobody's using them, and wake when someone does.
+# Pause idle Kubernetes workloads in staging, preview and dev. Wake them on the first request.
 
-Pauses idle Kubernetes workloads in staging, preview and dev, and wakes them on the first request.
+Try it before you install anything. One scan shows what your idle workloads cost.
+
+[Scan your cluster](https://docs.napwake.dev/next/getting-started/scan/)[Install](https://docs.napwake.dev/next/getting-started/installation/)
 
 It never deletes a workload or its data.
-
-[Install](https://docs.napwake.dev/next/getting-started/installation/)[Quickstart](https://docs.napwake.dev/next/getting-started/quickstart/)
 
 A request has reached staging while it was asleep. The doorman holds it at the door while staging wakes, then lets it through. Dev stays asleep. Preview is already awake.
 
 ## See what’s idle first
 
-A team that works 10 hours a day, five days a week, uses staging 50 of 168 hours. The other 70%, it’s idle. `kubectl napwake scan` shows your cluster’s own number before you install anything.
+A team that works 10 hours a day, five days a week, uses staging 50 of 168 hours. The other 70%, it’s idle. `kubectl napwake scan` shows your cluster’s own number before you install anything in it.
 
-[![The scan report for an example cluster. It leads with 19 of 31 workloads running for nobody and $691 that could be freed a month. Beside it, the same workloads drawn twice, as they run now and with Napwake pausing the idle ones.](https://docs.napwake.dev/next/home/scan-report-light.webp)](https://napwake.dev/examples/scan-report/)
+Install the plugin first, with Homebrew or [another way](https://docs.napwake.dev/next/getting-started/scan/#1-install-the-plugin).
+
+[![The scan report for an example cluster. It leads with 19 of 31 workloads running with no sign of use, then 54% less. Paused when idle, they could cost about $600 a month instead of $1,290. Beside it, the same workloads drawn twice, as they run now and with Napwake pausing the idle ones.](https://docs.napwake.dev/next/home/scan-report-light.webp)](https://napwake.dev/examples/scan-report/)
 
 [![](https://docs.napwake.dev/next/home/scan-report-dark.webp)](https://napwake.dev/examples/scan-report/)
 
 ```sh
+brew install napwake/tap/kubectl-napwake
 kubectl napwake scan
 ```
 
@@ -34,7 +37,7 @@ kubectl napwake scan
 
 One file to send your team. It loads nothing from elsewhere and prints to PDF.
 
-[Open the example report ↗](https://napwake.dev/examples/scan-report/) [Scan, in the plugin's docs](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#scan-a-cluster)
+[Open the example report ↗](https://napwake.dev/examples/scan-report/) [Scan your cluster, step by step](https://docs.napwake.dev/next/getting-started/scan/)
 
 ## Four states, four doors
 

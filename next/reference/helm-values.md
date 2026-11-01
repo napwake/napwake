@@ -4,24 +4,16 @@
 
 Source: https://docs.napwake.dev/next/reference/helm-values/
 
-napwake-values.yaml
-
-```yaml
-timezone: Europe/London
+```bash
+printf '\ntimezone: Europe/London\n' >> napwake-values.yaml
+helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.0-rc.13 \
+  --namespace napwake-system --create-namespace -f napwake-values.yaml
 ```
 
-Put the values you set in a file, starting with your users’ [time zone](https://docs.napwake.dev/next/getting-started/installation/#time-zone).
+Change `Europe/London` to your users’ [time zone](https://docs.napwake.dev/next/getting-started/installation/#time-zone). Any other value you set goes in `napwake-values.yaml` too. Install with it, and upgrade with it to [keep your settings](https://docs.napwake.dev/next/operations/upgrading/#keeping-your-settings).
 
 ```bash
-helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.0-rc.11 \
-  --namespace napwake-system --create-namespace \
-  -f napwake-values.yaml
-```
-
-Install with it, and upgrade with it to [keep your settings](https://docs.napwake.dev/next/operations/upgrading/#keeping-your-settings).
-
-```bash
-helm show values oci://ghcr.io/napwake/charts/napwake --version 0.2.0-rc.11
+helm show values oci://ghcr.io/napwake/charts/napwake --version 0.2.0-rc.13
 ```
 
 Every default.
@@ -32,11 +24,11 @@ Every default.
 
 * Chart version
 
-  `0.2.0-rc.11`, no `v`
+  `0.2.0-rc.13`, no `v`
 
 * Image tags
 
-  `v0.2.0-rc.11`, with a `v`
+  `v0.2.0-rc.13`, with a `v`
 
 What the schema catches
 
@@ -195,7 +187,7 @@ The names and labels the chart gives.
 | Value              | Default                                                | Description                                 |
 | ------------------ | ------------------------------------------------------ | ------------------------------------------- |
 | `image.repository` | `ghcr.io/napwake/napwake`                              | Container image repository                  |
-| `image.tag`        | `""`, the chart’s `appVersion`, such as `v0.2.0-rc.11` | Image tag, for the operator and the doorman |
+| `image.tag`        | `""`, the chart’s `appVersion`, such as `v0.2.0-rc.13` | Image tag, for the operator and the doorman |
 | `image.pullPolicy` | `IfNotPresent`                                         | Image pull policy                           |
 | `imagePullSecrets` | `[]`                                                   | Private registry credentials                |
 
@@ -215,7 +207,7 @@ For Argo CD, which ignores that, it also carries `argocd.argoproj.io/sync-option
 
 | Value             | Default                                    | Description                                                                                                                            |
 | ----------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `defaultsVersion` | the chart’s version, such as `0.2.0-rc.11` | Which chart version Helm’s defaults are from. Leave it. See [Keeping your settings](https://docs.napwake.dev/next/operations/upgrading/#keeping-your-settings) |
+| `defaultsVersion` | the chart’s version, such as `0.2.0-rc.13` | Which chart version Helm’s defaults are from. Leave it. See [Keeping your settings](https://docs.napwake.dev/next/operations/upgrading/#keeping-your-settings) |
 
 What it’s for
 
@@ -278,7 +270,7 @@ What changes with `watchNamespaces`.
 
 * Wake on request still works. The operator always reads the doorman’s EndpointSlices in the release namespace through a `<fullname>-doorman-endpoints` Role.
 * A `dependsOn` into an unwatched namespace that allows the dependent’s (`napwake.dev/dependents-from`) shows as `DependencyNotFound=True`, reason `DependencyNotVisible`, and never blocks it.
-* An upgrade or rollback is refused while managed workloads are in a namespace it leaves out. That includes setting `watchNamespaces` where it was empty. They’d stay paused with no operator ([narrowing `watchNamespaces`](https://docs.napwake.dev/next/operations/upgrading/#narrowing-watchnamespaces)).
+* An upgrade or rollback is refused while managed workloads are in a namespace it leaves out. That includes setting `watchNamespaces` where it was empty. With no operator, their ManagedWorkloads would be stuck on their finalizers, and paused ones would stay at 0 replicas ([narrowing `watchNamespaces`](https://docs.napwake.dev/next/operations/upgrading/#narrowing-watchnamespaces)).
 
 ## Opt-in defaults
 
@@ -352,7 +344,7 @@ The doorman holds requests to paused workloads and wakes them ([Wake on request]
 | `doorman.nodeSelector`                           | `{}`    | Empty uses the operator’s                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `doorman.tolerations`                            | `[]`    | Empty uses the operator’s                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `doorman.affinity`                               | `{}`    | Empty uses the operator’s                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `doorman.topologySpreadConstraints`              | `[]`    | Empty spreads them across nodes and zones where it can                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `doorman.topologySpreadConstraints`              | `[]`    | Empty spreads them across nodes where it can, softly, on `kubernetes.io/hostname`. Set yours to replace it. Add a zone constraint only if every node has `topology.kubernetes.io/zone`, or the scheduler spreads for none                                                                                                                                                                                                                                                                                                                                                                   |
 | `doorman.podAnnotations`                         | `{}`    | Empty uses the operator’s                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `doorman.podLabels`                              | `{}`    | Empty uses the operator’s                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `doorman.priorityClassName`                      | `""`    | Empty uses the operator’s                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
@@ -406,7 +398,7 @@ The operator’s ServiceAccount. The doorman always gets its own, `<fullname>-do
 
 ## Guards
 
-Without the operator, a ManagedWorkload’s finalizer never runs. Its workload stays paused at 0 replicas, its Services routed to the doorman. The guards stop Helm first.
+Without the operator, every ManagedWorkload is stuck on its finalizer, which only the operator runs. A paused workload also stays at 0 replicas, its Services routed to the doorman. The guards stop Helm first.
 
 | Value                     | Default                              | Description                                                                                                                                                                                                                                                                                                                                  |
 | ------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -432,7 +424,9 @@ Helm stops before changing anything and prints the list.
 | Upgrade   | Those the operator took on in namespaces the new `watchNamespaces` leaves out                                                                                                                                                       |
 
 * Each runs as a ServiceAccount of its own name. Its ClusterRole may only list ManagedWorkloads, and the guard reads only their metadata. It’s cluster-wide even with `watchNamespaces`, since those it looks for may be outside it.
-* The ServiceAccounts and RBAC are hooks too, deleted after the run. A failed Job stays an hour, for `kubectl logs`.
+* The ServiceAccounts and RBAC are hooks too, deleted once the hooks have run. Before Helm 3.19, a refusal leaves those of the hooks that ran before it.
+* So every guard’s are pre-delete hooks too, with any values. `helm uninstall` deletes any a refusal left.
+* A failed Job stays an hour, for `kubectl logs`.
 * The hooks use `image`, `imagePullSecrets` and `logLevel`.
 * Mesh sidecars are kept out, since a running sidecar would keep the Job from finishing.
 * Their pods carry `control-plane: uninstall-guard` or `control-plane: upgrade-guard`, so the operator’s Service and NetworkPolicy don’t select them.
@@ -571,7 +565,7 @@ affinity:
 
 ```bash
 helm install napwake oci://ghcr.io/napwake/charts/napwake \
-  --version 0.2.0-rc.11 \
+  --version 0.2.0-rc.13 \
   -f values-ha.yaml \
   -n napwake-system --create-namespace
 ```
