@@ -264,12 +264,40 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 	@! helm template napwake charts/napwake | grep -q -- '--guard=upgrade' && \
 		helm template napwake charts/napwake --set 'watchNamespaces={shop}' | grep -q -- '--guard=upgrade' || { \
 		echo "the upgrade guard doesn't run exactly when watchNamespaces is set, so narrowing it can strand paused workloads"; exit 1; }
+	@# Helm 3 before 3.19 deletes only a failed hook, so a refused guard leaves the
+	@# RBAC hooks that ran before it. Every guard's are pre-delete hooks too, with
+	@# any values, so a clean uninstall clears whatever an earlier refusal left.
+	@for v in '' guard.uninstall=false guard.upgrade=false 'watchNamespaces={shop}' \
+		'watchNamespaces={shop},guard.uninstall=false,guard.upgrade=false'; do \
+		n=$$(helm template napwake charts/napwake --show-only templates/guard.yaml $${v:+--set "$$v"} | \
+			awk '/^---/ {k = ""} /^kind:/ {k = $$2} \
+				k ~ /^(ServiceAccount|ClusterRole|ClusterRoleBinding)$$/ && /helm.sh\/hook: .*pre-delete/ {n++} \
+				k ~ /^(ServiceAccount|ClusterRole|ClusterRoleBinding)$$/ && /hook-delete-policy: before-hook-creation,hook-succeeded/ {d++} \
+				END {print n + 0, d + 0}'); \
+		[ "$$n" = "6 6" ] || { \
+			echo "with '$$v', the guards' ServiceAccounts, ClusterRoles and ClusterRoleBindings ($$n) aren't all pre-delete hooks deleted once they've run, so one a refused hook left outlives helm uninstall"; exit 1; }; \
+	done
 	@out=$$(helm template napwake charts/napwake --show-only templates/guard.yaml --set-string guard.podAnnotations.team=checkout \
 		--set-string guard.podLabels.control-plane=other --set 'tolerations[0].operator=Exists'); \
 	grep -q 'sidecar.istio.io/inject: "false"' <<<"$$out" && grep -q 'linkerd.io/inject: disabled' <<<"$$out" && \
 		grep -q 'team: checkout' <<<"$$out" && grep -q 'operator: Exists' <<<"$$out" && \
 		! grep -q 'control-plane: other' <<<"$$out" && ! grep -q 'runAsUser' <<<"$$out" || { \
 		echo "the guard's pod lets a mesh's sidecar in, which never exits, ignores guard.* or the operator's scheduling, or fixes a UID OpenShift refuses"; exit 1; }
+	@# A spread constraint on a topology key some nodes lack makes the scheduler
+	@# score no node for spread at all, so a zone constraint on nodes without
+	@# zone labels left both doormen free to land on one node.
+	@spread=$$(helm template napwake charts/napwake --show-only templates/doorman.yaml | \
+		awk '/topologySpreadConstraints:/ {s = 1; next} s && /^      [a-z]/ {s = 0} s && /topologyKey:|whenUnsatisfiable:/ {print $$2}' | paste -sd ' ' -); \
+	kustomize=$$(awk '/topologySpreadConstraints:/ {s = 1; next} s && /^      [a-z]/ {s = 0} s && /topologyKey:|whenUnsatisfiable:/ {print $$2}' \
+		config/manager/doorman.yaml | paste -sd ' ' -); \
+	[ "$$spread" = "kubernetes.io/hostname ScheduleAnyway" ] && [ "$$kustomize" = "$$spread" ] || { \
+		echo "the doorman's default spread is '$$spread', config/manager's '$$kustomize', not one soft constraint on kubernetes.io/hostname, so both doormen can land on one node"; exit 1; }
+	@helm template napwake charts/napwake --show-only templates/doorman.yaml \
+		--set 'doorman.topologySpreadConstraints[0].maxSkew=1' \
+		--set 'doorman.topologySpreadConstraints[0].topologyKey=topology.kubernetes.io/zone' \
+		--set 'doorman.topologySpreadConstraints[0].whenUnsatisfiable=DoNotSchedule' | \
+		awk '/topologyKey:/ {print $$2}' | paste -sd ' ' - | grep -qx 'topology.kubernetes.io/zone' || { \
+		echo "doorman.topologySpreadConstraints doesn't replace the doorman's default spread"; exit 1; }
 	@for field in terminationGracePeriodSeconds: seconds: minReadySeconds:; do \
 		chart=$$(helm template napwake charts/napwake --show-only templates/doorman.yaml | awk -v f="$$field" '$$1 == f {print $$2}'); \
 		kustomize=$$(awk -v f="$$field" '$$1 == f {print $$2}' config/manager/doorman.yaml); \
