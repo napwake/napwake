@@ -366,6 +366,8 @@ A `Resumed` event says why, and how many replicas it has. That happens when:
 
 So no longer managing a workload never leaves it paused. The `napwake.dev/cleanup` finalizer makes sure of it when a ManagedWorkload is deleted, retrying a failed hand-back.
 
+A deleted ManagedWorkload stays while its doorman ports drain, up to a minute. Once its workload is back at its replicas, it shows `Running` meanwhile. One handed back at zero, its target gone, stays as it was.
+
 In a namespace being deleted, the workload goes too. So after 5 minutes the ManagedWorkload [lets go](/operations/troubleshooting/#a-managedworkload-let-go-of-its-workload-without-handing-it-back) with a `HandBackAbandoned` warning event.
 
 If the target itself is deleted while paused, its Services stop routing to the doorman. Nothing would start the pods. `TargetAvailable` turns `False`, reason `TargetNotFound`.

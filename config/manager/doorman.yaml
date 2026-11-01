@@ -99,13 +99,6 @@ spec:
           matchLabels:
             control-plane: doorman
             app.kubernetes.io/name: napwake
-      - maxSkew: 1
-        topologyKey: topology.kubernetes.io/zone
-        whenUnsatisfiable: ScheduleAnyway
-        labelSelector:
-          matchLabels:
-            control-plane: doorman
-            app.kubernetes.io/name: napwake
 ---
 # Keeps one doorman serving through node drains.
 apiVersion: policy/v1

@@ -690,7 +690,7 @@ html:not(.js) th { position: static; }
           <div class="cap-swap"><div class="cap-now">
           <ul class="legend" data-legend="rooms">
             <li data-state="idle"><button type="button" data-kind="idle"><svg viewBox="-12 -30 102 192" aria-hidden="true" data-mini="idle"></svg><span><b data-n="idle"></b> <em>no sign of use</em> &middot; idle</span></button></li>
-            <li data-state="active"><button type="button" data-kind="active"><svg viewBox="-12 -30 102 192" aria-hidden="true" data-mini="active"></svg><span><b data-n="active"></b> <em>in use</em> &middot; active</span></button></li>
+            <li data-state="active"><button type="button" data-kind="active"><svg viewBox="-12 -30 102 192" aria-hidden="true" data-mini="active"></svg><span><b data-n="active"></b> <em>awake</em> &middot; active</span></button></li>
             <li data-state="paused"><button type="button" data-kind="paused"><svg viewBox="-12 -30 102 192" aria-hidden="true" data-mini="asleep"></svg><span><b data-n="paused"></b> <em>asleep</em> &middot; paused</span></button></li>
             {{if .Unjudged}}<li data-state="unjudged"><button type="button" data-kind="unjudged"><svg viewBox="-12 -30 102 192" aria-hidden="true" data-mini="unjudged"></svg><span><b data-n="unjudged"></b> <em>not judged</em> &middot; the notes say why</span></button></li>{{end}}
           </ul>
@@ -1258,7 +1258,7 @@ html:not(.js) th { position: static; }
   var fmt = function (n) { return n.toLocaleString("en-US"); };
   // the product's dollars(): "<$1" under 50 cents, else whole dollars with thousands separators
   var dollars = function (v) { return v > 0 && v < .5 ? "<$1" : "$" + fmt(Math.round(v)); };
-  var WORD = { paused: "asleep", idle: "no sign of use", active: "in use", resuming: "waking up", pausing: "going to sleep", needs: "needing you", unjudged: "not judged", other: "setting up" };
+  var WORD = { paused: "asleep", idle: "no sign of use", active: "awake", resuming: "waking up", pausing: "going to sleep", needs: "needing you", unjudged: "not judged", other: "setting up" };
   var CLI = { paused: "paused", idle: "idle", active: page === "status" ? "running" : "active", resuming: "resuming", pausing: "pausing", needs: "needs attention", unjudged: "see the notes", other: "creating" };
   var DESC = page === "status" ? {
     paused: "Paused by Napwake. It wakes when someone needs it.", resuming: "Waking up now.", active: "Running, and in use.",
