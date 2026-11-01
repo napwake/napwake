@@ -374,7 +374,7 @@ If the target itself is deleted while paused, its Services stop routing to the d
 
 ## Workloads already at zero
 
-A workload scaled to zero outside Napwake is off on purpose. That's by `kubectl scale`, a pipeline, or KEDA with no active trigger. Napwake leaves it off, so scaling to zero yourself keeps a workload off until someone starts it.
+A workload scaled to zero outside Napwake is off on purpose. That's by `kubectl scale`, a pipeline, KEDA with no active trigger, or an HPA with `minReplicas: 0`. Napwake leaves it off, so scaling to zero yourself keeps a workload off until someone starts it.
 
 | When | What happens |
 |------|--------------|
