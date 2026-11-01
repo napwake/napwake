@@ -808,6 +808,10 @@ func nextFor(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Time) stri
 			return "never pauses: PVCs deleted on scale-down"
 		}
 		return "never pauses: namespace protected"
+	case meta.IsStatusConditionTrue(conditions, "ScaledToZero"):
+		// Its idle clock still runs, but Napwake neither pauses nor wakes a
+		// workload someone else scaled to zero.
+		return "nothing: scaled to zero outside Napwake"
 	}
 	switch w.Status.Phase {
 	case v1alpha1.PhasePaused:
