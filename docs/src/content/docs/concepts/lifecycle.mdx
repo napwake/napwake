@@ -24,7 +24,7 @@ import NextSteps from '../../../components/NextSteps.astro';
 The operator moves a workload on from its activity, its forecast, and pauses asked for with `kubectl napwake pause`.
 
 - A new ManagedWorkload has no phase until its first reconcile sets `Running`. `kubectl napwake status` shows `creating`. The API accepts `Creating` but never sets it.
-- A workload a person, a pipeline or KEDA scaled to zero stays `Running`, with the `ScaledToZero` condition. Napwake only pauses what's running, and only wakes what it paused. See [Workloads already at zero](/guides/pause/#workloads-already-at-zero).
+- A workload a person, a pipeline, KEDA or its HPA scaled to zero stays `Running`, with the `ScaledToZero` condition. Napwake only pauses what's running, and only wakes what it paused. See [Workloads already at zero](/guides/pause/#workloads-already-at-zero).
 
 ## Transition triggers
 
