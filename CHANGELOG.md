@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.0] - Unreleased
+## [0.2.0] - 2026-11-05
 
 Napwake pauses idle Kubernetes workloads in staging, preview and dev, and wakes them on the first request. It never deletes a workload or its data.
 
@@ -75,7 +75,7 @@ Hybernate is now Napwake. Every name it leaves in a cluster or on your machine c
 | The asleep page's form field | `hybernate-wake` | `napwake-wake` |
 | Go identifiers, environment variables | `Hybernate*`, `hybernate*`, `HYBERNATE_*` | `Napwake*`, `napwake*`, `NAPWAKE_*` |
 
-There's no upgrade path from Hybernate 0.1.x or a 0.2.0 release candidate. Uninstall Hybernate, then install Napwake and opt your workloads in again with the new labels and annotations. [Moving from Hybernate](https://docs.napwake.dev/operations/upgrading/#moving-to-napwake) has the one thing to watch for.
+There's no upgrade path from Hybernate 0.1.x or its release candidates, rc.1 to rc.7. Uninstall Hybernate, then install Napwake and opt your workloads in again with the new labels and annotations. [Moving from Hybernate](https://docs.napwake.dev/operations/upgrading/#moving-to-napwake) has the one thing to watch for.
 
 ### Security
 
