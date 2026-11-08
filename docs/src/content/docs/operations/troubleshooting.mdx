@@ -73,7 +73,7 @@ kubectl describe deployment <name> -n <namespace>
 
 ### An `InvalidSetting` warning
 
-A settings annotation on the workload or its namespace has a value Napwake can't read. The warning event is on the workload, and names the annotation, where it is, and what Napwake did instead:
+A settings annotation on the workload or its namespace has a value Napwake can't read. The warning event is on the workload, and names the annotation, where it is, and what Napwake did instead. One warning lists every value it can't read, separated by semicolons:
 
 ```
 napwake.dev/wake="Ask" on the workload isn't "request" or "ask", so the doorman asks before waking it, to be safe

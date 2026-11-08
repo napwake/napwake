@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - A dependency labelled within seconds of its dependent: `kubectl describe` on the dependent now shows the `DependenciesLearned` event saying the dependency is `now managed by Napwake, so woken and held with it`. Kubernetes' event recorder had folded that event into the dependent's earlier one, which said the dependency `isn't managed by Napwake`, so `describe` kept the old text, counted twice, for up to an hour. The new event names the dependency's ManagedWorkload as its related object, which keeps the two apart
+- `kubectl describe` showed only the first of two warnings that say different things, counted twice: Kubernetes' event recorder folds an event into an earlier one with the same reason on an object that hasn't changed, keeping the earlier note. Now each shows. Every settings annotation Napwake can't read is in one `InvalidSetting` warning, where a second was lost. `InvalidSetting`, `LabelIgnored`, `Protected`, `Managed`, `NoLongerManaged`, `InvalidActivityAnnotation`, `DependencyWakeFailed` and `PauseRecordLost` name what each is about as their related object, so one about something else, or about what has changed since, is its own event. The same event again is still counted
 
 ## [0.2.0] - 2026-11-08
 

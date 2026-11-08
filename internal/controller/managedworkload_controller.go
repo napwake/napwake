@@ -772,7 +772,10 @@ func (r *Reconciler) pauseRecordOn(ctx context.Context, workload *v1alpha1.Manag
 	}
 	pause, err := lifecycle.RecordOn(live)
 	if err != nil {
-		r.emitEvent(workload, false, "Warning", ReasonPauseRecordLost, actionPause, "%v", err)
+		// Related to the target the record is on, which changes with it,
+		// where the ManagedWorkload doesn't: a warning about a record
+		// that's wrong another way would be folded into this one.
+		r.emitRelatedEvent(workload, live, false, "Warning", ReasonPauseRecordLost, actionPause, "%v", err)
 		return nil, nil
 	}
 	return pause, nil

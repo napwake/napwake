@@ -137,8 +137,14 @@ func (r *OptInReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res 
 		delete(nsAnnotations, v1alpha1.AnnotationDependsOn)
 	}
 	spec, problems := optInSpec(req.Namespace, target, obj.GetAnnotations(), nsAnnotations, r.Defaults)
-	for _, p := range problems {
-		r.Recorder.Eventf(obj, nil, "Warning", ReasonInvalidSetting, actionOptIn, "%s", p)
+	if len(problems) > 0 {
+		// One warning says them all: one each, on a workload that hasn't
+		// changed, would be folded into the first.
+		said := make([]string, len(problems))
+		for i, p := range problems {
+			said[i] = p.String()
+		}
+		r.warn(obj, &ns, ReasonInvalidSetting, "%s", strings.Join(said, "; "))
 	}
 	if existing.ours != nil {
 		return ctrl.Result{}, r.update(ctx, obj, existing.ours, spec)
@@ -148,7 +154,18 @@ func (r *OptInReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res 
 		// That one's deletion requeues this, and the new one is made then.
 		return ctrl.Result{}, nil
 	}
-	return ctrl.Result{}, r.create(ctx, obj, existing.names, spec)
+	return ctrl.Result{}, r.create(ctx, obj, &ns, existing.names, spec)
+}
+
+// warn sends a warning on the workload about how its labels and
+// annotations opt it in, related to its namespace. Whether it's opted in,
+// and its settings, come from the namespace's labels and annotations too,
+// which change without the workload changing, and the events.k8s.io
+// recorder would fold a warning that changed with them into the one before,
+// keeping that one's note.
+func (r *OptInReconciler) warn(obj client.Object, ns *corev1.Namespace, reason, msgFmt string, args ...any) {
+	note := truncated(fmt.Sprintf(msgFmt, args...), maxEventNote)
+	r.Recorder.Eventf(obj, ns, "Warning", reason, actionOptIn, "%s", note)
 }
 
 func (r *OptInReconciler) newWorkload() client.Object {
@@ -232,15 +249,15 @@ func (r *OptInReconciler) optedIn(obj client.Object, ns *corev1.Namespace) bool 
 	}
 	if r.isNapwake(obj) {
 		if obj.GetLabels()[v1alpha1.LabelManaged] == v1alpha1.True || ns.Labels[v1alpha1.LabelManaged] == v1alpha1.True {
-			r.Recorder.Eventf(obj, nil, "Warning", ReasonLabelIgnored, actionOptIn,
-				"this is Napwake's own %s, which it never manages", napwakeComponents[obj.GetLabels()[labelComponent]])
+			r.warn(obj, ns, ReasonLabelIgnored, "this is Napwake's own %s, which it never manages",
+				napwakeComponents[obj.GetLabels()[labelComponent]])
 		}
 		return false
 	}
 	if v1alpha1.Protected(ns.Name, ns.Labels, r.ProtectedNamespaces) {
 		if obj.GetLabels()[v1alpha1.LabelManaged] == v1alpha1.True || ns.Labels[v1alpha1.LabelManaged] == v1alpha1.True {
-			r.Recorder.Eventf(obj, nil, "Warning", ReasonProtected, actionOptIn,
-				"namespace %s is protected, so the %s label doesn't opt the workload in", ns.Name, v1alpha1.LabelManaged)
+			r.warn(obj, ns, ReasonProtected, "namespace %s is protected, so the %s label doesn't opt the workload in",
+				ns.Name, v1alpha1.LabelManaged)
 		}
 		return false
 	}
@@ -251,7 +268,7 @@ func (r *OptInReconciler) optedIn(obj client.Object, ns *corev1.Namespace) bool 
 		case "false":
 			return false
 		}
-		r.Recorder.Eventf(obj, nil, "Warning", ReasonLabelIgnored, actionOptIn,
+		r.warn(obj, ns, ReasonLabelIgnored,
 			`%s=%q isn't "true", so it doesn't opt the workload in; settings such as dry-run are annotations`,
 			v1alpha1.LabelManaged, v)
 		return false
@@ -262,9 +279,8 @@ func (r *OptInReconciler) optedIn(obj client.Object, ns *corev1.Namespace) bool 
 	// A chart's podLabels put the label on the pod template, which is an
 	// easy mistake to make and otherwise silent.
 	if podTemplateOf(obj).Labels[v1alpha1.LabelManaged] == v1alpha1.True {
-		r.Recorder.Eventf(obj, nil, "Warning", ReasonLabelIgnored, actionOptIn,
-			"%s is on the pod template, where Napwake doesn't look, so it doesn't opt the workload in: put it on "+
-				"the %s itself, or on its namespace", v1alpha1.LabelManaged, r.Kind)
+		r.warn(obj, ns, ReasonLabelIgnored, "%s is on the pod template, where Napwake doesn't look, so it doesn't "+
+			"opt the workload in: put it on the %s itself, or on its namespace", v1alpha1.LabelManaged, r.Kind)
 	}
 	return false
 }
@@ -326,7 +342,10 @@ func (r *OptInReconciler) release(ctx context.Context, obj client.Object, ours, 
 	if written != nil {
 		why = fmt.Sprintf("ManagedWorkload %s manages it", written.Name)
 	}
-	r.Recorder.Eventf(obj, nil, "Normal", ReasonNoLongerManaged, actionOptIn, "no longer managed from its label: %s", why)
+	// Related to the ManagedWorkload let go of, or one let go of for
+	// another reason would be folded into it.
+	r.Recorder.Eventf(obj, ours, "Normal", ReasonNoLongerManaged, actionOptIn, "no longer managed from its label: %s",
+		why)
 	return nil
 }
 
@@ -351,15 +370,15 @@ func (r *OptInReconciler) update(ctx context.Context, obj client.Object, ours *v
 
 // create makes the workload's ManagedWorkload, named after it, or after it
 // and its kind when the name is taken.
-func (r *OptInReconciler) create(ctx context.Context, obj client.Object, taken map[string]bool,
-	spec v1alpha1.ManagedWorkloadSpec) error {
+func (r *OptInReconciler) create(ctx context.Context, obj client.Object, ns *corev1.Namespace,
+	taken map[string]bool, spec v1alpha1.ManagedWorkloadSpec) error {
 	plain, qualified := obj.GetName(), kindQualifiedName(obj.GetName(), r.Kind)
 	name := plain
 	if taken[name] {
 		name = qualified
 	}
 	if taken[name] {
-		r.Recorder.Eventf(obj, nil, "Warning", ReasonLabelIgnored, actionOptIn,
+		r.warn(obj, ns, ReasonLabelIgnored,
 			"can't manage it from its label: ManagedWorkloads named %s and %s already exist for other workloads",
 			plain, qualified)
 		return nil
@@ -384,7 +403,7 @@ func (r *OptInReconciler) create(ctx context.Context, obj client.Object, taken m
 	if err := r.Create(ctx, mw); err != nil {
 		return fmt.Errorf("creating managed workload %s: %w", mw.Name, err)
 	}
-	r.Recorder.Eventf(obj, nil, "Normal", ReasonManaged, actionOptIn, "managed by Napwake as ManagedWorkload %s", mw.Name)
+	r.Recorder.Eventf(obj, mw, "Normal", ReasonManaged, actionOptIn, "managed by Napwake as ManagedWorkload %s", mw.Name)
 	log.FromContext(ctx).Info("managing workload from its label", "workload", obj.GetName(),
 		"namespace", obj.GetNamespace(), "managed_workload", mw.Name)
 	return nil
