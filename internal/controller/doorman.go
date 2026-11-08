@@ -199,14 +199,6 @@ func (r *Reconciler) routeDoorman(ctx context.Context, workload *v1alpha1.Manage
 	return r.doormanFailures.next(workload.UID)
 }
 
-// stopped says whether err is only the reconcile being stopped, its own
-// context cancelled, as every reconcile in flight is when the operator
-// stops. That's no failure to report: the next reconcile goes on. A call
-// cancelled within a reconcile that goes on, or one that timed out, is.
-func stopped(ctx context.Context, err error) bool {
-	return errors.Is(err, context.Canceled) && errors.Is(ctx.Err(), context.Canceled)
-}
-
 // recordTurnedAway brings status.turnedAway up to date for a workload whose
 // doorman asks before waking it: each pause starts with none turned away,
 // and the doorman's count, in its annotation, is copied in only when it's

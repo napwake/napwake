@@ -217,17 +217,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 			}
 			res.Priority = requeuePriority(&workload, res)
 		}
-		// A write that lost to a newer one is retried at the priority of what
-		// brought it, such as a wake.
-		res, retErr = retryIfStale(ctx, res, retErr)
-		if retErr != nil && stopped(ctx, retErr) {
-			log.FromContext(ctx).Info("stopped reconciling, as the reconcile was stopped",
-				"workload", req.Name, "namespace", req.Namespace)
-			res, retErr = ctrl.Result{}, nil
-		}
-		if retErr != nil {
-			metrics.ReconcileErrors.WithLabelValues("managedworkload").Inc()
-		}
+		res, retErr = endReconcile(ctx, req, res, retErr)
 	}()
 
 	if found, err := r.readWorkload(ctx, req.NamespacedName, &workload); err != nil || !found {
