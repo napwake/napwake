@@ -988,12 +988,39 @@ type PredictionStatus struct {
 	// +optional
 	History *PredictionHistory `json:"history,omitempty"`
 
+	// Hour is what the forecast has seen of the hour under way, as last
+	// written, so that an operator restarted partway through it, or a new
+	// leader, goes on seeing it rather than skipping it.
+	// +optional
+	Hour *PredictionHour `json:"hour,omitempty"`
+
 	// State is what the forecasting engine has learned, compressed and
 	// encoded, so that it survives an operator restart. It is written with
 	// each hourly observation. State that can't be read is discarded, with a
 	// warning event, and the engine starts learning again.
 	// +optional
 	State string `json:"state,omitempty"`
+}
+
+// PredictionHour is what the forecast has seen of one hour of the
+// workload's demand, which it learns once the hour is over.
+type PredictionHour struct {
+	// Start is when the hour began.
+	Start metav1.Time `json:"start"`
+
+	// Peak is the most demand a look in it found, as a percentage of what
+	// the workload's own containers request.
+	Peak string `json:"peak"`
+
+	// From is when the first look in it was made, and To the latest one
+	// written.
+	From metav1.Time `json:"from"`
+	To   metav1.Time `json:"to"`
+
+	// Blind says a look in it couldn't see demand, as one at a workload
+	// paused with nothing to wake it, so the hour isn't learned.
+	// +optional
+	Blind bool `json:"blind,omitempty"`
 }
 
 // PredictionHistory is what the forecast learned from the workload's CPU

@@ -117,10 +117,14 @@ func TestWithoutVolatile(t *testing.T) {
 			LastEvaluatedTime: &evaluated,
 			TemplateHash:      "abc",
 		},
+		Prediction: &v1alpha1.PredictionStatus{Hour: &v1alpha1.PredictionHour{Start: metav1.NewTime(fixedTime),
+			Peak: "40", From: metav1.NewTime(fixedTime), To: metav1.NewTime(fixedTime.Add(time.Minute)), Blind: true}},
 	}
 
 	stripped := withoutVolatile(status)
 
+	assert.Equal(t, &v1alpha1.PredictionHour{Blind: true}, stripped.Prediction.Hour,
+		"the hour under way changes with every look, and only a blind one is written at once")
 	assert.Nil(t, stripped.Cost)
 	assert.Equal(t, "abc", stripped.Activity.TemplateHash, "a new template is a deploy and must be written promptly")
 	assert.Nil(t, stripped.Activity.LastEvaluatedTime)

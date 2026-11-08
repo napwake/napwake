@@ -38,6 +38,11 @@ import (
 // activity checks and a status flush.
 const LookGap = 7 * time.Minute
 
+// StatusFlush is how often, at most, the operator writes what it has seen of
+// the hour under way to status when nothing else is written: its
+// statusFlushInterval. A restarted operator takes the hour up from there.
+const StatusFlush = 5 * time.Minute
+
 // Settings are a ManagedWorkload's, and the operator's, as they bear on the
 // forecast.
 type Settings struct {
@@ -89,7 +94,8 @@ func DefaultSettings() Settings {
 
 // Restart is the operator stopping at At and starting again Down later, as
 // for an upgrade or a change of leader. What the forecast has learned is
-// restored from the state it last saved; the hour under way is lost.
+// restored from the state it last saved, and the hour under way from what
+// was last written of it, by forecast.TakeUp.
 type Restart struct {
 	At   time.Time
 	Down time.Duration
@@ -270,7 +276,13 @@ type run struct {
 	engine *forecast.Engine
 	set    forecast.Settings
 	hour   forecast.Hour
-	report Report
+	// written is the hour under way as the operator last wrote it to
+	// status, at writtenAt, and takeUp says a restarted operator has yet to
+	// take it up.
+	written   forecast.Hour
+	writtenAt time.Time
+	takeUp    bool
+	report    Report
 
 	awake bool
 	// wokeAt is the last wake; zero before any.
@@ -349,6 +361,7 @@ func (s *run) restart(r Restart) error {
 	}
 	s.engine = engine
 	s.hour = forecast.Hour{}
+	s.takeUp = true
 	s.downUntil = r.At.Add(r.Down)
 	s.restarted = true
 	return nil
@@ -576,9 +589,21 @@ func (s *run) judgePause(t time.Time, cause WakeCause) {
 }
 
 // see adds a look to the hour under way and feeds the forecast an hour once
-// it's over, as the operator does.
+// it's over, as the operator does, and writes the hour under way as the
+// operator writes it to status: with each hour fed, once blind, and at
+// least every StatusFlush.
 func (s *run) see(t time.Time, demand float64, visible bool) error {
-	ended, over := s.hour.Look(forecast.HourStart(t, s.sc.Settings.Location), t, demand, visible)
+	start := forecast.HourStart(t, s.sc.Settings.Location)
+	if s.takeUp {
+		s.takeUp = false
+		if h, ok := forecast.TakeUp(s.written, start, t, LookGap); ok {
+			s.hour = h
+		}
+	}
+	ended, over := s.hour.Look(start, t, demand, visible)
+	if over || s.hour.Blind != s.written.Blind || t.Sub(s.writtenAt) >= StatusFlush {
+		s.written, s.writtenAt = s.hour, t
+	}
 	if !over || !ended.Whole(LookGap) || s.engine.Observed(ended.Start) {
 		return nil
 	}

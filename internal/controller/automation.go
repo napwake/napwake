@@ -20,6 +20,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"strconv"
 	"sync"
 	"time"
 
@@ -80,9 +82,10 @@ type listPricer interface {
 // engineRegistry holds each workload's forecast engine between reconciles,
 // and the hour of demand it is seeing. The engine in memory is the
 // authority while the operator runs; the state it exports to the workload's
-// status is where a restarted operator, or a new leader, picks up. The hour
-// under way is in memory only. Engines are keyed by UID, so a workload
-// deleted and created again under the same name starts afresh.
+// status is where a restarted operator, or a new leader, picks up, and so
+// is the hour under way, written with status as it goes. Engines are keyed
+// by UID, so a workload deleted and created again under the same name
+// starts afresh.
 type engineRegistry struct {
 	mu        sync.Mutex
 	engines   map[types.UID]forecaster
@@ -219,6 +222,29 @@ func (reg *engineRegistry) see(uid types.UID, start, now time.Time, demand float
 	ended, over := h.Look(start, now, demand, visible)
 	reg.hours[uid] = h
 	return ended, over && ended.Whole(unobservedGap)
+}
+
+// takeUp goes on with the hour written to the workload's status, as by an
+// operator before this one, at this operator's first look at the workload,
+// made at now in the hour that began at start, if forecast.TakeUp finds
+// it can.
+func (reg *engineRegistry) takeUp(uid types.UID, written forecast.Hour, start, now time.Time) {
+	reg.mu.Lock()
+	defer reg.mu.Unlock()
+
+	if _, seen := reg.hours[uid]; seen {
+		return
+	}
+	if h, ok := forecast.TakeUp(written, start, now, unobservedGap); ok {
+		reg.hours[uid] = h
+	}
+}
+
+// hour is what the workload's forecast has seen of the hour under way.
+func (reg *engineRegistry) hour(uid types.UID) forecast.Hour {
+	reg.mu.Lock()
+	defer reg.mu.Unlock()
+	return reg.hours[uid]
 }
 
 // seenBusy reports whether a look in the hour that began at start already
@@ -640,14 +666,43 @@ func latest(a, b time.Time) time.Time {
 }
 
 // seeDemand adds a look at the workload's demand to the hour under way, and
-// once an hour is over, feeds the forecast the peak seen in it.
+// once an hour is over, feeds the forecast the peak seen in it. The first
+// look since the operator started goes on with the hour its status has,
+// as an operator before it wrote it.
 func (r *Reconciler) seeDemand(ctx context.Context, workload *v1alpha1.ManagedWorkload, engine forecaster, demand float64, visible bool) {
 	now := r.now()
-	hour, ended := r.engines.see(workload.UID, forecast.HourStart(now, r.Timezone), now, demand, visible)
+	start := forecast.HourStart(now, r.Timezone)
+	r.engines.takeUp(workload.UID, writtenHour(workload), start, now)
+	hour, ended := r.engines.see(workload.UID, start, now, demand, visible)
 	if !ended || engine.Observed(hour.Start) {
 		return
 	}
 	r.observeHour(ctx, workload, engine, hour)
+}
+
+// writtenHour is the hour under way as the workload's status has it, or
+// none, for a status without one or with one that can't be read.
+func writtenHour(workload *v1alpha1.ManagedWorkload) forecast.Hour {
+	p := workload.Status.Prediction
+	if p == nil || p.Hour == nil {
+		return forecast.Hour{}
+	}
+	peak, err := strconv.ParseFloat(p.Hour.Peak, 64)
+	if err != nil || peak < 0 || math.IsNaN(peak) || math.IsInf(peak, 0) {
+		return forecast.Hour{}
+	}
+	return forecast.Hour{Start: p.Hour.Start.Time, Peak: peak, First: p.Hour.From.Time, Last: p.Hour.To.Time,
+		Blind: p.Hour.Blind}
+}
+
+// hourStatus is the hour under way as status holds it, or nil before any
+// look.
+func hourStatus(h forecast.Hour) *v1alpha1.PredictionHour {
+	if h.Start.IsZero() {
+		return nil
+	}
+	return &v1alpha1.PredictionHour{Start: metav1.NewTime(h.Start.UTC()), Peak: strconv.FormatFloat(h.Peak, 'g', -1, 64),
+		From: metav1.NewTime(h.First.UTC()), To: metav1.NewTime(h.Last.UTC()), Blind: h.Blind}
 }
 
 // observeHour feeds the forecast an hour that has ended. A rejected

@@ -340,7 +340,7 @@ A workload whose use stays under `cpuThreshold`, with no other source, is idle t
 | With `ask`, a paused hour behind the doorman nobody woke it in is quiet | Only people wake it then. Someone who needed it would have clicked or asked |
 | Only where people could have woken it | So an outage can't teach the forecast quiet hours |
 | A query watches a paused workload | That's how a workload no Service routes requests to, such as a queue worker, learns its nights. It uses a query of its queue's length |
-| The hour under way is kept in memory | After an operator restart or a leader change, that hour is skipped, unless it was only minutes old. It isn't recorded from the part seen after |
+| The hour under way is written with status | After an operator restart or a leader change within minutes, it goes on from what was written. After a longer gap within it, it's skipped, since its busiest minutes may have gone unseen. It isn't recorded from the part seen after. Kept in memory alone, an operator restarted at the same time each day lost the same hour of the day every time, and its forecasts never acted |
 
 </details>
 
@@ -471,7 +471,10 @@ The learned state lives in the ManagedWorkload's status, in `status.prediction.s
 | Case | What happens |
 |---|---|
 | What it holds | The model's components, the scored errors, the anomaly statistics, and the weekly changes held for the next day. Whether the forecast doubts the hour under way. The last hour observed, and the demand last seen in each hour of the week, which [`startsActing`](#when-it-acts) is projected from |
-| Operator restarts and leader changes | The engine survives them. An hour observed before a restart isn't observed twice, and the hour under way at a restart is skipped. Restarted daily, at a different hour each day, the operator loses those hours and nothing else. The forecast acts within hours of when it would have |
+| Operator restarts and leader changes | The engine survives them. An hour observed before a restart isn't observed twice |
+| The hour under way at a restart | It goes on from `status.prediction.hour`, what the operator last wrote of it. That's written at least every 5 minutes. If the new operator's first look comes more than 7 minutes after the last look written, the hour is skipped. One that ended meanwhile is learned if its looks were written to within 7 minutes of its end |
+| Restarted daily, back within 2 minutes | Nothing is lost, at the same time each day or not. The forecast acts when it would have |
+| Down 10 minutes daily | It loses the hour each restart lands in, and nothing else. At a different hour each day, the forecast acts within hours of when it would have. At the same hour each day, it never sees that hour of the day whole, and stays `Observing` |
 | A last observed hour more than an hour ahead of the operator's clock | Not trusted, since a wrong clock recorded it. The next hour is observed as usual, rather than refused until real time catches up |
 | State from an older version, after an upgrade | Discarded with a normal `ForecastReset` event, not a warning. With a Prometheus URL, the forecast learns again from the workload's [CPU history](#learning-from-history), as a new workload's does. Without one, the engine starts learning again |
 | State that can't be read otherwise, such as after a hand edit | Discarded with a `ForecastReset` warning event. The engine starts learning again |
