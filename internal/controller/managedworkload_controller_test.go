@@ -1418,6 +1418,15 @@ func lifecycleReconciler(t *testing.T, workload *v1alpha1.ManagedWorkload, repli
 	return holding(r, append([]client.Object{workload}, objs...)...)
 }
 
+// The operator reads one clock: the pauser SetupWithManager gives it stamps
+// its pauses and wakes with the reconciler's.
+func TestReconciler_PausesByItsClock(t *testing.T) {
+	r := &Reconciler{Client: fakeClientBuilder(testScheme(t)).Build(),
+		clock: func() time.Time { return monotonic(fixedTime) }}
+	r.initDefaults()
+	requirePauserOnItsClock(t, r, "default")
+}
+
 // lifecycleReconciler's pauser is the operator's, on its reconciler's clock.
 func TestLifecycleReconciler_HasItsPauserOnItsClock(t *testing.T) {
 	r := lifecycleReconciler(t, lifecycleWorkload("api", v1alpha1.PhaseRunning), 3, interceptor.Funcs{})

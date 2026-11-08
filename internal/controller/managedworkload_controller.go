@@ -1785,7 +1785,7 @@ func (r *Reconciler) initDefaults() {
 		r.autoscalers = autoscaler.NewFinder(r.Client).WithClock(r.now)
 	}
 	if r.pauser == nil {
-		r.pauser = lifecycle.NewPauser(r.Client, r.autoscalers)
+		r.pauser = lifecycle.NewPauser(r.Client, r.autoscalers).WithClock(r.now)
 	}
 	if r.metrics == nil {
 		pods := r.PodReader
