@@ -183,6 +183,13 @@ func (r *Reconciler) routeDoorman(ctx context.Context, workload *v1alpha1.Manage
 		r.doormanFailures.reset(workload.UID)
 		return recheck
 	}
+	if errors.Is(err, context.Canceled) && ctx.Err() != nil {
+		// The reconcile was stopped, as it is when the operator stops, and
+		// nothing refused the routing: the next reconcile takes it up again.
+		log.FromContext(ctx).Info("stopped routing requests through the doorman, as the reconcile was stopped",
+			"workload", workload.Name, "namespace", workload.Namespace)
+		return 0
+	}
 	log.FromContext(ctx).Error(err, "routing requests through the doorman",
 		"workload", workload.Name, "namespace", workload.Namespace)
 	r.setCondition(workload, conditionWakeOnRequest, metav1.ConditionFalse, reasonRoutingFailed,
