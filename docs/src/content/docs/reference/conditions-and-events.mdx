@@ -49,6 +49,8 @@ Each has a `Reason`, a `Message` and a `LastTransitionTime`. It appears once it 
 
 Each user-visible change emits one event, as it happens, shown by `kubectl describe`. The opt-in controller puts <Ref id="workload-event-managed">Managed</Ref>, <Ref id="workload-event-nolongermanaged">NoLongerManaged</Ref>, <Ref id="workload-event-invalidsetting">InvalidSetting</Ref>, <Ref id="workload-event-labelignored">LabelIgnored</Ref> and <Ref id="workload-event-protected">Protected</Ref> on the Deployment or StatefulSet itself. In dry-run, events for decisions it holds back start with `[dry-run]` ([Dry run](/guides/dry-run/#events)).
 
+Two warnings that would otherwise be sent on every reconcile are sent once, and again when what they say changes or the operator restarts: <Ref id="event-managedbyanotherinstall">ManagedByAnotherInstall</Ref>, and `PauseRecordLost` for a pause record that can't be read.
+
 The same event again on an object that hasn't changed is counted, as `x2` in `kubectl describe`, rather than listed twice. One that says something else is listed apart. So some events name a second object, their `related` in `kubectl get events.events.k8s.io -o yaml`:
 
 | Event | Its `related` |

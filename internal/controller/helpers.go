@@ -21,12 +21,14 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sync"
 	"time"
 	"unicode/utf8"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -97,6 +99,71 @@ func (r *Reconciler) emitRelatedEvent(workload *v1alpha1.ManagedWorkload, relate
 	eventType, reason, action, msgFmt string, args ...any) {
 	note := fmt.Sprintf("%s%s: %s", dryRunPrefix(dryRun), workload.Spec.Target.Name, fmt.Sprintf(msgFmt, args...))
 	r.Recorder.Eventf(workload, related, eventType, reason, action, "%s", truncated(note, maxEventNote))
+}
+
+// emitOnChange is emitRelatedEvent for a warning a reconcile finds holding
+// every time it looks, rather than once as it begins: it's sent as it
+// begins, and when what it says changes. Sent on every reconcile, each one,
+// once the ManagedWorkload had changed, would be a new event. Only this
+// operator remembers what it sent, so a restart sends it once more.
+func (r *Reconciler) emitOnChange(workload *v1alpha1.ManagedWorkload, related runtime.Object,
+	eventType, reason, action, msgFmt string, args ...any) {
+	note := fmt.Sprintf(msgFmt, args...)
+	if !r.sentNotes.changed(workload, reason+"/"+action, note) {
+		return
+	}
+	r.emitRelatedEvent(workload, related, false, eventType, reason, action, "%s", note)
+}
+
+// sentNotes remembers the note emitOnChange last sent of each event, by the
+// ManagedWorkload's name, with its UID, so one made again under the same
+// name starts afresh.
+type sentNotes struct {
+	mu     sync.Mutex
+	byName map[types.NamespacedName]sentNote
+}
+
+type sentNote struct {
+	uid   types.UID
+	notes map[string]string
+}
+
+// changed reports whether note isn't what was last sent of the event key
+// on the workload, and records it.
+func (s *sentNotes) changed(workload *v1alpha1.ManagedWorkload, key, note string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.byName == nil {
+		s.byName = make(map[types.NamespacedName]sentNote)
+	}
+	name := client.ObjectKeyFromObject(workload)
+	sent, ok := s.byName[name]
+	if !ok || sent.uid != workload.UID {
+		sent = sentNote{uid: workload.UID, notes: map[string]string{}}
+		s.byName[name] = sent
+	}
+	if last, ok := sent.notes[key]; ok && last == note {
+		return false
+	}
+	sent.notes[key] = note
+	return true
+}
+
+// clear forgets the event key's note on the workload, which no longer
+// holds, so it's sent again when it next does.
+func (s *sentNotes) clear(name types.NamespacedName, key string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if sent, ok := s.byName[name]; ok {
+		delete(sent.notes, key)
+	}
+}
+
+// forget drops what's remembered of a workload that's gone.
+func (s *sentNotes) forget(name types.NamespacedName) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.byName, name)
 }
 
 // truncated cuts s to at most limit bytes, ending it with an ellipsis, and
