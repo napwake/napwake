@@ -215,9 +215,15 @@ func cpuThresholdFor(workload *v1alpha1.ManagedWorkload) float64 {
 }
 
 // recordActivity moves the clock forward when t is newer than the last
-// recorded activity. Older activity never moves it back.
+// recorded activity. Older activity never moves it back. An annotation at
+// the very time the clock started from replaces the start, which isn't
+// activity: annotations are stamped to the second, and a clock started from
+// a would-be pause's beginning starts on its second, so one in that second
+// can't be told from one just after.
 func recordActivity(status *v1alpha1.ActivityStatus, t time.Time, source v1alpha1.ActivitySource) {
-	if t.After(status.LastActivityTime.Time) {
+	started := status.LastActivitySource == v1alpha1.ActivitySourceCreated &&
+		source == v1alpha1.ActivitySourceAnnotation && t.Equal(status.LastActivityTime.Time)
+	if t.After(status.LastActivityTime.Time) || started {
 		status.LastActivityTime = metav1.NewTime(t)
 		status.LastActivitySource = source
 	}
@@ -225,14 +231,20 @@ func recordActivity(status *v1alpha1.ActivityStatus, t time.Time, source v1alpha
 
 // resetActivity starts the clock fresh, as on creation or wake.
 func (r *Reconciler) resetActivity(workload *v1alpha1.ManagedWorkload, source v1alpha1.ActivitySource) {
+	r.startClockAt(workload, source, r.clockTime())
+}
+
+// startClockAt starts the clock fresh from at, its last activity.
+func (r *Reconciler) startClockAt(workload *v1alpha1.ManagedWorkload, source v1alpha1.ActivitySource,
+	at metav1.Time) {
 	now := r.clockTime()
 	hash := ""
 	if workload.Status.Activity != nil {
 		hash = workload.Status.Activity.TemplateHash
 	}
-	pauseAt := metav1.NewTime(now.Add(idleWaitFor(workload, r.dryRun(workload))))
+	pauseAt := metav1.NewTime(at.Add(idleWaitFor(workload, r.dryRun(workload))))
 	workload.Status.Activity = &v1alpha1.ActivityStatus{
-		LastActivityTime:   now,
+		LastActivityTime:   at,
 		LastActivitySource: source,
 		PauseAt:            &pauseAt,
 		LastEvaluatedTime:  &now,
@@ -247,7 +259,7 @@ func (r *Reconciler) resetActivity(workload *v1alpha1.ManagedWorkload, source v1
 func (r *Reconciler) observeActivity(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object, load cpuLoad) activityObservation {
 	now := r.now()
 	if workload.Status.Activity == nil {
-		r.resetActivity(workload, v1alpha1.ActivitySourceCreated)
+		r.startClockAt(workload, v1alpha1.ActivitySourceCreated, r.firstClockStart(workload))
 	}
 	status := workload.Status.Activity
 	remembered, inMemory := r.activityMemo.get(workload.UID)
