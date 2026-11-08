@@ -278,7 +278,11 @@ func (sh *shop) step(t *testing.T, s shopService, now time.Time) {
 	require.NoError(t, err, "%s at %s", s.name, now)
 	require.NoError(t, sh.fr.persistStatus(sh.ctx, w, observed))
 	sh.drainEvents(s.name, now)
-	if sh.watched(t, s.name).Status.Phase != phase {
+	// Every write the reconcile made was to w, so w is as the API server
+	// has it.
+	sh.cur[s.name] = w
+	sh.fr.graph.set(sh.fr.node(w))
+	if w.Status.Phase != phase {
 		// A wake stamps the workload's dependencies, which the operator's
 		// watch of them reconciles at once.
 		for _, c := range s.calls {
