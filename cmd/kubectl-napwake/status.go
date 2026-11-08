@@ -200,12 +200,12 @@ type statusResult struct {
 	// pausing frees. Unset with no workloads.
 	MonthAtPace *monthAtPace     `json:"monthAtPace,omitempty"`
 	Workloads   []statusWorkload `json:"workloads"`
+	Problems    []problem        `json:"problems"`
+	Recent      []happening      `json:"recent"`
 	// LettingGo are the workloads whose ManagedWorkload is being deleted,
 	// which Napwake hands back and no longer manages, so they aren't among
 	// Workloads or counted with them.
 	LettingGo []lettingGo `json:"lettingGo,omitempty"`
-	Problems    []problem        `json:"problems"`
-	Recent      []happening      `json:"recent"`
 	// Note says when fewer namespaces were read than were asked for.
 	Note string `json:"note,omitempty"`
 	// EventsHidden is set when the user can't read events, so Recent is
