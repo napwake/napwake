@@ -1031,8 +1031,9 @@ func TestStatus_AWorkloadBeingLetGo(t *testing.T) {
 // With every workload being let go, as a preview environment's namespace
 // is deleted, Napwake manages none, and names a few of those it lets go.
 func TestStatus_EveryWorkloadBeingLetGo(t *testing.T) {
-	var objs []client.Object
-	for _, name := range []string{"a", "b", "c", "d", "e", "f", "g"} {
+	names := []string{"a", "b", "c", "d", "e", "f", "g"}
+	objs := make([]client.Object, 0, 3*len(names))
+	for _, name := range names {
 		objs = append(objs, beingLetGo(name)...)
 	}
 
