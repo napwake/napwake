@@ -24,6 +24,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -560,6 +561,79 @@ func TestServer_SyncsRoutesFromTheCachesOwnWorkloads(t *testing.T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	assert.Len(t, s.routes, 2)
+}
+
+// With an informer, the doorman keeps each ManagedWorkload's routes from
+// its events, and never lists them: a List copies each into the list it
+// fills, every RouteSyncInterval (P81). A route that leaves drains, and a
+// ManagedWorkload deleted is forgotten, as when they're listed.
+func TestServer_SyncsRoutesFromTheInformersEvents(t *testing.T) {
+	ctx := context.Background()
+	var listed atomic.Int32
+	wrap := func(c client.WithWatch) client.WithWatch {
+		return interceptor.NewClient(c, interceptor.Funcs{List: func(ctx context.Context, cl client.WithWatch,
+			list client.ObjectList, opts ...client.ListOption) error {
+			if _, ok := list.(*v1alpha1.ManagedWorkloadList); ok {
+				listed.Add(1)
+			}
+			return cl.List(ctx, list, opts...)
+		}})
+	}
+	informers := &informertest.FakeInformers{Scheme: testScheme(t)}
+	workloads, err := informers.FakeInformerFor(ctx, &v1alpha1.ManagedWorkload{})
+	require.NoError(t, err)
+	port := freePort(t)
+	w := pausedWorkload("api", port, time.Minute)
+	s, _ := newTestServer(t, wrap, w)
+	s.informers = informers
+	run(t, s)
+
+	workloads.Add(w)
+	require.NoError(t, s.syncRoutes(ctx, ctx))
+	heldListener(t, s, port)
+	s.mu.Lock()
+	s.metered[apiKey] = true
+	s.mu.Unlock()
+
+	woken := w.DeepCopy()
+	woken.Status.Phase, woken.Status.Doorman = v1alpha1.PhaseRunning, nil
+	workloads.Update(w, woken)
+	require.NoError(t, s.syncRoutes(ctx, ctx))
+	s.mu.Lock()
+	assert.True(t, s.routes[port].draining(), "the route that left drains")
+	assert.True(t, s.metered[apiKey], "and its series are kept")
+	s.mu.Unlock()
+
+	workloads.Delete(woken)
+	require.NoError(t, s.syncRoutes(ctx, ctx))
+	s.mu.Lock()
+	assert.False(t, s.metered[apiKey], "a ManagedWorkload deleted is forgotten")
+	s.mu.Unlock()
+	assert.Zero(t, listed.Load(), "no ManagedWorkload is listed")
+}
+
+// Most of a ManagedWorkload's events are the operator's status writes,
+// which change no route, and the claims a sync reads are built again only
+// for one that does.
+func TestWatchedRoutes_BuildsTheClaimsAgainOnlyWhenARouteChanges(t *testing.T) {
+	w := &watchedRoutes{byKey: map[types.NamespacedName][]portRoute{}}
+	paused := pausedWorkload("api", 20417, time.Minute)
+	w.set(paused)
+	first := w.routeClaims()
+	require.Len(t, first[20417], 1)
+
+	written := paused.DeepCopy()
+	written.Status.Conditions = []metav1.Condition{{Type: "WakeOnRequest", Status: metav1.ConditionTrue}}
+	w.set(written)
+	assert.Equal(t, reflect.ValueOf(first).Pointer(), reflect.ValueOf(w.routeClaims()).Pointer(),
+		"a status write that changes no route reuses the claims")
+
+	moved := paused.DeepCopy()
+	moved.Status.Doorman[0].DoormanPort = 20418
+	w.set(moved)
+	claims := w.routeClaims()
+	assert.Empty(t, claims[20417])
+	assert.Len(t, claims[20418], 1, "a route that moves is claimed where it went")
 }
 
 // Pod networks are allocated from private, unique-local and shared address
@@ -1751,13 +1825,18 @@ func TestServer_InformerWakesHeldConnections(t *testing.T) {
 	informers := &informertest.FakeInformers{Scheme: scheme}
 	informer, err := informers.FakeInformerFor(context.Background(), &discoveryv1.EndpointSlice{})
 	require.NoError(t, err)
-	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(pausedWorkload("api", port, time.Minute), apiPod("127.0.0.1")).Build()
+	workloads, err := informers.FakeInformerFor(context.Background(), &v1alpha1.ManagedWorkload{})
+	require.NoError(t, err)
+	w := pausedWorkload("api", port, time.Minute)
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(w, apiPod("127.0.0.1")).Build()
 	s := NewServer(c, nil, Options{Host: "127.0.0.1", Informers: informers})
 	s.backends.allowed = func(netip.Addr) bool { return true }
 	s.acceptFor, s.grace = 0, 100*time.Millisecond
 	// No resync comes within the test, so only the change can pass it on.
 	s.resyncEvery = time.Hour
 	run(t, s)
+	workloads.Add(w)
+	require.NoError(t, s.syncRoutes(context.Background(), context.Background()))
 
 	conn := dial(t, port)
 	send(t, conn, "hello\n")
