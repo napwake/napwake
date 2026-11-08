@@ -1390,6 +1390,41 @@ spec:
                     required:
                     - reason
                     type: object
+                  hour:
+                    description: |-
+                      Hour is what the forecast has seen of the hour under way, as last
+                      written, so that an operator restarted partway through it, or a new
+                      leader, goes on seeing it rather than skipping it.
+                    properties:
+                      blind:
+                        description: |-
+                          Blind says a look in it couldn't see demand, as one at a workload
+                          paused with nothing to wake it, so the hour isn't learned.
+                        type: boolean
+                      from:
+                        description: |-
+                          From is when the first look in it was made, and To the latest one
+                          written.
+                        format: date-time
+                        type: string
+                      peak:
+                        description: |-
+                          Peak is the most demand a look in it found, as a percentage of what
+                          the workload's own containers request.
+                        type: string
+                      start:
+                        description: Start is when the hour began.
+                        format: date-time
+                        type: string
+                      to:
+                        format: date-time
+                        type: string
+                    required:
+                    - from
+                    - peak
+                    - start
+                    - to
+                    type: object
                   message:
                     description: Message says the same in a sentence, and what the
                       forecast waits for.
