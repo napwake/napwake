@@ -126,7 +126,8 @@ type shopRun struct {
 // doorman with its forecast at the balanced confidence, reconciled as the
 // operator would: each at the requeue it asks for, and at once when
 // another's wake stamps it, those due at the same moment in the order
-// given. The load generator calls the shop's entry on weekdays from 09:00
+// given. The operator's dependency graph follows each write, as its watch
+// has it do. The load generator calls the shop's entry on weekdays from 09:00
 // to 17:59 UTC, and nothing else from outside; the entry calls the rest as
 // it serves. From autoResumeFrom, the forecasts of the services that ask
 // for it wake them ahead of the load.
@@ -161,10 +162,10 @@ type shop struct {
 	entry    string
 	services []shopService
 	targets  map[string]*appsv1.Deployment
-	// next is when each workload is next reconciled, and seen the version
-	// of it its last reconcile left.
+	// next is when each workload is next reconciled, and cur each as the
+	// API server last had it.
 	next map[string]time.Time
-	seen map[string]string
+	cur  map[string]*v1alpha1.ManagedWorkload
 	run  shopRun
 }
 
@@ -173,7 +174,8 @@ func newShop(t *testing.T, monday time.Time, entry string, services []shopServic
 	objs := make([]client.Object, 0, 1+3*len(services))
 	objs = append(objs, doormanEndpoints("10.0.0.7"))
 	sh := &shop{ctx: context.Background(), entry: entry, services: services,
-		targets: map[string]*appsv1.Deployment{}, next: map[string]time.Time{}, seen: map[string]string{},
+		targets: map[string]*appsv1.Deployment{}, next: map[string]time.Time{},
+		cur:     map[string]*v1alpha1.ManagedWorkload{},
 		metrics: &shopMetrics{percent: map[string]float64{}}, recorder: events.NewFakeRecorder(100),
 		run: shopRun{engines: map[string]*soakEngine{}, wakes: map[string][]shopWake{},
 			regimes: map[string][]time.Time{}, mornings: map[time.Time][]string{}}}
@@ -189,8 +191,10 @@ func newShop(t *testing.T, monday time.Time, entry string, services []shopServic
 	sh.fr.pauser = &clockedPauser{stubPauser: stubPauser{pauseDone: true, resumeDone: true}, now: sh.fr.Reconciler.now}
 	sh.fr.metrics = sh.metrics
 	sh.fr.Recorder = sh.recorder
+	sh.fr.graph = newWorkloadGraph()
 	routeThroughDoorman(sh.fr.Reconciler)
 	for _, s := range services {
+		sh.watched(t, s.name)
 		e := &soakEngine{Engine: forecast.NewEngine(forecast.DefaultParams(), forecast.Settings{}),
 			fed: map[time.Time]float64{}}
 		sh.run.engines[s.name] = e
@@ -211,13 +215,23 @@ func (sh *shop) due() shopService {
 	return s
 }
 
+// watched brings the operator's graph up to date with the workload named,
+// as its watch does after each write.
+func (sh *shop) watched(t *testing.T, name string) *v1alpha1.ManagedWorkload {
+	t.Helper()
+	w := fetch(t, sh.fr.Reconciler, name)
+	sh.fr.graph.set(sh.fr.node(w))
+	sh.cur[name] = w
+	return w
+}
+
 func (sh *shop) turnOnAutoResume(t *testing.T) {
 	t.Helper()
 	for _, o := range sh.services {
 		w := fetch(t, sh.fr.Reconciler, o.name)
 		w.Spec.IdlePolicy.AutoResume = o.autoResume
 		require.NoError(t, sh.fr.Update(sh.ctx, w))
-		sh.seen[o.name] = w.ResourceVersion
+		sh.watched(t, o.name)
 	}
 }
 
@@ -231,8 +245,7 @@ func (sh *shop) recordMorning(t *testing.T, now time.Time) {
 	}
 	sh.run.mornings[day] = []string{}
 	for _, o := range sh.services {
-		if phase := fetch(t, sh.fr.Reconciler, o.name).Status.Phase; phase != v1alpha1.PhasePaused &&
-			phase != v1alpha1.PhasePausing {
+		if phase := sh.cur[o.name].Status.Phase; phase != v1alpha1.PhasePaused && phase != v1alpha1.PhasePausing {
 			sh.run.mornings[day] = append(sh.run.mornings[day], o.name)
 		}
 	}
@@ -243,7 +256,7 @@ func (sh *shop) recordMorning(t *testing.T, now time.Time) {
 // schedules what comes next.
 func (sh *shop) step(t *testing.T, s shopService, now time.Time) {
 	t.Helper()
-	w := fetch(t, sh.fr.Reconciler, s.name)
+	w := sh.cur[s.name]
 	phase := w.Status.Phase
 	sh.metrics.percent[s.name] = 0.5
 	if loadHours(now) {
@@ -257,6 +270,7 @@ func (sh *shop) step(t *testing.T, s shopService, now time.Time) {
 	if entry && loadgenCalls(loadHours, now) && (phase == v1alpha1.PhasePausing || phase == v1alpha1.PhasePaused) {
 		w.Annotations = map[string]string{v1alpha1.AnnotationLastRequest: now.Format(time.RFC3339)}
 		require.NoError(t, sh.fr.Update(sh.ctx, w))
+		w = sh.watched(t, s.name)
 	}
 
 	observed := w.Status.DeepCopy()
@@ -264,10 +278,12 @@ func (sh *shop) step(t *testing.T, s shopService, now time.Time) {
 	require.NoError(t, err, "%s at %s", s.name, now)
 	require.NoError(t, sh.fr.persistStatus(sh.ctx, w, observed))
 	sh.drainEvents(s.name, now)
-	sh.seen[s.name] = fetch(t, sh.fr.Reconciler, s.name).ResourceVersion
-	for _, o := range sh.services {
-		if o.name != s.name && fetch(t, sh.fr.Reconciler, o.name).ResourceVersion != sh.seen[o.name] {
-			sh.next[o.name] = now
+	if sh.watched(t, s.name).Status.Phase != phase {
+		// A wake stamps the workload's dependencies, which the operator's
+		// watch of them reconciles at once.
+		for _, c := range s.calls {
+			sh.watched(t, c)
+			sh.next[c] = now
 		}
 	}
 
