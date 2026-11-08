@@ -114,7 +114,8 @@ func (r *Reconciler) pauseBegan(workload *v1alpha1.ManagedWorkload) time.Time {
 // warning says what to change. One that lasted the window held: the count
 // starts again. Anything else, such as the forecast waking it, says nothing
 // either way, nor does a pause someone asked for, which the idle clock
-// didn't decide, or a wake for awake dependents, whose use it was.
+// didn't decide, or a wake for awake dependents, whose use it was, or for
+// a dependent handed back.
 func (r *Reconciler) judgePause(ctx context.Context, workload *v1alpha1.ManagedWorkload, why *phaseEvent) func() {
 	pause := workload.Status.Pause
 	nothing := func() {}
