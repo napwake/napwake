@@ -44,8 +44,6 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
-	"github.com/napwake/napwake/internal/autoscaler"
-	"github.com/napwake/napwake/internal/lifecycle"
 )
 
 // switchEnv is an API server in which each case gets a namespace with a
@@ -93,15 +91,13 @@ func (e *switchEnv) create(t *testing.T, ns string, setup func(*v1alpha1.Managed
 func (e *switchEnv) reconciler(t *testing.T, pausingOff bool, clock func() time.Time) *Reconciler {
 	t.Helper()
 	c := client.WithFieldOwner(indexedClient{e.watchDryRun(e.admin)}, v1alpha1.FieldManager)
-	finder := autoscaler.NewFinder(c)
-	return &Reconciler{
+	return withTheOperatorsPauser(&Reconciler{
 		Client: c, Scheme: testScheme(t), Recorder: events.NewFakeRecorder(1000),
-		pauser: lifecycle.NewPauser(c, finder).WithClock(clock), autoscalers: finder,
 		metrics:    &stubMetrics{cpuPerReplica: 100, memoryPerReplica: 1 << 30, replicas: 3},
 		engines:    newEngineRegistry(func() forecaster { return &stubForecaster{} }),
 		clock:      clock,
 		PausingOff: pausingOff,
-	}
+	}, c)
 }
 
 // watchDryRun records every write of a ManagedWorkload, and those that
@@ -224,6 +220,11 @@ func pausingOffCondition(w *v1alpha1.ManagedWorkload) *metav1.Condition {
 // update, is never set.
 func TestPausingOff(t *testing.T) {
 	env := startSwitchEnv(t)
+
+	t.Run("its pauser is on its reconciler's clock", func(t *testing.T) {
+		env.create(t, "clock", nil)
+		requirePauserOnItsClock(t, env.reconciler(t, true, time.Now), "clock")
+	})
 
 	t.Run("an idle workload isn't paused, and its would-be pause is counted", func(t *testing.T) {
 		key := env.create(t, "idle", nil)

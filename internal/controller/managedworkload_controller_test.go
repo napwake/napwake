@@ -48,7 +48,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
-	"github.com/napwake/napwake/internal/autoscaler"
 	"github.com/napwake/napwake/internal/lifecycle"
 	"github.com/napwake/napwake/internal/metrics"
 )
@@ -485,10 +484,10 @@ func TestReconcileDelete_RestoresAPausedWorkload(t *testing.T) {
 				builder = builder.WithObjects(targetDeploymentWithReplicas("api", "default", 0))
 			}
 			c := builder.Build()
-			r := &Reconciler{Client: c, Scheme: testScheme(t), Recorder: events.NewFakeRecorder(10),
+			r := withTheOperatorsPauser(&Reconciler{Client: c, Scheme: testScheme(t), Recorder: events.NewFakeRecorder(10),
 				engines: newEngineRegistry(func() forecaster { return &stubForecaster{} }),
-				clock:   func() time.Time { return monotonic(fixedTime) }}
-			r.pauser = lifecycle.NewPauser(c, autoscaler.NewFinder(c)).WithClock(r.now)
+				clock:   func() time.Time { return monotonic(fixedTime) }}, c)
+			requirePauserOnItsClock(t, r, "default")
 
 			_, err := r.Reconcile(context.Background(), reconcileFor("api"))
 			require.NoError(t, err)
@@ -1408,18 +1407,21 @@ func lifecycleReconciler(t *testing.T, workload *v1alpha1.ManagedWorkload, repli
 		WithStatusSubresource(&v1alpha1.ManagedWorkload{}).
 		WithObjects(append([]client.Object{workload, target}, objs...)...).
 		WithInterceptorFuncs(funcs).Build()
-	finder := autoscaler.NewFinder(c)
-	r := &Reconciler{
-		Client:      c,
-		Scheme:      scheme,
-		Recorder:    events.NewFakeRecorder(100),
-		autoscalers: finder,
-		metrics:     &stubMetrics{cpuMillis: 5, cpuPerReplica: 500, memoryPerReplica: 1 << 30, replicas: max(replicas, 1)},
-		engines:     newEngineRegistry(func() forecaster { return &stubForecaster{} }),
-		clock:       func() time.Time { return monotonic(fixedTime) },
-	}
-	r.pauser = lifecycle.NewPauser(c, finder).WithClock(r.now)
+	r := withTheOperatorsPauser(&Reconciler{
+		Client:   c,
+		Scheme:   scheme,
+		Recorder: events.NewFakeRecorder(100),
+		metrics:  &stubMetrics{cpuMillis: 5, cpuPerReplica: 500, memoryPerReplica: 1 << 30, replicas: max(replicas, 1)},
+		engines:  newEngineRegistry(func() forecaster { return &stubForecaster{} }),
+		clock:    func() time.Time { return monotonic(fixedTime) },
+	}, c)
 	return holding(r, append([]client.Object{workload}, objs...)...)
+}
+
+// lifecycleReconciler's pauser is the operator's, on its reconciler's clock.
+func TestLifecycleReconciler_HasItsPauserOnItsClock(t *testing.T) {
+	r := lifecycleReconciler(t, lifecycleWorkload("api", v1alpha1.PhaseRunning), 3, interceptor.Funcs{})
+	requirePauserOnItsClock(t, r, "default")
 }
 
 func realPauserReconciler(t *testing.T, workload *v1alpha1.ManagedWorkload, objs ...client.Object) *Reconciler {

@@ -38,10 +38,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
-	"github.com/napwake/napwake/internal/autoscaler"
 	"github.com/napwake/napwake/internal/doorman"
 	"github.com/napwake/napwake/internal/forecast"
-	"github.com/napwake/napwake/internal/lifecycle"
 )
 
 // ingressEnv is an API server with a Ready doorman pod, in which each case
@@ -120,15 +118,13 @@ func (e *ingressEnv) start(t *testing.T, ns string, setup func(*v1alpha1.Managed
 func (c *ingressCase) reconciler(t *testing.T) *Reconciler {
 	t.Helper()
 	cl := client.WithFieldOwner(indexedClient{c.env.admin}, v1alpha1.FieldManager)
-	finder := autoscaler.NewFinder(cl)
-	return &Reconciler{
+	return withTheOperatorsPauser(&Reconciler{
 		Client: cl, Scheme: testScheme(t), Recorder: events.NewFakeRecorder(1000),
-		pauser: lifecycle.NewPauser(cl, finder).WithClock(func() time.Time { return c.now }), autoscalers: finder,
 		metrics:        &stubMetrics{cpuPerReplica: 100, memoryPerReplica: 1 << 30, replicas: 1},
 		engines:        newEngineRegistry(func() forecaster { return c.forecast }),
 		DoormanService: "napwake-doorman", DoormanNamespace: c.env.doormanNS,
 		clock: func() time.Time { return c.now },
-	}
+	}, cl)
 }
 
 func (c *ingressCase) workload(t *testing.T) *v1alpha1.ManagedWorkload {
@@ -268,6 +264,10 @@ func recordedStorefront(readTimeout string, timeout time.Duration) v1alpha1.Ngin
 // maxWait.
 func TestIngressTimeoutShort(t *testing.T) {
 	env := startIngressEnv(t)
+
+	t.Run("its pauser is on its reconciler's clock", func(t *testing.T) {
+		requirePauserOnItsClock(t, env.start(t, "clock", nil).reconciler(t), "clock")
+	})
 
 	t.Run("a slow wake by a request behind ingress-nginx's default warns, once", func(t *testing.T) {
 		c := env.start(t, "slow", nil, nginxIngress(storefront, "api", ""))

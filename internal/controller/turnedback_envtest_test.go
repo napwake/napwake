@@ -32,9 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
-	"github.com/napwake/napwake/internal/autoscaler"
 	"github.com/napwake/napwake/internal/forecast"
-	"github.com/napwake/napwake/internal/lifecycle"
 )
 
 // turnedBackEnv is an API server with the doorman's Service in front of
@@ -97,19 +95,16 @@ func (e *turnedBackEnv) create(t *testing.T, ns string, setup func(*v1alpha1.Man
 	tc.key = client.ObjectKeyFromObject(w)
 
 	c := client.WithFieldOwner(indexedClient{e.admin}, v1alpha1.FieldManager)
-	finder := autoscaler.NewFinder(c)
-	tc.r = &Reconciler{
+	tc.r = withTheOperatorsPauser(&Reconciler{
 		Client: c, Scheme: testScheme(t), Recorder: events.NewFakeRecorder(1000), PodReader: indexedClient{e.admin},
-		pauser:      lifecycle.NewPauser(c, finder).WithClock(func() time.Time { return tc.now }),
-		autoscalers: finder,
-		metrics:     &stubMetrics{cpuMillis: 70, cpuPerReplica: 1000, replicas: 1},
-		engines:     newEngineRegistry(func() forecaster { return tc.forecast }),
-		clock:       func() time.Time { return tc.now },
+		metrics: &stubMetrics{cpuMillis: 70, cpuPerReplica: 1000, replicas: 1},
+		engines: newEngineRegistry(func() forecaster { return tc.forecast }),
+		clock:   func() time.Time { return tc.now },
 		DialDoorman: func(_ context.Context, addr string) error {
 			tc.dialled = append(tc.dialled, addr)
 			return nil
 		},
-	}
+	}, c)
 	routeThroughDoorman(tc.r)
 	remember(tc.r, w)
 	return tc
@@ -242,4 +237,8 @@ func TestTurnedBackPause_TeachesTheForecastItsHourIsBusy(t *testing.T) {
 			assert.Less(t, tc.fed(t, hour.Add(time.Hour)), 10.0, "the hour after, with no request, isn't busy")
 		})
 	}
+
+	t.Run("its pauser is on its reconciler's clock", func(t *testing.T) {
+		requirePauserOnItsClock(t, env.create(t, "clock", nil).r, "clock")
+	})
 }
