@@ -405,6 +405,21 @@ func TestIngressTimeoutShort(t *testing.T) {
 		assert.Len(t, warnings(r), 1)
 	})
 
+	t.Run("timed from the scale-up, for a stamp from a doorman clock ahead of the operator's", func(t *testing.T) {
+		c := env.start(t, "ahead", nil, nginxIngress(storefront, "api", ""))
+		r := c.reconciler(t)
+		c.pause(t, r)
+		c.wake(t, r, func() {
+			c.annotate(t, map[string]string{
+				v1alpha1.AnnotationLastRequest: c.now.Add(10 * time.Minute).UTC().Format(time.RFC3339)})
+		}, 85*time.Second)
+
+		cond := timeoutCondition(c.workload(t))
+		require.NotNil(t, cond, "Ready 85 seconds after the scale-up, its stamp after that")
+		assert.Contains(t, cond.Message, "a wake by a request took 85 seconds to its first Ready replica")
+		assert.Len(t, warnings(r), 1)
+	})
+
 	t.Run("not after a fast wake, though status has the timeout", func(t *testing.T) {
 		c := env.start(t, "fast", nil, nginxIngress(storefront, "api", ""))
 		r := c.reconciler(t)
