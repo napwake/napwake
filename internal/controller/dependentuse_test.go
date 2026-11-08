@@ -470,6 +470,12 @@ func TestAwakeDemand_ADependentsUse(t *testing.T) {
 				workload("web", v1alpha1.PhaseRunning, longAgo, clock(v1alpha1.ActivitySourceCPU, now.Add(-time.Minute)),
 					"api"),
 			}},
+		{name: "in use through a dependent that has just woken", dependency: quiet, want: 20,
+			dependents: []*v1alpha1.ManagedWorkload{
+				workload("api", v1alpha1.PhaseRunning, now.Add(-5*time.Minute), quiet, "postgres"),
+				workload("web", v1alpha1.PhaseRunning, longAgo, clock(v1alpha1.ActivitySourceCPU, now.Add(-time.Minute)),
+					"api"),
+			}},
 		{name: "a cycle of dependents, none in use", dependency: quiet, want: 3,
 			dependents: []*v1alpha1.ManagedWorkload{
 				workload("api", v1alpha1.PhaseRunning, longAgo, quiet, "postgres", "web"),

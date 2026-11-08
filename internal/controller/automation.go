@@ -599,30 +599,31 @@ func (r *Reconciler) inUseSince(ctx context.Context, workload *v1alpha1.ManagedW
 			"use alone this check", "workload", workload.Name, "namespace", workload.Namespace, "error", err.Error())
 		return usedSince(r.clockOf(self), since, false)
 	}
-	return r.usedThrough(g, self, since, map[types.UID]bool{})
+	return r.usedThrough(g, self, since, since, map[types.UID]bool{})
 }
 
-// usedThrough reports whether the workload n is, or a dependent holding it,
-// or one holding that in turn, was in use at or after since, each from the
-// end of its own warm-up. While dependents hold it, an activity annotation
-// on it is theirs, as each one's wake stamps one: their use is what
-// counts, not their wakes, which autoResume may make with nobody there.
-func (r *Reconciler) usedThrough(g *dependencyGraph, n *workloadNode, since time.Time,
+// usedThrough reports whether the workload n is in use by its own clock at
+// or after from, or a dependent holding it, or one holding that in turn,
+// at or after since, each from the end of its own warm-up alone. While
+// dependents hold it, an activity annotation on it is theirs, as each
+// one's wake stamps one: their use is what counts, not their wakes, which
+// autoResume may make with nobody there.
+func (r *Reconciler) usedThrough(g *dependencyGraph, n *workloadNode, since, from time.Time,
 	seen map[types.UID]bool) bool {
 	seen[n.uid] = true
 	holders := g.holdersOf(n)
-	if usedSince(r.clockOf(n), since, len(holders) > 0) {
+	if usedSince(r.clockOf(n), from, len(holders) > 0) {
 		return true
 	}
 	for _, d := range holders {
 		if seen[d.uid] {
 			continue
 		}
-		from := since
+		warm := since
 		if !d.wokeAt.IsZero() {
-			from = latest(since, d.wokeAt.Add(forecast.ResumeWarmup))
+			warm = latest(since, d.wokeAt.Add(forecast.ResumeWarmup))
 		}
-		if r.usedThrough(g, d, from, seen) {
+		if r.usedThrough(g, d, since, warm, seen) {
 			return true
 		}
 	}
