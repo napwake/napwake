@@ -24,6 +24,7 @@ import (
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -280,20 +281,47 @@ func pauseBegan(w *v1alpha1.ManagedWorkload) time.Time {
 	return pausedAt(w)
 }
 
+// unservedWarning is what the RequestNotServed warning says for one result
+// of a held connection closed without reaching its workload, and the action
+// it's recorded with. The events.k8s.io recorder folds a warning into an
+// earlier one with the same action, keeping the earlier one's message, so a
+// cause that needs its own message has its own action.
+type unservedWarning struct {
+	action, why string
+}
+
+// unservedWarnings are the results that warn, by result.
+var unservedWarnings = map[string]unservedWarning{
+	resultTimeout: {action: "Wake", why: "the workload wasn't Ready within maxWait; the wake continues"},
+	resultError:   {action: "Wake", why: "the workload couldn't be reached"},
+	resultDrained: {action: "Hold", why: "the workload stopped being routed through the doorman before any of its " +
+		"pods was Ready, as when something else, such as an HPA with minReplicas 0, takes it back to zero as it wakes"},
+}
+
+// warnKey is one series of RequestNotServed warnings: a workload's, for one
+// action.
+type warnKey struct {
+	workload types.NamespacedName
+	action   string
+}
+
 // warnUnserved emits a warning event on the workload for a held connection
-// that was closed without reaching it, at most once per unservedEventInterval.
-// The metrics count every one; the event is what shows in kubectl describe.
+// that was closed without reaching it, at most once per unservedEventInterval
+// for each action. The metrics count every one; the event is what shows in
+// kubectl describe.
 func (s *Server) warnUnserved(ctx context.Context, rt route, result string, waited time.Duration) {
-	if s.recorder == nil {
+	warning, ok := unservedWarnings[result]
+	if s.recorder == nil || !ok {
 		return
 	}
 	now := s.now()
+	key := warnKey{workload: rt.workload, action: warning.action}
 	s.mu.Lock()
-	if last, ok := s.lastWarn[rt.workload]; ok && now.Sub(last) < unservedEventInterval {
+	if last, ok := s.lastWarn[key]; ok && now.Sub(last) < unservedEventInterval {
 		s.mu.Unlock()
 		return
 	}
-	s.lastWarn[rt.workload] = now
+	s.lastWarn[key] = now
 	s.mu.Unlock()
 
 	// ctx is the doorman's connections' context, not the connection's,
@@ -307,10 +335,6 @@ func (s *Server) warnUnserved(ctx context.Context, rt route, result string, wait
 			"workload", rt.workload.Name, "namespace", rt.workload.Namespace)
 		return
 	}
-	reason := "the workload wasn't Ready within maxWait; the wake continues"
-	if result != resultTimeout {
-		reason = "the workload couldn't be reached"
-	}
-	s.recorder.Eventf(&w, nil, "Warning", "RequestNotServed", "Wake",
-		"a request on Service %s was closed after %s: %s", rt.service, human.Duration(waited), reason)
+	s.recorder.Eventf(&w, nil, "Warning", "RequestNotServed", warning.action,
+		"a request on Service %s was closed after %s: %s", rt.service, human.Duration(waited), warning.why)
 }

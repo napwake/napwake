@@ -217,7 +217,7 @@ type Server struct {
 	conns        map[net.Conn]struct{}
 	wakeCalls    map[types.NamespacedName]*wakeCall
 	stamped      map[types.NamespacedName]stampRecord
-	lastWarn     map[types.NamespacedName]time.Time
+	lastWarn     map[warnKey]time.Time
 	metered      map[types.NamespacedName]bool
 	away         map[types.NamespacedName]awayCount
 	closed       bool
@@ -268,7 +268,7 @@ func NewServer(c client.Client, recorder events.EventRecorder, opts Options) *Se
 		conns:             map[net.Conn]struct{}{},
 		wakeCalls:         map[types.NamespacedName]*wakeCall{},
 		stamped:           map[types.NamespacedName]stampRecord{},
-		lastWarn:          map[types.NamespacedName]time.Time{},
+		lastWarn:          map[warnKey]time.Time{},
 		metered:           map[types.NamespacedName]bool{},
 		away:              map[types.NamespacedName]awayCount{},
 	}
@@ -634,9 +634,9 @@ func (s *Server) forgetDeleted(existing map[types.NamespacedName]bool) {
 			delete(s.stamped, w)
 		}
 	}
-	for w := range s.lastWarn {
-		if !existing[w] {
-			delete(s.lastWarn, w)
+	for k := range s.lastWarn {
+		if !existing[k.workload] {
+			delete(s.lastWarn, k)
 		}
 	}
 	for w := range s.away {

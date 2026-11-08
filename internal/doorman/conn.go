@@ -95,6 +95,11 @@ const (
 	resultIgnored  = "ignored"
 	resultLimited  = "limited"
 	resultRefused  = "refused"
+	// resultDrained is a connection held for a wake, closed once its
+	// route drained with none of the workload's pods Ready: something else
+	// took it back to zero as it woke, such as an HPA with minReplicas 0,
+	// or it stopped waking on request.
+	resultDrained = "drained"
 )
 
 // handle holds one connection: it wakes the workload, waits for a Ready pod,
@@ -127,7 +132,7 @@ func (s *Server) handle(ctx context.Context, port int32, rt route, conn net.Conn
 	waited := s.now().Sub(start)
 	if upstream == nil {
 		s.record(rt, result, waited)
-		if result == resultTimeout || result == resultError {
+		if _, ok := unservedWarnings[result]; ok {
 			logger.Info("closing held connection", "result", result, "waited", waited.Round(time.Millisecond).String())
 			s.warnUnserved(ctx, rt, result, waited)
 		}
@@ -249,7 +254,9 @@ func (h *heldConn) hold(ctx context.Context) (net.Conn, string) {
 
 // await waits for a Ready pod to pass the connection to, retrying a wake or
 // a dial that failed, until waitCtx ends, the caller leaves, or the route
-// starts draining with nothing Ready.
+// starts draining with nothing Ready. That last is a wake that ended with
+// nothing to serve the caller, which is told so as a timeout is, unlike a
+// connection that arrives once the route is draining (see passThrough).
 func (h *heldConn) await(ctx, waitCtx context.Context, wakeErr error) (net.Conn, string) {
 	key := h.route.backendKey()
 	lastWake := h.now()
@@ -265,7 +272,7 @@ func (h *heldConn) await(ctx, waitCtx context.Context, wakeErr error) (net.Conn,
 			proxyLimited = limited
 			dialFailed = !limited
 		} else if current.draining() && err == nil {
-			return nil, resultRefused
+			return nil, resultDrained
 		}
 		if wakeErr != nil && !current.draining() && h.now().Sub(lastWake) >= wakeRetryInterval {
 			lastWake = h.now()

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A request the doorman held for a wake that ended back at zero, before any pod was Ready, was closed with no warning and no log line, and counted as `refused`. That happens when something else takes the workload to zero as it wakes, such as an HPA with `minReplicas: 0`. Now a `RequestNotServed` warning says why, the doorman logs it, and `napwake_doorman_wakes_total` counts it as `drained`. `refused` is left for a connection that arrives once the workload is no longer routed through the doorman
+
 ## [0.2.0] - 2026-11-08
 
 Napwake pauses idle Kubernetes workloads in staging, preview and dev, and wakes them on the first request. It never deletes a workload or its data.

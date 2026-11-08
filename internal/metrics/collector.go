@@ -208,14 +208,15 @@ var (
 	// stamped), canceled (the caller left, or the doorman shut down, while
 	// it was held), ignored (a health check, a scrape, or a connection that
 	// sent nothing while no pod was Ready), limited (refused by a cap on
-	// held connections or wakes), refused (the route is draining and nothing
-	// is Ready), and, for a workload whose wake.mode is Ask, asked (a
-	// person's browser got the asleep page) and turned_away (anything else
-	// was told it's asleep, and nothing woke).
+	// held connections or wakes), refused (it arrived once the route was
+	// draining, and nothing was Ready), drained (it was held for a wake, and
+	// the route drained before anything was Ready), and, for a workload whose
+	// wake.mode is Ask, asked (a person's browser got the asleep page) and
+	// turned_away (anything else was told it's asleep, and nothing woke).
 	DoormanWakes = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "napwake_doorman_wakes_total",
 		Help: "Connections the doorman accepted for a paused workload, by result " +
-			"(success, page, timeout, error, canceled, ignored, limited, refused, asked, turned_away).",
+			"(success, page, timeout, error, canceled, ignored, limited, refused, drained, asked, turned_away).",
 	}, []string{"namespace", "workload", "result"})
 
 	DoormanWaitSeconds = prometheus.NewHistogramVec(prometheus.HistogramOpts{

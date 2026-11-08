@@ -37,9 +37,11 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
+	eventsv1 "k8s.io/api/events/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/cache/informertest"
@@ -508,6 +510,112 @@ func TestServer_WarnsOnceWhenRequestsAreNotServed(t *testing.T) {
 	require.Len(t, warnings, 1)
 	assert.Contains(t, warnings[0], "Service api was closed after under a second")
 	assert.Contains(t, warnings[0], "maxWait")
+}
+
+// recordedEvents is the recorder the doorman runs with, the events.k8s.io
+// one, and what it wrote to the API server. It folds an event into an
+// earlier one of the same type, reason and action, keeping the earlier
+// one's message, which is what kubectl describe then shows.
+func recordedEvents(t *testing.T) (events.EventRecorder, func() []eventsv1.Event) {
+	t.Helper()
+	clientset := kubefake.NewClientset()
+	broadcaster := events.NewBroadcaster(&events.EventSinkImpl{Interface: clientset.EventsV1()})
+	ctx, cancel := context.WithCancel(context.Background())
+	require.NoError(t, broadcaster.StartRecordingToSinkWithContext(ctx))
+	t.Cleanup(func() {
+		cancel()
+		broadcaster.Shutdown()
+	})
+	written := func() []eventsv1.Event {
+		list, err := clientset.EventsV1().Events("dev").List(context.Background(), metav1.ListOptions{})
+		require.NoError(t, err)
+		return list.Items
+	}
+	return broadcaster.NewRecorder(testScheme(t), "napwake-doorman"), written
+}
+
+// notServed is the notes of the RequestNotServed warnings in evs.
+func notServed(evs []eventsv1.Event) []string {
+	var notes []string
+	for _, e := range evs {
+		if e.Reason == "RequestNotServed" && e.Type == "Warning" {
+			notes = append(notes, e.Note)
+		}
+	}
+	return notes
+}
+
+// backAtZero is the operator's part as the wake of a workload ends back at
+// zero, as an HPA with minReplicas 0 takes it there before its pod is Ready
+// (P77): it's Resuming and its pod starts, then the pod is gone and it's
+// Running at zero, so it's no longer routed through the doorman.
+func backAtZero(t *testing.T, s *Server, c client.Client) {
+	t.Helper()
+	ctx := context.Background()
+	var w v1alpha1.ManagedWorkload
+	require.NoError(t, c.Get(ctx, apiKey, &w))
+	w.Status.Phase = v1alpha1.PhaseResuming
+	require.NoError(t, c.Update(ctx, &w))
+	starting := readySlice(echoPort(t))
+	starting.Endpoints[0].Conditions.Ready = ptr.To(false)
+	require.NoError(t, c.Create(ctx, starting))
+	require.NoError(t, s.syncRoutes(ctx, ctx))
+
+	starting.Endpoints = nil
+	require.NoError(t, c.Update(ctx, starting))
+	require.NoError(t, c.Get(ctx, apiKey, &w))
+	w.Status.Phase = v1alpha1.PhaseRunning
+	w.Status.Doorman = nil
+	require.NoError(t, c.Update(ctx, &w))
+	require.NoError(t, s.syncRoutes(ctx, ctx))
+}
+
+// A request held for a wake that ends back at zero, before any pod is
+// Ready, is closed with nothing to serve it, and the workload's events and
+// the doorman's metrics say so, as for one held past maxWait.
+func TestServer_WarnsWhenAWakeEndsBackAtZero(t *testing.T) {
+	port := freePort(t)
+	recorder, written := recordedEvents(t)
+	s, c := startServerWith(t, func(s *Server) { s.recorder = recorder }, pausedWorkload("api", port, time.Minute))
+	before := wakes(resultDrained)
+
+	conn := dial(t, port)
+	send(t, conn, "hello\n")
+	require.Eventually(t, func() bool { return lastRequest(t, c) != "" }, 5*time.Second, 20*time.Millisecond,
+		"the held connection wakes the workload")
+	backAtZero(t, s, c)
+
+	closedWithin(t, conn)
+	assert.Eventually(t, func() bool { return wakes(resultDrained) == before+1 },
+		5*time.Second, 10*time.Millisecond, "counted as resultDrained")
+	if !assert.Eventually(t, func() bool { return len(notServed(written())) == 1 }, 5*time.Second, 10*time.Millisecond) {
+		t.Fatalf("want one RequestNotServed warning, have %q", notServed(written()))
+	}
+	assert.Equal(t, "a request on Service api was closed after under a second: the workload stopped being routed "+
+		"through the doorman before any of its pods was Ready, as when something else, such as an HPA with "+
+		"minReplicas 0, takes it back to zero as it wakes", notServed(written())[0])
+}
+
+// A wake that ends back at zero is told apart from a slow one just before
+// it, about the same version of the workload. The doorman warns once a
+// minute for each cause, and the recorder would fold a warning into an
+// earlier one of the same action, keeping the earlier one's message.
+func TestServer_WarnsOfAWakeBackAtZeroApartFromASlowOne(t *testing.T) {
+	recorder, written := recordedEvents(t)
+	s, _ := newTestServer(t, nil, pausedWorkload("api", freePort(t), time.Minute))
+	s.recorder = recorder
+	ctx := context.Background()
+	rt := route{workload: apiKey, service: "api"}
+
+	s.warnUnserved(ctx, rt, resultTimeout, time.Minute)
+	s.warnUnserved(ctx, rt, resultDrained, 3*time.Second)
+
+	if !assert.Eventually(t, func() bool { return len(notServed(written())) == 2 }, 5*time.Second, 10*time.Millisecond) {
+		t.Fatalf("want two RequestNotServed warnings, have %q", notServed(written()))
+	}
+	notes := strings.Join(notServed(written()), "\n")
+	assert.Contains(t, notes, "closed after 1 minute: the workload wasn't Ready within maxWait")
+	assert.Contains(t, notes, "closed after 3 seconds: the workload stopped being routed through the doorman")
 }
 
 const browserGET = "GET /orders HTTP/1.1\r\nHost: shop.example.dev\r\nAccept: text/html\r\nSec-Fetch-Mode: navigate\r\n\r\n"
@@ -1314,12 +1422,13 @@ func released(t *testing.T, s *Server, port int32, held net.Listener) {
 
 // A route that leaves status while its workload is still at zero, because
 // it opted out of waking on request or stopped being managed, has nothing
-// to pass connections to. They're refused at once rather than held without
-// a wake.
+// to pass connections to. They're closed at once rather than held without
+// a wake: one held for the wake as drained, one that arrives after as
+// refused, as it would be without the doorman.
 func TestServer_RefusesPromptlyWhenADrainingRouteHasNothingReady(t *testing.T) {
 	port := freePort(t)
 	s, c := startServer(t, pausedWorkload("api", port, time.Minute))
-	before := wakes(resultRefused)
+	refusedBefore, drainedBefore := wakes(resultRefused), wakes(resultDrained)
 	held := dial(t, port)
 	send(t, held, "hello\n")
 	require.Eventually(t, func() bool { return lastRequest(t, c) != "" }, 5*time.Second, 20*time.Millisecond)
@@ -1330,8 +1439,9 @@ func TestServer_RefusesPromptlyWhenADrainingRouteHasNothingReady(t *testing.T) {
 	closedWithin(t, dial(t, port))
 	// The result is counted once the connection is done with, just after
 	// the caller has its answer.
-	assert.Eventually(t, func() bool { return wakes(resultRefused) == before+2 },
-		5*time.Second, 10*time.Millisecond, "counted as resultRefused")
+	assert.Eventually(t, func() bool {
+		return wakes(resultDrained) == drainedBefore+1 && wakes(resultRefused) == refusedBefore+1
+	}, 5*time.Second, 10*time.Millisecond, "counted as resultDrained, then resultRefused")
 }
 
 // A stopping doorman leaves its Service at once, but goes on holding and
