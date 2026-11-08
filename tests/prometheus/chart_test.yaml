@@ -74,6 +74,33 @@ tests:
               summary: Doorman wakes failing for web
               description: Requests to paused workload shop/web are timing out or failing while it wakes. Check its events and the doorman logs.
 
+  - name: held connections whose wake ends back at zero are failed wakes
+    interval: 1m
+    input_series:
+      - series: napwake_doorman_wakes_total{namespace="shop", workload="web", result="drained"}
+        values: 0+1x40
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: NapwakeDoormanWakesFailing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: shop
+              workload: web
+            exp_annotations:
+              summary: Doorman wakes failing for web
+              description: Requests to paused workload shop/web are timing out or failing while it wakes. Check its events and the doorman logs.
+
+  - name: connections refused once the route drains are not failed wakes
+    interval: 1m
+    input_series:
+      - series: napwake_doorman_wakes_total{namespace="shop", workload="web", result="refused"}
+        values: 0+1x40
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: NapwakeDoormanWakesFailing
+        exp_alerts: []
+
   # Series as the ServiceMonitors scrape them: honorLabels keeps the
   # workload's namespace, and the target's labels name the doorman or
   # operator pod in napwake-system.
