@@ -187,6 +187,7 @@ JSON and YAML keep the full context name. Their `namespaces` counts every namesp
 | Karpenter | The same, with how its NodePools consolidate |
 | Cluster Autoscaler, hinted at only by a Deployment | The same, and that it may not be running |
 | GKE Autopilot, which bills what pods request | It `drops as pods stop` |
+| EKS Fargate, which bills what pods request | The same, and once that Fargate needs each container's requests to equal its limits, Napwake's own included, with [how](/getting-started/installation/#on-eks-fargate) |
 | None found | It `won't drop until something removes nodes`, with the guide to setting an autoscaler up |
 | Your access doesn't allow reading what would tell | It says so, and names what it couldn't read |
 
@@ -906,6 +907,7 @@ Its flags, with their defaults. [See why nodes don't scale down](/getting-starte
 | Those flags | On by default upstream. AKS turns the first off |
 | Not Karpenter's, autoscaler unknown | Cluster Autoscaler's rules |
 | No autoscaler found scales it | `not autoscaled` |
+| EKS Fargate's | Nothing. It runs one pod and goes with it |
 | A Cluster Autoscaler node whose node group is at its minimum size | `node group at its minimum`. It stays, whatever runs on it, so no step would free it. Above the next steps, a line names its group and minimum instead of steps |
 | Where the sizes come from | Cluster Autoscaler's `cluster-autoscaler-status` ConfigMap, in the YAML it writes since 1.30 or the text before, GKE's included |
 | Which group a node is in | Matched as GKE, EKS managed node groups and AKS name them. Karpenter keeps no minimum |
@@ -925,6 +927,7 @@ Its flags, with their defaults. [See why nodes don't scale down](/getting-starte
 | Its detail | The cloud its nodes are on |
 | Without the ConfigMap | A `kube-system` Deployment ending in `cluster-autoscaler` is named, as a hint it may not be running |
 | GKE Autopilot | That ConfigMap, and nodes all named `gk3-`, as Autopilot names them. It scales nodes itself |
+| EKS Fargate | Every node labelled `eks.amazonaws.com/compute-type: fargate`. With EC2 nodes too, what scales those counts |
 | `none found` | Nothing, with every place read |
 | Then | Freed capacity won't come off the bill until something removes nodes |
 | `unknown` | Your access didn't allow reading what would tell, which it names |

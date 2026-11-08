@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- On EKS Fargate, `kubectl napwake scan`, `status` and `nodes` no longer say no node autoscaler was found, and that freed capacity won't lower the bill. A cluster whose every node is labelled `eks.amazonaws.com/compute-type=fargate` is found as `EKS Fargate`, which bills what pods request, as GKE Autopilot is: `Your bill: drops as pods stop`. Scan and status, terminal and page, say once that Fargate needs each container's requests to equal its limits, Napwake's own included, linking to how. `nodes` lists nothing holding a Fargate node, which goes with its pod. The operator logs it and exports `napwake_node_autoscaler{kind="EKS Fargate"}`. On a cluster with EC2 nodes too, what scales those counts, as before
 - `kubectl napwake scan --help`, and the CLI reference, no longer give `--cpu-price` and `--memory-price` a default of `0.031` and `0.004`. Those are the assumed prices for a node with no list price. Unset, each node is priced at its own type's list price. The prices are unchanged
 
 ## [0.2.0] - 2026-11-08

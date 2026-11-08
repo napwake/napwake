@@ -183,6 +183,25 @@ func TestDetect(t *testing.T) {
 				Evidence: "the cluster-autoscaler-status ConfigMap, and nodes named gk3-*"}},
 		},
 		{
+			name: "EKS Fargate, when every node is Fargate's", known: true,
+			objs: []client.Object{
+				node("fargate-ip-10-0-1-1.ec2.internal", map[string]string{"eks.amazonaws.com/compute-type": "fargate"}),
+				node("fargate-ip-10-0-1-2.ec2.internal", map[string]string{"eks.amazonaws.com/compute-type": "fargate"}),
+			},
+			want: []Scaler{{Kind: EKSFargate, Provider: "EKS",
+				Evidence: "2 nodes, every one, labelled eks.amazonaws.com/compute-type=fargate"}},
+		},
+		{
+			name: "Fargate beside EC2 nodes leaves what scales those", known: true,
+			objs: []client.Object{
+				node("fargate-ip-10-0-1-1.ec2.internal", map[string]string{"eks.amazonaws.com/compute-type": "fargate"}),
+				node("ip-10-0-2-1.ec2.internal", map[string]string{"eks.amazonaws.com/nodegroup": "ng"}),
+				statusMap(),
+			},
+			want: []Scaler{{Kind: ClusterAutoscaler, Provider: "EKS",
+				Evidence: "the cluster-autoscaler-status ConfigMap in kube-system"}},
+		},
+		{
 			name: "GKE Standard is Cluster Autoscaler", known: true,
 			objs: []client.Object{node("gke-dev-default-pool-abc", map[string]string{"cloud.google.com/gke-nodepool": "default-pool"}),
 				statusMap()},
