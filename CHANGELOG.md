@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `kubectl napwake scan --help`, and the CLI reference, no longer give `--cpu-price` and `--memory-price` a default of `0.031` and `0.004`. Those are the assumed prices for a node with no list price. Unset, each node is priced at its own type's list price. The prices are unchanged
+
 ## [0.2.0] - 2026-11-08
 
 Napwake pauses idle Kubernetes workloads in staging, preview and dev, and wakes them on the first request. It never deletes a workload or its data.
