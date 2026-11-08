@@ -1803,7 +1803,7 @@ func TestServer_StampsAgainAfterAStampThePauseRecorded(t *testing.T) {
 	s, c := newTestServer(t, nil, w)
 	s.now = func() time.Time { return now }
 
-	require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller))
+	require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller, forHeld))
 
 	assert.Equal(t, now.Format(time.RFC3339), lastRequest(t, c))
 }
@@ -1820,7 +1820,7 @@ func TestServer_StampsANewValueInTheSameSecond(t *testing.T) {
 	s, c := newTestServer(t, nil, w)
 	s.now = func() time.Time { return now }
 
-	require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller))
+	require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller, forHeld))
 
 	stamped := lastRequest(t, c)
 	assert.NotEqual(t, same, stamped)
@@ -1849,7 +1849,7 @@ func TestServer_WakesAfterTheRecordedStampWasRemoved(t *testing.T) {
 			s, c := newTestServer(t, nil, w)
 			s.now = func() time.Time { return now }
 
-			require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller))
+			require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller, forHeld))
 
 			stamped := lastRequest(t, c)
 			assert.NotEmpty(t, stamped)
@@ -1869,7 +1869,7 @@ func TestServer_LeavesAPendingWakeAlone(t *testing.T) {
 	s.recorder = recorder
 	s.now = func() time.Time { return now }
 
-	require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller))
+	require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller, forHeld))
 
 	assert.Equal(t, pending, lastRequest(t, c))
 	assert.Equal(t, 0, wokenEvents(recorder))
@@ -1937,36 +1937,39 @@ func wokenEvents(r *events.FakeRecorder) int {
 	return len(announced(r))
 }
 
-// announced is the wakes the doorman announced to r, a request's or a
-// click's.
+// announced is the stamps the doorman announced to r.
 func announced(r *events.FakeRecorder) []string {
-	var wakes []string
+	var stamps []string
 	for len(r.Events) > 0 {
-		if e := <-r.Events; strings.Contains(e, " "+reasonWokenByRequest+" ") || strings.Contains(e, " "+reasonWokenByClick+" ") {
-			wakes = append(wakes, e)
+		if e := <-r.Events; strings.Contains(e, " "+reasonRequestHeld+" ") || strings.Contains(e, " "+reasonWakeAsked+" ") {
+			stamps = append(stamps, e)
 		}
 	}
-	return wakes
+	return stamps
 }
 
-// A request and a person's click each wake with a reason of their own, so
-// what woke a workload is told by its events' reasons alone (P38).
-func TestServer_AnnouncesARequestAndAClickApart(t *testing.T) {
+// The doorman's event for a stamp says what it did with the request,
+// naming the Service, not what woke the workload, which is the operator's
+// one event for each wake to say (P38).
+func TestServer_AnnouncesWhatItDidWithTheRequest(t *testing.T) {
 	for _, tt := range []struct {
 		name string
-		asks bool
+		how  wakeFor
 		want string
 	}{
-		{name: "a request", want: "Normal WokenByRequest request on Service api, waking"},
-		{name: "a click", asks: true, want: "Normal WokenByClick a person asked on Service api, waking"},
+		{name: "held", how: forHeld, want: "Normal RequestHeld a request on Service api is held while it wakes"},
+		{name: "a browser shown the page", how: forPage,
+			want: "Normal RequestHeld a browser on Service api is shown the waking-up page while it wakes"},
+		{name: "passed on as it paused", how: forPassedOn,
+			want: "Normal RequestHeld a request on Service api came as it paused, and wakes it"},
+		{name: "a person's click", how: forClick, want: "Normal WakeAsked a person asked on Service api, waking"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			recorder := events.NewFakeRecorder(10)
 			s, _ := newTestServer(t, nil, pausedWorkload("api", freePort(t), time.Minute))
 			s.recorder = recorder
-			rt := route{workload: apiKey, service: "api", asks: tt.asks}
 
-			require.NoError(t, s.stamp(context.Background(), rt, caller))
+			require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller, tt.how))
 
 			assert.Equal(t, []string{tt.want}, announced(recorder))
 		})
@@ -1989,7 +1992,7 @@ func TestServer_ReplicasReportOneWake(t *testing.T) {
 	}{{c, first}, {stale, second}} {
 		s := NewServer(replica.c, replica.r, Options{})
 		s.now = func() time.Time { return now }
-		require.NoError(t, s.stamp(context.Background(), rt, caller))
+		require.NoError(t, s.stamp(context.Background(), rt, caller, forHeld))
 	}
 
 	assert.Equal(t, 1, wokenEvents(first))
@@ -2007,7 +2010,7 @@ func TestServer_StampsDespiteAConflict(t *testing.T) {
 	require.NoError(t, c.Update(context.Background(), &w))
 
 	s := NewServer(stale, nil, Options{})
-	require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller))
+	require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller, forHeld))
 
 	require.NoError(t, c.Get(context.Background(), apiKey, &w))
 	assert.NotEmpty(t, w.Annotations[v1alpha1.AnnotationLastRequest], "the workload is still woken")
@@ -2424,7 +2427,7 @@ func TestServer_AnnouncesAWakeDespiteAConflictFromAnotherWriter(t *testing.T) {
 
 	recorder := events.NewFakeRecorder(10)
 	s := NewServer(stale, recorder, Options{})
-	require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller))
+	require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller, forHeld))
 
 	assert.Equal(t, 1, wokenEvents(recorder))
 	assert.NotEmpty(t, lastRequest(t, c))
@@ -2439,13 +2442,13 @@ func TestServer_LeavesAnotherReplicasStamp(t *testing.T) {
 
 	first := NewServer(c, nil, Options{})
 	first.now = func() time.Time { return time.Date(2026, 10, 3, 9, 0, 0, 0, time.UTC) }
-	require.NoError(t, first.stamp(context.Background(), rt, caller))
+	require.NoError(t, first.stamp(context.Background(), rt, caller, forHeld))
 	stamped := lastRequest(t, c)
 
 	recorder := events.NewFakeRecorder(10)
 	second := NewServer(stale, recorder, Options{})
 	second.now = func() time.Time { return time.Date(2026, 10, 3, 9, 0, 1, 0, time.UTC) }
-	require.NoError(t, second.stamp(context.Background(), rt, netip.MustParseAddr("10.244.0.18")))
+	require.NoError(t, second.stamp(context.Background(), rt, netip.MustParseAddr("10.244.0.18"), forHeld))
 
 	assert.Equal(t, stamped, lastRequest(t, c))
 	assert.Zero(t, wokenEvents(recorder))
@@ -2498,7 +2501,7 @@ func TestServer_LeavesAPauseItCallsOffToTheOperatorToAnnounce(t *testing.T) {
 	s, c := newTestServer(t, nil, w)
 	s.recorder = recorder
 
-	require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller))
+	require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller, forHeld))
 
 	assert.NotEmpty(t, lastRequest(t, c))
 	assert.Equal(t, 0, wokenEvents(recorder))
@@ -2681,7 +2684,7 @@ func TestServer_AStampInOnePauseDoesntStandForTheNext(t *testing.T) {
 	rt := route{workload: apiKey, service: "api"}
 	for _, scaledDown := range []bool{false, true} {
 		s, c := newTestServer(t, nil, pausingWorkload(freePort(t)))
-		require.NoError(t, s.stamp(context.Background(), rt, caller))
+		require.NoError(t, s.stamp(context.Background(), rt, caller, forHeld))
 		first := lastRequest(t, c)
 		require.NotEmpty(t, first)
 
@@ -2692,7 +2695,7 @@ func TestServer_AStampInOnePauseDoesntStandForTheNext(t *testing.T) {
 			live.Status.Phase, live.Status.Pause.PausedAt = v1alpha1.PhasePaused, ptr.To(metav1.Now())
 			require.NoError(t, c.Update(context.Background(), &live))
 		}
-		require.NoError(t, s.stamp(context.Background(), rt, caller))
+		require.NoError(t, s.stamp(context.Background(), rt, caller, forHeld))
 
 		assert.NotEqual(t, first, lastRequest(t, c), "scaled down: %v", scaledDown)
 	}

@@ -48,19 +48,13 @@ func TestStatus_WokenBy(t *testing.T) {
 		wantListed []string
 	}{
 		{name: "a request the doorman held", events: []*eventAt{
-			{"WokenByRequest", "request on Service web, waking", 2 * time.Minute},
+			{"RequestHeld", "a request on Service web is held while it wakes", 2 * time.Minute},
 			{"WokenByRequest", "web: a request is waiting, waking", time.Minute},
 		}, want: "request", wantListed: []string{"request"}},
 		{name: "a person's click, on a workload that asks", events: []*eventAt{
-			{"WokenByClick", "a person asked on Service web, waking", time.Minute},
-		}, want: "click", wantListed: []string{"click"}},
-		{name: "a person's click, with the operator's own event", events: []*eventAt{
-			{"WokenByClick", "a person asked on Service web, waking", 2 * time.Minute},
+			{"WakeAsked", "a person asked on Service web, waking", 2 * time.Minute},
 			{"WokenByClick", "web: a person asked to wake it, waking", time.Minute},
 		}, want: "click", wantListed: []string{"click"}},
-		{name: "a request, without the doorman's own event", events: []*eventAt{
-			{"WokenByRequest", "web: a request is waiting, waking", time.Minute},
-		}, want: "request"},
 		{name: "a request, before 0.2.1", events: []*eventAt{
 			{"WokenByRequest", "request on Service web, waking", 2 * time.Minute},
 			{"WokeByActivity", "web: a request is waiting, waking", time.Minute},
@@ -103,7 +97,7 @@ func TestStatus_WokenBy(t *testing.T) {
 			{"Resumed", "web: resumed", time.Minute},
 		}, want: "", wantListed: []string{"", "forecast"}},
 		{name: "a pause since", phase: v1alpha1.PhasePaused, events: []*eventAt{
-			{"WokenByRequest", "request on Service web, waking", time.Hour},
+			{"WokenByRequest", "web: a request is waiting, waking", time.Hour},
 			{"Paused", "web: paused", time.Minute},
 		}, want: "", wantListed: []string{"request"}},
 		{name: "a wake before --since", events: []*eventAt{

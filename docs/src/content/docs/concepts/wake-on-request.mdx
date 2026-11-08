@@ -54,7 +54,7 @@ The doorman is a small proxy, its own Deployment beside the operator, with two r
 |------|--------------|
 | The workload starts to pause | The operator adds an EndpointSlice, one per IP family, to each Service that selects its pods. It points at the doorman, on a port of its own (20000-29999). The Service, ClusterIP and DNS name don't change, so callers and Ingresses need no changes. IPv4, IPv6 and dual-stack all work. The slice is in place before the pods stop, so no request is refused as they do ([What happens in a pause](/guides/pause/#what-happens-in-a-pause)) |
 | A connection arrives | If a pod of the Service is already Ready, it goes straight there. That happens while it's still pausing or already waking, or when another workload's pods serve the Service. While it's pausing, a request passed on that would wake it [calls the pause off](/guides/pause/#a-request-calls-the-pause-off). Otherwise the doorman waits for the caller to send something |
-| The caller sends something | The doorman holds the connection and sets `napwake.dev/last-request` on the ManagedWorkload, which wakes it like an [activity annotation](/concepts/idle-detection/#activity-annotations). A `WokenByRequest` event names the Service. Once Running, the clock shows `lastActivitySource: request` |
+| The caller sends something | The doorman holds the connection and sets `napwake.dev/last-request` on the ManagedWorkload, which wakes it like an [activity annotation](/concepts/idle-detection/#activity-annotations). A `RequestHeld` event from the doorman names the Service, and the operator's `WokenByRequest` says a request woke it. Once Running, the clock shows `lastActivitySource: request` |
 | A pod is Ready | The doorman, watching the Service's own EndpointSlices, passes the held connection to a Ready pod, with the bytes already sent |
 | The workload is `Running` | The operator removes the doorman's EndpointSlices. For 30 seconds the doorman still passes stray connections to Ready pods, waking nothing, while kube-proxy and load balancers catch up |
 
@@ -241,7 +241,7 @@ WakeOnRequest=True   DoormanRouted   the doorman asks a person's browser before 
 | The asleep page | A `200` with `Cache-Control: no-store`, `X-Robots-Tag: noindex` and `Referrer-Policy: same-origin`. It reloads every minute |
 | The asleep page's `Content-Security-Policy` | Allows its own style and script, and images only from `data:`. Its form posts only back to the page's address. No other site may show it in a frame, which `X-Frame-Options: DENY` says too |
 | A tab left open | Its reload goes on to the app once someone has woken it |
-| The click | Stamps `napwake.dev/last-request`, and a `WokenByClick` event says a person asked. The waking-up page reloads the page the person opened until the app answers |
+| The click | Stamps `napwake.dev/last-request`. A `WakeAsked` event from the doorman names the Service, and the operator's `WokenByClick` says a person asked. The waking-up page reloads the page the person opened until the app answers |
 | A form that isn't the button's | URL-encoded and up to 1 KiB, or sent on chunked by a proxy |
 | Anything else | `curl`, scripts and API clients, crawlers and link previewers such as `Googlebot` and `facebookexternalhit`, headless browsers, scanners, a `HEAD`, a WebSocket, a browser's `fetch`, a larger form or a file upload |
 | The `503`'s body | JSON for a client that asks for it, and plain text otherwise |

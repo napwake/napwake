@@ -331,12 +331,13 @@ var untroubled = map[string]bool{
 // each says woke it, as WokenBy gives it. The Resumed that follows one adds
 // nothing, so it's left out; a Resumed with no cause before it, such as a
 // hand-back on protecting the namespace, is the only record of that wake,
-// so it's kept, with no cause. Each cause has a reason of its own, but for
-// WokeByActivity, an activity annotation or a Prometheus activity query,
-// and PauseCancelled, any of what would wake a paused workload, come as it
-// paused, which only its message names. An operator before 0.2.1 wrote
-// WokeByActivity for a dependent's wake too, and the doorman WokenByRequest
-// for a person's click.
+// so it's kept, with no cause. They're the operator's, one event for each
+// wake, and each cause has a reason of its own, but for WokeByActivity, an
+// activity annotation or a Prometheus activity query, and PauseCancelled,
+// any of what would wake a paused workload, come as it paused, which only
+// its message names. An operator before 0.2.1 wrote WokeByActivity for a
+// request, a person's click and a dependent's wake too, which only the
+// message of one for a request or a click tells apart.
 var wakeCauses = map[string]string{
 	"WokeByActivity":   "activity",
 	"WokenByRequest":   wokenByRequest,
@@ -378,13 +379,22 @@ var happenings = map[string]bool{
 	"PauseCancelled":   true,
 }
 
-// A wake by a request the doorman held, or a person's click, is reported by
-// the doorman's WokenByRequest or WokenByClick, which names the Service, so
-// the operator's own event for it is left out, and taken for what it is: of
-// the same reason, or WokeByActivity from an operator before 0.2.1.
+// requestWakeMessages are what the operator's event for a wake by a request
+// the doorman stamped says, and what each says woke it, under any reason:
+// WokeByActivity from an operator before 0.2.1.
 var requestWakeMessages = map[string]string{
 	"a request is waiting, waking":      wokenByRequest,
 	"a person asked to wake it, waking": wokenByClick,
+}
+
+// doormansWake reports whether an event is a doorman's from before 0.2.1,
+// which announced a stamp as WokenByRequest, "request on Service web,
+// waking" or "a person asked on Service web, waking". The operator's own
+// event for that wake is its record. Since 0.2.1 the doorman's are
+// RequestHeld and WakeAsked, which say what it did with the request.
+func doormansWake(reason, message string) bool {
+	return reason == "WokenByRequest" &&
+		(strings.HasPrefix(message, "request on Service ") || strings.HasPrefix(message, "a person asked on Service "))
 }
 
 // targetKey is a Deployment or StatefulSet.
@@ -1094,13 +1104,12 @@ func recentHappenings(events []corev1.Event, targets map[types.UID]string, since
 			continue
 		}
 		message := strings.TrimPrefix(ev.Message, target+": ")
-		kind, cause := happeningWake, wakeCauses[ev.Reason]
-		echoed, heldRequest := requestWakeMessages[message]
-		if heldRequest {
-			cause = echoed
+		if doormansWake(ev.Reason, message) {
+			continue
 		}
-		if ev.Reason == "WokenByRequest" && strings.HasPrefix(message, "a person asked on Service ") {
-			cause = wokenByClick
+		kind, cause := happeningWake, wakeCauses[ev.Reason]
+		if stamped, ok := requestWakeMessages[message]; ok {
+			cause = stamped
 		}
 		switch {
 		case ev.Reason == "Paused":
@@ -1116,7 +1125,7 @@ func recentHappenings(events []corev1.Event, targets map[types.UID]string, since
 			caused[uid], woke[uid] = true, cause
 		}
 		at := eventTime(ev).UTC()
-		if at.Before(since) || heldRequest {
+		if at.Before(since) {
 			continue
 		}
 		out = append(out, happening{At: at, Namespace: key.Namespace, Workload: target, ManagedWorkload: key.Name,

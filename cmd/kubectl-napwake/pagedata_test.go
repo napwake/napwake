@@ -368,7 +368,8 @@ func TestStatusPage_DoormanForAClick(t *testing.T) {
 		30*time.Second)
 	objs := []client.Object{web,
 		statusEvent("preview-7", "web", "Paused", "web: paused", 2*time.Hour),
-		statusEvent("preview-7", "web", "WokenByClick", "a person asked on Service web, waking", 40*time.Second),
+		statusEvent("preview-7", "web", "WakeAsked", "a person asked on Service web, waking", 41*time.Second),
+		statusEvent("preview-7", "web", "WokenByClick", "web: a person asked to wake it, waking", 40*time.Second),
 	}
 
 	got := renderStatusPageData(t, statusPageOf(t, objs...))

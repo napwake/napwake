@@ -317,7 +317,7 @@ The events say what woke it:
 
 | Event | Cause and fix |
 |---|---|
-| `WokenByRequest` | A request through the doorman, whose own event names the Service. A monitor requesting on a timer wakes it each time. Point it elsewhere, put its port in the Service's `napwake.dev/doorman-ignore-ports`, or have the workload [ask before waking](/concepts/wake-on-request/#asking-before-waking) (`napwake.dev/wake: "ask"`) |
+| `WokenByRequest` | A request through the doorman, whose `RequestHeld` event names the Service. A monitor requesting on a timer wakes it each time. Point it elsewhere, put its port in the Service's `napwake.dev/doorman-ignore-ports`, or have the workload [ask before waking](/concepts/wake-on-request/#asking-before-waking) (`napwake.dev/wake: "ask"`) |
 | `WokeByActivity` | An activity annotation changed, or a Prometheus activity query shows activity. A tool refreshing `napwake.dev/last-activity` on a timer, not on real use, wakes it each time |
 | `WokenByDependent` | A dependent woke, which the event names. See what woke that one |
 | `AutoResume` | The forecast expected demand |

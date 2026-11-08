@@ -79,7 +79,7 @@ type stampRecord struct {
 // made it, so it's bound by ctx, the doorman's connections' context, which
 // ends only when shutdown closes them all. waitCtx bounds how long this
 // caller waits for another's stamp.
-func (s *Server) requestWake(ctx, waitCtx context.Context, rt route, from netip.Addr) error {
+func (s *Server) requestWake(ctx, waitCtx context.Context, rt route, from netip.Addr, how wakeFor) error {
 	for {
 		s.mu.Lock()
 		call, inFlight := s.wakeCalls[rt.workload]
@@ -102,7 +102,7 @@ func (s *Server) requestWake(ctx, waitCtx context.Context, rt route, from netip.
 			return call.err
 		}
 
-		call.err = s.stamp(ctx, rt, from)
+		call.err = s.stamp(ctx, rt, from, how)
 		s.mu.Lock()
 		delete(s.wakeCalls, rt.workload)
 		s.mu.Unlock()
@@ -120,7 +120,7 @@ func (s *Server) requestWake(ctx, waitCtx context.Context, rt route, from netip.
 // the operator can learn what depends on the workload. The value always
 // differs from the one recorded when the pause began, which is what the
 // operator takes as a wake.
-func (s *Server) stamp(ctx context.Context, rt route, from netip.Addr) error {
+func (s *Server) stamp(ctx context.Context, rt route, from netip.Addr, how wakeFor) error {
 	ctx, cancel := context.WithTimeout(ctx, apiTimeout)
 	defer cancel()
 
@@ -158,24 +158,53 @@ func (s *Server) stamp(ctx context.Context, rt route, from netip.Addr) error {
 	s.stamped[rt.workload] = stampRecord{began: began, at: now}
 	s.mu.Unlock()
 	// A stamp while the workload pauses calls the pause off, which the
-	// operator's PauseCancelled announces. A workload that asks first is
-	// stamped only for a person's click.
+	// operator's PauseCancelled announces.
 	if s.recorder != nil && won && w.Status.Phase == v1alpha1.PhasePaused {
-		reason, what := reasonWokenByRequest, "request"
-		if rt.asks {
-			reason, what = reasonWokenByClick, "a person asked"
-		}
-		s.recorder.Eventf(&w, nil, "Normal", reason, "Wake", "%s on Service %s, waking", what, rt.service)
+		reason, note := how.announcement(rt.service)
+		s.recorder.Eventf(&w, nil, "Normal", reason, "Wake", "%s", note)
 	}
 	return nil
 }
 
-// The reasons of the event the doorman announces a wake with, one for each
-// cause, as the operator's for the same wake are.
+// wakeFor is what the doorman does with the request a stamp is for, which
+// the event it announces the stamp with says. What woke the workload is the
+// operator's event to say, one for each wake; the doorman's names the
+// Service the request came on.
+type wakeFor int
+
 const (
-	reasonWokenByRequest = "WokenByRequest"
-	reasonWokenByClick   = "WokenByClick"
+	// forHeld is a request held until a pod is Ready.
+	forHeld wakeFor = iota
+	// forPage is a browser shown the waking-up page.
+	forPage
+	// forPassedOn is a request passed straight on as the workload paused.
+	forPassedOn
+	// forClick is a person's click on the asleep page's Wake it.
+	forClick
 )
+
+// The reasons of the doorman's events for a stamp: a request it holds, or
+// answers with the waking-up page, and a person asking it to wake.
+const (
+	reasonRequestHeld = "RequestHeld"
+	reasonWakeAsked   = "WakeAsked"
+)
+
+// announcement is the reason and note of the event for a stamp for how, of
+// a request on service.
+func (how wakeFor) announcement(service string) (string, string) {
+	switch how {
+	case forPage:
+		return reasonRequestHeld, fmt.Sprintf("a browser on Service %s is shown the waking-up page while it wakes",
+			service)
+	case forPassedOn:
+		return reasonRequestHeld, fmt.Sprintf("a request on Service %s came as it paused, and wakes it", service)
+	case forClick:
+		return reasonWakeAsked, fmt.Sprintf("a person asked on Service %s, waking", service)
+	default:
+		return reasonRequestHeld, fmt.Sprintf("a request on Service %s is held while it wakes", service)
+	}
+}
 
 // stampAttempts is how many times patchStamp writes the stamp, the last of
 // them unlocked.

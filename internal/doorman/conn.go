@@ -242,12 +242,12 @@ func (h *heldConn) hold(ctx context.Context) (net.Conn, string) {
 		h.handling.Go(func() {
 			wakeCtx, cancel := context.WithTimeout(ctx, apiTimeout)
 			defer cancel()
-			_ = h.requestWake(ctx, wakeCtx, h.route, h.from) // logged by requestWake
+			_ = h.requestWake(ctx, wakeCtx, h.route, h.from, forPage) // logged by requestWake
 		})
 		h.servePage(waitCtx, req)
 		return nil, resultPage
 	}
-	wakeErr := h.requestWake(ctx, waitCtx, h.route, h.from)
+	wakeErr := h.requestWake(ctx, waitCtx, h.route, h.from, forHeld)
 	h.streamClient()
 	return h.await(ctx, waitCtx, wakeErr)
 }
@@ -276,7 +276,7 @@ func (h *heldConn) await(ctx, waitCtx context.Context, wakeErr error) (net.Conn,
 		}
 		if wakeErr != nil && !current.draining() && h.now().Sub(lastWake) >= wakeRetryInterval {
 			lastWake = h.now()
-			wakeErr = h.requestWake(ctx, waitCtx, h.route, h.from)
+			wakeErr = h.requestWake(ctx, waitCtx, h.route, h.from, forHeld)
 		}
 
 		retry := time.NewTimer(dialRetryInterval)
@@ -386,7 +386,7 @@ func (h *heldConn) seenAsItPauses(ctx context.Context, head []byte) {
 	h.handling.Go(func() {
 		wakeCtx, cancel := context.WithTimeout(ctx, apiTimeout)
 		defer cancel()
-		_ = h.requestWake(ctx, wakeCtx, h.route, h.from) // logged by requestWake
+		_ = h.requestWake(ctx, wakeCtx, h.route, h.from, forPassedOn) // logged by requestWake
 	})
 }
 
