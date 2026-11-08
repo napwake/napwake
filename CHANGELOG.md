@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A dependency labelled within seconds of its dependent: `kubectl describe` on the dependent now shows the `DependenciesLearned` event saying the dependency is `now managed by Napwake, so woken and held with it`. Kubernetes' event recorder had folded that event into the dependent's earlier one, which said the dependency `isn't managed by Napwake`, so `describe` kept the old text, counted twice, for up to an hour. The new event names the dependency's ManagedWorkload as its related object, which keeps the two apart
+
 ## [0.2.0] - 2026-11-08
 
 Napwake pauses idle Kubernetes workloads in staging, preview and dev, and wakes them on the first request. It never deletes a workload or its data.
