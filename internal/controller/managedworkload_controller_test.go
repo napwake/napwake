@@ -36,6 +36,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -1424,6 +1425,37 @@ func lifecycleReconciler(t *testing.T, workload *v1alpha1.ManagedWorkload, repli
 func realPauserReconciler(t *testing.T, workload *v1alpha1.ManagedWorkload, objs ...client.Object) *Reconciler {
 	t.Helper()
 	return lifecycleReconciler(t, workload, 0, interceptor.Funcs{}, objs...)
+}
+
+// The operator reads one clock: the autoscaler finder SetupWithManager
+// gives it relies on KEDA's absence, as it reuses what it lists, for as
+// long by the reconciler's clock as everything else the reconciler times.
+func TestReconciler_FindsAutoscalersByItsClock(t *testing.T) {
+	lookups := 0
+	c := fakeClientBuilder(testScheme(t)).WithInterceptorFuncs(interceptor.Funcs{
+		List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+			if _, ok := list.(*unstructured.UnstructuredList); ok {
+				lookups++
+				return &meta.NoKindMatchError{GroupKind: kedaScaledObject.GroupKind()}
+			}
+			return c.List(ctx, list, opts...)
+		}}).Build()
+	now := monotonic(fixedTime)
+	r := &Reconciler{Client: c, clock: func() time.Time { return now }}
+	r.initDefaults()
+	find := func() {
+		t.Helper()
+		_, _, err := r.autoscalers.Find(context.Background(), "default", v1alpha1.TargetKindDeployment, "api")
+		require.NoError(t, err)
+	}
+
+	find()
+	now = now.Add(10*time.Minute - time.Second)
+	find()
+	assert.Equal(t, 1, lookups, "KEDA's absence relied on for 10 minutes by the reconciler's clock")
+	now = now.Add(time.Second)
+	find()
+	assert.Equal(t, 2, lookups, "and looked for again once they've passed")
 }
 
 // failStatusWrite fails the first status write of a ManagedWorkload that
