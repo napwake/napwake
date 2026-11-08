@@ -23,6 +23,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -33,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/metrics"
 )
 
 // A reconcile stopped as the operator stops, its context cancelled, isn't
@@ -92,6 +94,49 @@ func TestRouteDoorman_AStoppedReconcileIsNoFailure(t *testing.T) {
 			}
 			assert.Zero(t, recheck)
 			assert.NotContains(t, logs.String(), `"level":"error"`)
+		})
+	}
+}
+
+// A reconcile stopped as the operator stops returns no error, which
+// controller-runtime would log as "Reconciler error", and counts none in
+// napwake_reconcile_errors_total. A cancelled call within a reconcile that
+// goes on is still an error.
+func TestReconcile_AStoppedReconcileIsNoError(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		cancel  bool
+		wantErr bool
+	}{
+		{name: "the reconcile stopped", cancel: true},
+		{name: "a call cancelled within a reconcile that goes on", wantErr: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newTestReconcilerWithReplicas(t, pausedWorkload(v1alpha1.PhasePaused), &stubPauser{resumeDone: true}, 0)
+			r.Client = interceptor.NewClient(r.Client.(client.WithWatch), interceptor.Funcs{
+				SubResourceUpdate: func(context.Context, client.Client, string, client.Object,
+					...client.SubResourceUpdateOption) error {
+					return context.Canceled
+				}})
+			var logs bytes.Buffer
+			ctx, cancel := context.WithCancel(log.IntoContext(context.Background(), zap.New(zap.WriteTo(&logs))))
+			defer cancel()
+			if tt.cancel {
+				cancel()
+			}
+			counted := testutil.ToFloat64(metrics.ReconcileErrors.WithLabelValues("managedworkload"))
+
+			_, err := r.Reconcile(ctx, reconcileFor("api"))
+
+			after := testutil.ToFloat64(metrics.ReconcileErrors.WithLabelValues("managedworkload"))
+			if tt.wantErr {
+				require.ErrorIs(t, err, context.Canceled)
+				assert.Equal(t, counted+1, after)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, counted, after)
+			assert.Contains(t, logs.String(), "stopped reconciling, as the reconcile was stopped")
 		})
 	}
 }

@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- The operator no longer logs `routing requests through the doorman` as an error, or marks WakeOnRequest `RoutingFailed` with an event, for a reconcile stopped as it shuts down: a rollout logged up to two dozen errors that were only cancelled requests. It logs that at info, and the next reconcile takes the routing up again. Every other routing error is reported as before
+- The operator no longer logs a reconcile stopped as it shuts down as an error: `routing requests through the doorman`, with WakeOnRequest `RoutingFailed` and an event, or controller-runtime's `Reconciler error` for a status write cut short. A rollout logged up to two dozen errors that were only cancelled requests. It logs them at info, counts none in `napwake_reconcile_errors_total`, and the next reconcile goes on. Every other error is reported as before
 
 ## [0.2.0] - 2026-11-08
 

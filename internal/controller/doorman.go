@@ -183,9 +183,8 @@ func (r *Reconciler) routeDoorman(ctx context.Context, workload *v1alpha1.Manage
 		r.doormanFailures.reset(workload.UID)
 		return recheck
 	}
-	if errors.Is(err, context.Canceled) && ctx.Err() != nil {
-		// The reconcile was stopped, as it is when the operator stops, and
-		// nothing refused the routing: the next reconcile takes it up again.
+	if stopped(ctx, err) {
+		// Nothing refused the routing: the next reconcile takes it up again.
 		log.FromContext(ctx).Info("stopped routing requests through the doorman, as the reconcile was stopped",
 			"workload", workload.Name, "namespace", workload.Namespace)
 		return 0
@@ -198,6 +197,14 @@ func (r *Reconciler) routeDoorman(ctx context.Context, workload *v1alpha1.Manage
 		r.announceRouting(ctx, workload, reasonRoutingFailed, "requests may not wake the workload: %v", err)
 	}
 	return r.doormanFailures.next(workload.UID)
+}
+
+// stopped says whether err is only the reconcile being stopped, its own
+// context cancelled, as every reconcile in flight is when the operator
+// stops. That's no failure to report: the next reconcile goes on. A call
+// cancelled within a reconcile that goes on, or one that timed out, is.
+func stopped(ctx context.Context, err error) bool {
+	return errors.Is(err, context.Canceled) && errors.Is(ctx.Err(), context.Canceled)
 }
 
 // recordTurnedAway brings status.turnedAway up to date for a workload whose
