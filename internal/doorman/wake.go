@@ -318,20 +318,38 @@ func pauseBegan(w *v1alpha1.ManagedWorkload) time.Time {
 	return pausedAt(w)
 }
 
-// unservedWarning is what the RequestNotServed warning says for one result
-// of a held connection closed without reaching its workload, and the action
-// it's recorded with. The events.k8s.io recorder folds a warning into an
-// earlier one with the same action, keeping the earlier one's message, so a
-// cause that needs its own message has its own action.
+// Why a held connection was closed without reaching its workload, which
+// its RequestNotServed warning says.
+const (
+	// unservedSlow is no pod Ready within maxWait: resultTimeout.
+	unservedSlow = "slow"
+	// unservedUnreachable is Ready pods that couldn't be reached: a
+	// resultError.
+	unservedUnreachable = "unreachable"
+	// unservedUnstamped is a wake that couldn't be recorded on the
+	// ManagedWorkload: a resultError too.
+	unservedUnstamped = "unstamped"
+	// unservedDrained is the route drained with nothing Ready:
+	// resultDrained.
+	unservedDrained = "drained"
+)
+
+// unservedWarning is what the RequestNotServed warning says for one cause,
+// and the action it's recorded with. The events.k8s.io recorder folds a
+// warning into an earlier one of the same action about the same version of
+// the workload, keeping the earlier one's message, so each cause has an
+// action of its own.
 type unservedWarning struct {
 	action, why string
 }
 
-// unservedWarnings are the results that warn, by result.
+// unservedWarnings are the warnings, by cause.
 var unservedWarnings = map[string]unservedWarning{
-	resultTimeout: {action: "Wake", why: "the workload wasn't Ready within maxWait; the wake continues"},
-	resultError:   {action: "Wake", why: "the workload couldn't be reached"},
-	resultDrained: {action: "Hold", why: "the workload stopped being routed through the doorman before any of its " +
+	unservedSlow:        {action: "Wake", why: "the workload wasn't Ready within maxWait; the wake continues"},
+	unservedUnreachable: {action: "Connect", why: "the workload's Ready pods couldn't be reached"},
+	unservedUnstamped: {action: "Stamp", why: "the doorman couldn't record the wake on the ManagedWorkload, so it " +
+		"may still be asleep; the doorman's log says why"},
+	unservedDrained: {action: "Hold", why: "the workload stopped being routed through the doorman before any of its " +
 		"pods was Ready, as when something else, such as an HPA with minReplicas 0, takes it back to zero as it wakes"},
 }
 
@@ -343,11 +361,11 @@ type warnKey struct {
 }
 
 // warnUnserved emits a warning event on the workload for a held connection
-// that was closed without reaching it, at most once per unservedEventInterval
-// for each action. The metrics count every one; the event is what shows in
-// kubectl describe.
-func (s *Server) warnUnserved(ctx context.Context, rt route, result string, waited time.Duration) {
-	warning, ok := unservedWarnings[result]
+// that was closed without reaching it, for cause, at most once per
+// unservedEventInterval for each. The metrics count every one; the event is
+// what shows in kubectl describe.
+func (s *Server) warnUnserved(ctx context.Context, rt route, cause string, waited time.Duration) {
+	warning, ok := unservedWarnings[cause]
 	if s.recorder == nil || !ok {
 		return
 	}

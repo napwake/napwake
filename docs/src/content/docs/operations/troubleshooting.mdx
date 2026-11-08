@@ -220,7 +220,7 @@ If it's `DoormanRouted` and requests still fail ([What the caller sees](/concept
 
 | The caller sees | Cause and fix |
 |---|---|
-| A close after a while, no response, or a `502` from ingress-nginx | Not Ready by `wake.maxWait`, or pods unreachable, as a `RequestNotServed` warning says. Raise `maxWait`, or see why pods are slow. Counted by `napwake_doorman_wakes_total{result=~"timeout\|error"}` |
+| A close after a while, no response, or a `502` from ingress-nginx | Not Ready by `wake.maxWait`, pods unreachable, or a wake the doorman couldn't record on the ManagedWorkload, as a `RequestNotServed` warning says. For the last, the doorman's log has the API server's error. Raise `maxWait`, or see why pods are slow. Counted by `napwake_doorman_wakes_total{result=~"timeout\|error"}` |
 | A close at once, nothing sent | A [limit](/concepts/wake-on-request/#limits), counted by `napwake_doorman_wakes_total{result="limited"}` |
 | A close a few seconds into a wake, nothing sent | The workload went back to zero before a pod was Ready, as a `RequestNotServed` warning says, counted by `napwake_doorman_wakes_total{result="drained"}`. Most often an HPA with `minReplicas: 0` took it there. Keep `minReplicas` at 1 or more and let Napwake do the pausing ([When the HPA scales to zero](/guides/autoscalers/#when-the-hpa-scales-to-zero)) |
 | The app's own error, such as a `503`, right after a wake | Pods Ready before the app was, as with no readiness probe. A `NoReadinessProbe` warning, and the `WakeOnRequest` message, say so. Add a [readiness probe](/concepts/wake-on-request/#readiness-probes) that passes once it can serve |

@@ -132,9 +132,10 @@ func (s *Server) handle(ctx context.Context, port int32, rt route, conn net.Conn
 	waited := s.now().Sub(start)
 	if upstream == nil {
 		s.record(rt, result, waited)
-		if _, ok := unservedWarnings[result]; ok {
-			logger.Info("closing held connection", "result", result, "waited", waited.Round(time.Millisecond).String())
-			s.warnUnserved(ctx, rt, result, waited)
+		if cause, ok := h.unserved(result); ok {
+			logger.Info("closing held connection", "result", result, "cause", cause,
+				"waited", waited.Round(time.Millisecond).String())
+			s.warnUnserved(ctx, rt, cause, waited)
 		}
 		return
 	}
@@ -186,6 +187,28 @@ type heldConn struct {
 	// passedOn says the connection went straight to a Ready pod, before
 	// anything was read from it.
 	passedOn bool
+
+	// unstamped says it ended in an error because its wake couldn't be
+	// recorded, rather than because the pods couldn't be reached.
+	unstamped bool
+}
+
+// unserved is why a connection that ended with result wasn't served, for
+// its warning, if that's a result that warns.
+func (h *heldConn) unserved(result string) (string, bool) {
+	switch result {
+	case resultTimeout:
+		return unservedSlow, true
+	case resultError:
+		if h.unstamped {
+			return unservedUnstamped, true
+		}
+		return unservedUnreachable, true
+	case resultDrained:
+		return unservedDrained, true
+	default:
+		return "", false
+	}
 }
 
 // hold decides what becomes of the connection, and returns the connection
@@ -297,7 +320,10 @@ func (h *heldConn) await(ctx, waitCtx context.Context, wakeErr error) (net.Conn,
 				return nil, resultCanceled
 			case errors.Is(wakeErr, errWakeLimited) || proxyLimited:
 				return nil, resultLimited
-			case dialFailed || wakeErr != nil && !errors.Is(wakeErr, errNotAsleep):
+			case dialFailed:
+				return nil, resultError
+			case wakeErr != nil && !errors.Is(wakeErr, errNotAsleep):
+				h.unstamped = true
 				return nil, resultError
 			default:
 				return nil, resultTimeout

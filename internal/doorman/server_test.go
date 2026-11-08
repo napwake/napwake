@@ -750,26 +750,68 @@ func TestServer_WarnsWhenAWakeEndsBackAtZero(t *testing.T) {
 		"minReplicas 0, takes it back to zero as it wakes", notServed(written())[0])
 }
 
-// A wake that ends back at zero is told apart from a slow one just before
-// it, about the same version of the workload. The doorman warns once a
-// minute for each cause, and the recorder would fold a warning into an
-// earlier one of the same action, keeping the earlier one's message.
-func TestServer_WarnsOfAWakeBackAtZeroApartFromASlowOne(t *testing.T) {
+// Each cause of a request not served is warned of apart, though they come
+// within a minute, about the same version of the workload. The doorman
+// warns once a minute for each, and the recorder would fold a warning into
+// an earlier one of the same action, keeping the earlier one's message.
+func TestServer_WarnsOfEachUnservedCauseApart(t *testing.T) {
 	recorder, written := recordedEvents(t)
 	s, _ := newTestServer(t, nil, pausedWorkload("api", freePort(t), time.Minute))
 	s.recorder = recorder
 	ctx := context.Background()
 	rt := route{workload: apiKey, service: "api"}
 
-	s.warnUnserved(ctx, rt, resultTimeout, time.Minute)
-	s.warnUnserved(ctx, rt, resultDrained, 3*time.Second)
+	s.warnUnserved(ctx, rt, unservedSlow, time.Minute)
+	s.warnUnserved(ctx, rt, unservedUnreachable, 2*time.Minute)
+	s.warnUnserved(ctx, rt, unservedUnstamped, 3*time.Minute)
+	s.warnUnserved(ctx, rt, unservedDrained, 3*time.Second)
 
-	if !assert.Eventually(t, func() bool { return len(notServed(written())) == 2 }, 5*time.Second, 10*time.Millisecond) {
-		t.Fatalf("want two RequestNotServed warnings, have %q", notServed(written()))
+	if !assert.Eventually(t, func() bool { return len(notServed(written())) == 4 }, 5*time.Second, 10*time.Millisecond) {
+		t.Fatalf("want four RequestNotServed warnings, have %q", notServed(written()))
 	}
 	notes := strings.Join(notServed(written()), "\n")
 	assert.Contains(t, notes, "closed after 1 minute: the workload wasn't Ready within maxWait")
+	assert.Contains(t, notes, "closed after 2 minutes: the workload's Ready pods couldn't be reached")
+	assert.Contains(t, notes, "closed after 3 minutes: the doorman couldn't record the wake")
 	assert.Contains(t, notes, "closed after 3 seconds: the workload stopped being routed through the doorman")
+}
+
+// A held request whose wake couldn't be recorded, or whose woken pods
+// couldn't be reached, is warned of with what happened.
+func TestServer_SaysWhyAHeldRequestWasntServed(t *testing.T) {
+	tests := []struct {
+		name string
+		wrap func(client.WithWatch) client.WithWatch
+		objs []client.Object
+		says string
+	}{
+		{name: "the stamp failed", wrap: failPatches(1000, nil),
+			says: "the doorman couldn't record the wake on the ManagedWorkload, so it may still be asleep"},
+		{name: "the pods couldn't be reached", objs: []client.Object{readySlice(refusingPort(t))},
+			says: "the workload's Ready pods couldn't be reached"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			port := freePort(t)
+			recorder, written := recordedEvents(t)
+			s, _ := newTestServer(t, tt.wrap, append(tt.objs, pausedWorkload("api", port, 300*time.Millisecond))...)
+			s.recorder = recorder
+			run(t, s)
+			before := wakes(resultError)
+
+			conn := dial(t, port)
+			send(t, conn, "hello\n")
+			closedWithin(t, conn)
+
+			assert.Eventually(t, func() bool { return wakes(resultError) == before+1 },
+				5*time.Second, 10*time.Millisecond, "counted as resultError")
+			if !assert.Eventually(t, func() bool { return len(notServed(written())) == 1 }, 5*time.Second,
+				10*time.Millisecond) {
+				t.Fatalf("want one RequestNotServed warning, have %q", notServed(written()))
+			}
+			assert.Contains(t, notServed(written())[0], tt.says)
+		})
+	}
 }
 
 const browserGET = "GET /orders HTTP/1.1\r\nHost: shop.example.dev\r\nAccept: text/html\r\nSec-Fetch-Mode: navigate\r\n\r\n"
@@ -1144,7 +1186,7 @@ func TestServer_RetriesAFailedWake(t *testing.T) {
 // publishNotReadyAddresses. A refused dial is retried until maxWait.
 func TestServer_RetriesAFailedDial(t *testing.T) {
 	port := freePort(t)
-	_, c := startServer(t, pausedWorkload("api", port, time.Minute), readySlice(freePort(t)))
+	_, c := startServer(t, pausedWorkload("api", port, time.Minute), readySlice(refusingPort(t)))
 
 	conn := dial(t, port)
 	send(t, conn, "hello\n")
