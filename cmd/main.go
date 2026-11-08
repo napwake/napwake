@@ -729,11 +729,20 @@ func operatorCacheOptions(watched []string, doormanNamespace string) cache.Optio
 }
 
 // doormanCacheOptions adds to cacheOptions the doorman's view of
-// EndpointSlices (see doorman.EndpointSliceCache).
+// EndpointSlices and ManagedWorkloads (see doorman.EndpointSliceCache and
+// doorman.TrimManagedWorkload). ManagedWorkloads are trimmed by the default
+// transform, not one of their own: a cache with a ByObject entry for them
+// can't be made before their CRD is.
 func doormanCacheOptions(watched []string) cache.Options {
 	opts := cacheOptions(watched)
 	opts.ByObject = map[client.Object]cache.ByObject{
 		&discoveryv1.EndpointSlice{}: doorman.EndpointSliceCache(),
+	}
+	opts.DefaultTransform = func(in any) (any, error) {
+		if _, ok := in.(*v1alpha1.ManagedWorkload); ok {
+			return doorman.TrimManagedWorkload(in)
+		}
+		return trimForCache(in)
 	}
 	return opts
 }

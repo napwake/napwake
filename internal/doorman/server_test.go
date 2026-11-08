@@ -179,10 +179,45 @@ func newTestServer(t *testing.T, wrap func(client.WithWatch) client.WithWatch, o
 	if wrap != nil {
 		c = wrap(c)
 	}
-	s := NewServer(c, nil, Options{Host: "127.0.0.1"})
+	s := NewServer(cachedReads(t, c), nil, Options{Host: "127.0.0.1"})
 	s.backends.allowed = func(netip.Addr) bool { return true }
 	s.acceptFor, s.grace = 0, 100*time.Millisecond
 	return s, c
+}
+
+// cachedReads is c as the doorman reads it through its cache: each
+// ManagedWorkload cut down as TrimManagedWorkload holds it. Every test of a
+// doorman newTestServer starts shows it works from what it caches.
+func cachedReads(t *testing.T, c client.WithWatch) client.WithWatch {
+	t.Helper()
+	trim := func(w *v1alpha1.ManagedWorkload) {
+		trimmed, err := TrimManagedWorkload(w)
+		require.NoError(t, err)
+		*w = *trimmed.(*v1alpha1.ManagedWorkload)
+	}
+	return interceptor.NewClient(c, interceptor.Funcs{
+		Get: func(ctx context.Context, cl client.WithWatch, key client.ObjectKey, obj client.Object,
+			opts ...client.GetOption) error {
+			if err := cl.Get(ctx, key, obj, opts...); err != nil {
+				return err
+			}
+			if w, ok := obj.(*v1alpha1.ManagedWorkload); ok {
+				trim(w)
+			}
+			return nil
+		},
+		List: func(ctx context.Context, cl client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+			if err := cl.List(ctx, list, opts...); err != nil {
+				return err
+			}
+			if ws, ok := list.(*v1alpha1.ManagedWorkloadList); ok {
+				for i := range ws.Items {
+					trim(&ws.Items[i])
+				}
+			}
+			return nil
+		},
+	})
 }
 
 // run starts s and returns a function that stops it and waits for it.
@@ -406,6 +441,125 @@ func TestTrimEndpointSlice_KeepsWhatBackendsRead(t *testing.T) {
 	assert.Equal(t, backendsOf(full), backendsOf(trimmed.(*discoveryv1.EndpointSlice)))
 	assert.Equal(t, ReadyPodEndpoints([]discoveryv1.EndpointSlice{*full}),
 		ReadyPodEndpoints([]discoveryv1.EndpointSlice{*trimmed.(*discoveryv1.EndpointSlice)}))
+}
+
+// The doorman's cache keeps only what it reads of each ManagedWorkload:
+// not the forecast's state, the costs or the conditions, which are most of
+// its size. Every test of a running doorman reads what this keeps.
+func TestTrimManagedWorkload_KeepsWhatTheDoormanReads(t *testing.T) {
+	full := pausedWorkload("api", 20417, 30*time.Second)
+	began := metav1.NewTime(time.Now().Add(-61 * time.Minute))
+	moved := metav1.NewTime(time.Now().Add(-time.Hour))
+	full.UID, full.ResourceVersion, full.Generation = "4f1c9a52", "1234", 3
+	full.Labels = map[string]string{v1alpha1.LabelManaged: "true"}
+	full.Finalizers = []string{"napwake.dev/cleanup"}
+	full.OwnerReferences = []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "Deployment", Name: "api"}}
+	full.ManagedFields = []metav1.ManagedFieldsEntry{{Manager: "napwake"}}
+	full.Annotations = map[string]string{
+		v1alpha1.AnnotationLastRequest:     "2026-11-08T09:00:00Z",
+		v1alpha1.AnnotationLastRequestFrom: "10.244.0.17",
+		v1alpha1.AnnotationTurnedAway:      `{"pausedAt":"2026-11-08T08:00:00Z","requests":3}`,
+		v1alpha1.AnnotationLastActivity:    "2026-11-08T07:00:00Z",
+	}
+	full.Spec.Wake.Mode = v1alpha1.WakeOnAsk
+	full.Spec.Wake.Page = ptr.To(false)
+	full.Spec.IdlePolicy = &v1alpha1.IdlePolicySpec{AutoResume: true}
+	full.Status.LastTransitionTime = &moved
+	full.Status.Pause.StartedAt = &began
+	full.Status.Pause.RoutedAt = &began
+	full.Status.Pause.WakeAnnotations = &v1alpha1.WakeAnnotations{
+		Workload: map[string]string{
+			v1alpha1.AnnotationLastRequest:  "2026-11-08T07:30:00Z",
+			v1alpha1.AnnotationLastActivity: "2026-11-08T07:00:00Z",
+		},
+		Target: map[string]string{v1alpha1.AnnotationLastActivity: "2026-11-08T07:00:00Z"},
+	}
+	full.Status.Conditions = []metav1.Condition{{Type: "WakeOnRequest", Status: metav1.ConditionTrue, Reason: "DoormanRouted"}}
+	full.Status.Prediction = &v1alpha1.PredictionStatus{DailyPhase: "Active", State: strings.Repeat("x", 3600)}
+	full.Status.Activity = &v1alpha1.ActivityStatus{LastActivitySource: v1alpha1.ActivitySourceRequest}
+
+	trimmed, err := TrimManagedWorkload(full.DeepCopy())
+	require.NoError(t, err)
+
+	assert.Equal(t, &v1alpha1.ManagedWorkload{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "api", Namespace: "dev", UID: "4f1c9a52", ResourceVersion: "1234",
+			Annotations: map[string]string{
+				v1alpha1.AnnotationLastRequest: "2026-11-08T09:00:00Z",
+				v1alpha1.AnnotationTurnedAway:  `{"pausedAt":"2026-11-08T08:00:00Z","requests":3}`,
+			},
+		},
+		Spec: v1alpha1.ManagedWorkloadSpec{Wake: full.Spec.Wake},
+		Status: v1alpha1.ManagedWorkloadStatus{
+			Phase:              v1alpha1.PhasePaused,
+			LastTransitionTime: &moved,
+			Doorman:            full.Status.Doorman,
+			Pause: &v1alpha1.PauseStatus{
+				StartedAt: &began,
+				PausedAt:  full.Status.Pause.PausedAt,
+				WakeAnnotations: &v1alpha1.WakeAnnotations{
+					Workload: map[string]string{v1alpha1.AnnotationLastRequest: "2026-11-08T07:30:00Z"},
+				},
+			},
+		},
+	}, trimmed)
+
+	again, err := TrimManagedWorkload(trimmed)
+	require.NoError(t, err)
+	assert.Equal(t, trimmed, again, "trimming what's trimmed changes nothing")
+
+	bare := pausedWorkload("api", 20417, time.Minute)
+	bare.Status.Pause.WakeAnnotations = &v1alpha1.WakeAnnotations{}
+	trimmed, err = TrimManagedWorkload(bare)
+	require.NoError(t, err)
+	assert.NotNil(t, trimmed.(*v1alpha1.ManagedWorkload).Status.Pause.WakeAnnotations,
+		"a pause that recorded no stamp still says it recorded the annotations")
+}
+
+// Each sync reads the cache's own ManagedWorkloads, not copies, which would
+// allocate the cache's size every RouteSyncInterval. So it must change none
+// of them.
+func TestServer_SyncsRoutesFromTheCachesOwnWorkloads(t *testing.T) {
+	var listed []*v1alpha1.ManagedWorkloadList
+	var copied []bool
+	var mu sync.Mutex
+	wrap := func(c client.WithWatch) client.WithWatch {
+		return interceptor.NewClient(c, interceptor.Funcs{List: func(ctx context.Context, cl client.WithWatch,
+			list client.ObjectList, opts ...client.ListOption) error {
+			err := cl.List(ctx, list, opts...)
+			if ws, ok := list.(*v1alpha1.ManagedWorkloadList); ok {
+				o := (&client.ListOptions{}).ApplyOptions(opts)
+				mu.Lock()
+				listed = append(listed, ws)
+				copied = append(copied, o.UnsafeDisableDeepCopy == nil || !*o.UnsafeDisableDeepCopy)
+				mu.Unlock()
+			}
+			return err
+		}})
+	}
+	pausing := pausingWorkload(freePort(t))
+	pausing.Name = "billing"
+	s, _ := newTestServer(t, wrap, pausedWorkload("api", freePort(t), time.Minute), pausing)
+	ctx := context.Background()
+	t.Cleanup(func() {
+		for _, l := range s.listeners {
+			_ = l.Close()
+		}
+	})
+
+	require.NoError(t, s.syncRoutes(ctx, ctx))
+
+	mu.Lock()
+	require.Len(t, listed, 1)
+	read, wasCopied := listed[0], copied[0]
+	mu.Unlock()
+	assert.False(t, wasCopied, "listed with client.UnsafeDisableDeepCopy")
+	var want v1alpha1.ManagedWorkloadList
+	require.NoError(t, s.client.List(ctx, &want))
+	assert.Equal(t, want.Items, read.Items, "the sync changes nothing it read")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	assert.Len(t, s.routes, 2)
 }
 
 // Pod networks are allocated from private, unique-local and shared address
@@ -650,6 +804,23 @@ func TestServer_ServesThePageToABrowser(t *testing.T) {
 	// the caller has its answer.
 	assert.Eventually(t, func() bool { return wakes(resultPage) == before+1 },
 		5*time.Second, 10*time.Millisecond, "counted as resultPage")
+}
+
+// The waking-up page says how long the workload has been starting, from
+// when it went Resuming.
+func TestServer_ThePageSaysHowLongItHasBeenStarting(t *testing.T) {
+	port := freePort(t)
+	clock := &testClock{now: time.Now()}
+	w := pausedWorkload("api", port, time.Minute)
+	w.Status.Phase = v1alpha1.PhaseResuming
+	w.Status.LastTransitionTime = &metav1.Time{Time: clock.Now().Add(-75 * time.Second)}
+	startServerWith(t, func(s *Server) { s.now = clock.Now }, w)
+
+	conn := dial(t, port)
+	send(t, conn, browserGET)
+	_, body := readResponse(t, conn)
+
+	assert.Contains(t, body, `Starting<span class="t">1m 15s</span>`)
 }
 
 // Single sign-on cookies can take a browser's headers past what the doorman

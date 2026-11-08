@@ -880,7 +880,7 @@ func TestServer_CountsTheRequestsItTurnsAway(t *testing.T) {
 	assert.Equal(t, int64(3), got.Requests, "a person asked isn't turned away")
 	assert.True(t, got.PausedAt.Equal(&metav1.Time{Time: pausedAt(w)}), "counted for the pause")
 
-	another := NewServer(c, nil, Options{})
+	another := NewServer(cachedReads(t, c), nil, Options{})
 	another.turnedAway(route{workload: apiKey, pausedAt: pausedAt(w)})
 	another.flushTurnedAway(context.Background())
 	assert.Equal(t, int64(4), turnedAwayOf(t, c).Requests, "another replica's add to it")

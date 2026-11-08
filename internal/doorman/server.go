@@ -490,8 +490,11 @@ func (s *Server) shutdown(cancelConns context.CancelFunc, grace time.Duration) {
 // or whose port goes to another Service, drains for RouteDrain, and until
 // it's over, it counts as one of the port's claims.
 func (s *Server) syncRoutes(ctx, connCtx context.Context) error {
+	// The cache's own objects, not copies: a sync every RouteSyncInterval
+	// copying every ManagedWorkload would allocate the cache's size each
+	// time. They're only read.
 	var list v1alpha1.ManagedWorkloadList
-	if err := s.client.List(ctx, &list); err != nil {
+	if err := s.client.List(ctx, &list, client.UnsafeDisableDeepCopy); err != nil {
 		return fmt.Errorf("listing managed workloads: %w", err)
 	}
 	now := s.now()
