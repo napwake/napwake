@@ -397,6 +397,25 @@ func doormansWake(reason, message string) bool {
 		(strings.HasPrefix(message, "request on Service ") || strings.HasPrefix(message, "a person asked on Service "))
 }
 
+// doormansStamp reports whether an event is the doorman's for a stamp it
+// made, which names the Service the request came on: RequestHeld or
+// WakeAsked, or WokenByRequest from a doorman before 0.2.1.
+func doormansStamp(reason, message string) bool {
+	return reason == "RequestHeld" || reason == "WakeAsked" || doormansWake(reason, message)
+}
+
+// doormanPairWindow is how long before the operator's event for a wake by a
+// request or a click the doorman's for the same ManagedWorkload may come to
+// be taken for that wake's: the doorman's comes as its stamp lands, the
+// operator's once it has begun the wake, usually within a second.
+const doormanPairWindow = 5 * time.Second
+
+// stampEvent is the doorman's latest event for a stamp on a ManagedWorkload.
+type stampEvent struct {
+	at      time.Time
+	message string
+}
+
 // targetKey is a Deployment or StatefulSet.
 type targetKey struct {
 	namespace string
@@ -1091,25 +1110,35 @@ func recentHappenings(events []corev1.Event, targets map[types.UID]string, since
 	[]happening, map[types.UID]string) {
 	caused := map[types.UID]bool{}
 	woke := map[types.UID]string{}
+	stamps := map[types.UID]stampEvent{}
 	var out []happening
 	for i := range events {
 		ev := &events[i]
-		if !happenings[ev.Reason] || strings.HasPrefix(ev.Message, "[dry-run]") {
-			continue
-		}
 		key := client.ObjectKey{Namespace: ev.InvolvedObject.Namespace, Name: ev.InvolvedObject.Name}
 		uid := ev.InvolvedObject.UID
 		target, current := targets[uid]
-		if !current {
+		if !current || strings.HasPrefix(ev.Message, "[dry-run]") {
+			continue
+		}
+		if doormansStamp(ev.Reason, ev.Message) {
+			stamps[uid] = stampEvent{at: eventTime(ev), message: ev.Message}
+			continue
+		}
+		if !happenings[ev.Reason] {
 			continue
 		}
 		message := strings.TrimPrefix(ev.Message, target+": ")
-		if doormansWake(ev.Reason, message) {
-			continue
-		}
 		kind, cause := happeningWake, wakeCauses[ev.Reason]
 		if stamped, ok := requestWakeMessages[message]; ok {
 			cause = stamped
+		}
+		// The operator's event is the record of what woke it; the
+		// doorman's for the same wake, just before, names the Service.
+		if s, ok := stamps[uid]; ok && (cause == wokenByRequest || cause == wokenByClick) {
+			if gap := eventTime(ev).Sub(s.at); gap >= 0 && gap <= doormanPairWindow {
+				message = s.message
+				delete(stamps, uid)
+			}
 		}
 		switch {
 		case ev.Reason == "Paused":

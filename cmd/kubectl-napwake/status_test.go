@@ -206,7 +206,7 @@ Needs attention:
 Recent pauses and wakes:
   30m ago   preview-7/worker   scaled up to 2 replicas by argocd-controller outside Napwake; counted as activity
   3h ago    preview-42/api     paused
-  5h ago    preview-42/api     a request is waiting, waking
+  5h ago    preview-42/api     request on Service api, waking
 `, out)
 }
 
