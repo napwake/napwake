@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A dependency's forecast now learns its dependents' use. An hour a dependent holding it is in use counts as busy for the dependency too, whatever its own CPU, and a dependent's wake, which stamps it with an activity annotation, no longer counts as its demand. Before, a dependency whose CPU stays under `cpuThreshold` learned the hour a request woke it with its dependent as busy and its other load hours as quiet, and the hour its dependent's `autoResume` woke it in as busy. On the first morning the forecast woke them ahead, its forecast stopped acting. On a test cluster, 9 of a shop's 11 did. A dependency whose forecast learned the old way relearns once after the upgrade, as for a change of hours. It makes a regime change on its first day of load, and acts again about a week later.
+
 ## [0.2.0] - 2026-11-08
 
 Napwake pauses idle Kubernetes workloads in staging, preview and dev, and wakes them on the first request. It never deletes a workload or its data.
