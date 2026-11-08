@@ -195,6 +195,10 @@ type Server struct {
 	healthCheckAgents []string
 	checkAPI          func(ctx context.Context) error
 
+	// listen opens a route's listener: net.Listen, but for tests, which
+	// hand over a port they hold so no other test can take it first.
+	listen func(network, address string) (net.Listener, error)
+
 	backends  *backends
 	admission *admission
 	apiReader client.Reader
@@ -261,6 +265,7 @@ func NewServer(c client.Client, recorder events.EventRecorder, opts Options) *Se
 
 		healthCheckAgents: healthCheckAgents(opts.HealthCheckAgents),
 		checkAPI:          opts.CheckAPI,
+		listen:            net.Listen,
 		admission:         newAdmission(defaultLimits),
 		routes:            map[int32]route{},
 		drains:            map[int32]route{},
@@ -586,7 +591,7 @@ func (s *Server) syncListeners(connCtx context.Context, now time.Time) error {
 		if _, ok := s.listeners[port]; ok {
 			continue
 		}
-		l, err := net.Listen("tcp", net.JoinHostPort(s.host, strconv.Itoa(int(port))))
+		l, err := s.listen("tcp", net.JoinHostPort(s.host, strconv.Itoa(int(port))))
 		if err != nil {
 			if _, ok := s.listenFailed[port]; !ok {
 				s.listenFailed[port] = now

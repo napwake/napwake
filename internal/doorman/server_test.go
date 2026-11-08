@@ -77,16 +77,6 @@ func apiPod(addrs ...string) *corev1.Pod {
 	return pod
 }
 
-// freePort returns a port nothing is listening on, for the doorman to claim.
-func freePort(t *testing.T) int32 {
-	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	port := l.Addr().(*net.TCPAddr).Port
-	require.NoError(t, l.Close())
-	return int32(port)
-}
-
 // echoServer is the woken workload: it echoes what it's sent, and counts
 // the connections it accepts.
 func echoServer(t *testing.T) (int32, *atomic.Int32) {
@@ -181,6 +171,7 @@ func newTestServer(t *testing.T, wrap func(client.WithWatch) client.WithWatch, o
 		c = wrap(c)
 	}
 	s := NewServer(cachedReads(t, c), nil, Options{Host: "127.0.0.1"})
+	s.listen = reserved.listen
 	s.backends.allowed = func(netip.Addr) bool { return true }
 	s.acceptFor, s.grace = 0, 100*time.Millisecond
 	return s, c
@@ -1830,6 +1821,7 @@ func TestServer_InformerWakesHeldConnections(t *testing.T) {
 	w := pausedWorkload("api", port, time.Minute)
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(w, apiPod("127.0.0.1")).Build()
 	s := NewServer(c, nil, Options{Host: "127.0.0.1", Informers: informers})
+	s.listen = reserved.listen
 	s.backends.allowed = func(netip.Addr) bool { return true }
 	s.acceptFor, s.grace = 0, 100*time.Millisecond
 	// No resync comes within the test, so only the change can pass it on.
