@@ -1,5 +1,0 @@
-# Napwake docs. Every crawler is welcome, AI crawlers included.
-User-agent: *
-Allow: /
-
-Sitemap: https://docs.napwake.dev/next/sitemap-index.xml
