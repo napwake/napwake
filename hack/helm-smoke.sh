@@ -13,7 +13,8 @@
 # uninstall goes ahead once the workloads are no longer opted in, which
 # restores the paused StatefulSet, and leaves none of the guards' RBAC
 # behind, even after a refusal. The e2e suite installs through kustomize,
-# with a ClusterRole, so this is what tests the chart.
+# with a ClusterRole, so this is what tests the chart. Its images are the
+# Makefile's E2E_IMAGES, pinned by digest.
 #
 # KIND_CLUSTER names the cluster, which is created and deleted here, so it
 # must not already exist. It's this checkout's own by default, and the
@@ -31,9 +32,20 @@ UNWATCHED=smoke-unwatched
 APP=web
 REPLICAS=2
 DB=db
-WEB_IMAGE=registry.k8s.io/e2e-test-images/agnhost:2.52
-CURL_IMAGE=curlimages/curl:8.7.1
-METRICS_SERVER_IMAGE=registry.k8s.io/metrics-server/metrics-server:v0.7.2
+# pinned is an image as the Makefile's E2E_IMAGES pins it, by tag and
+# digest, which make load-test-e2e-images preloads under both.
+pinned() {
+  local found
+  found=$(make -s --no-print-directory e2e-images | tr ' ' '\n' | awk -v want="$1@" 'index($0, want) == 1')
+  if [ -z "$found" ]; then
+    echo "the Makefile's E2E_IMAGES doesn't pin $1" >&2
+    return 1
+  fi
+  echo "$found"
+}
+WEB_IMAGE=$(pinned registry.k8s.io/e2e-test-images/agnhost:2.52)
+CURL_IMAGE=$(pinned curlimages/curl:8.7.1)
+METRICS_SERVER_IMAGE=$(pinned registry.k8s.io/metrics-server/metrics-server:v0.7.2)
 METRICS_SERVER_MANIFEST="$(dirname "$0")/../test/e2e/testdata/metrics-server-v0.7.2.yaml"
 # A ManagedWorkload that routed through the doorman is deleted only once its
 # ports have drained, twice the doorman's RouteDrain, so its deletion is
@@ -135,7 +147,8 @@ unrouted() {
 
 "$KIND" create cluster --name "$CLUSTER" --kubeconfig "$KUBECONFIG" --wait 2m
 make docker-build IMG="$IMG"
-make load-test-e2e-images KIND_CLUSTER="$CLUSTER" E2E_IMAGES="$WEB_IMAGE $CURL_IMAGE $METRICS_SERVER_IMAGE"
+make load-test-e2e-images check-test-e2e-images KIND_CLUSTER="$CLUSTER" E2E_KUBECONFIG="$KUBECONFIG" \
+  E2E_IMAGES="$WEB_IMAGE $CURL_IMAGE $METRICS_SERVER_IMAGE"
 "$KIND" load docker-image "$IMG" --name "$CLUSTER"
 PLUGIN="$PLUGIN_DIR/kubectl-napwake"
 go build -o "$PLUGIN" ./cmd/kubectl-napwake
