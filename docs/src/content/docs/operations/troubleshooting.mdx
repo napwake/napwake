@@ -538,7 +538,7 @@ Keep those namespaces, or stop managing their workloads first ([Narrowing `watch
 <details class="nw-details">
 <summary>When the guard's hook refuses instead</summary>
 
-It fails with `job napwake-upgrade-guard failed`, or in Helm 4 `resource Job/napwake-system/napwake-upgrade-guard not ready`. That's under Argo CD, where it fails the sync in the PreSync hook, or when a ManagedWorkload was still being deleted. Helm 3.18 and later list the ManagedWorkloads after `Napwake refuses this upgrade:`, or the guard's log does:
+It fails with `job napwake-upgrade-guard failed`, or in Helm 4 `resource Job/napwake-system/napwake-upgrade-guard not ready`. That's under Argo CD, where it fails the sync in the PreSync hook. It's also for a ManagedWorkload still being deleted, or one the operator took on in a namespace it no longer watches. Helm 3.18 and later list the ManagedWorkloads after `Napwake refuses this upgrade:`, or the guard's log does:
 
 ```bash
 kubectl logs job/napwake-upgrade-guard -n napwake-system
