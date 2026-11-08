@@ -35,18 +35,19 @@ timezone: UTC
 # measured at about 2.3 KB a pod. Of each Deployment and StatefulSet it
 # keeps only what it reads of the pod template, about 9.6 KB for a chart's
 # with a service mesh. So its memory grows with the cluster, managed or
-# not. Running, at its peak resident memory, it measured 150Mi
-# with 1,000 ManagedWorkloads, each with weeks of forecasts, a Deployment,
-# a pod and a Service, about 85Ki more for each one more, and about 100Ki
-# for each Deployment of 10 pods with a Service. 512Mi covers some 4,000
-# such workloads, or 40,000 pods behind 4,000 Deployments. A cluster of
-# 100,000 pods took 884Mi. Raise the limit beyond. The garbage collector aims at
-# 90% of the limit, leaving the rest for memory outside its heap, and works
-# harder near it rather than letting the operator be OOM-killed.
+# not. Running, at its peak resident memory, it measured 139Mi with 1,000
+# ManagedWorkloads, each with weeks of forecasts, a Deployment, a pod and a
+# Service, and 790Mi with 10,000, or 954Mi with 100,000 pods behind 10,000
+# Deployments, 1,000 of them managed. 1280Mi covers either with a fifth to
+# spare. Raise the limit beyond, by about 75Mi for each 1,000 more such
+# workloads, or 90Mi for each 1,000 more Deployments of 10 pods. The
+# garbage collector aims at 90% of the limit, leaving the rest for memory
+# outside its heap, and works harder near it rather than letting the
+# operator be OOM-killed.
 resources:
   limits:
     cpu: 500m
-    memory: 512Mi
+    memory: 1280Mi
   requests:
     cpu: 10m
     memory: 128Mi
