@@ -103,8 +103,10 @@ setup-test-e2e: ## Set up this checkout's Kind cluster for e2e tests, with a kub
 	@echo "Its kubeconfig is $(E2E_KUBECONFIG)"
 
 # Each by tag and digest, so a retagged image can't change what the specs
-# run against. The specs name them by tag, which load-test-e2e-images gives
-# the image it pulls by digest.
+# run against. The specs name them by tag, and the manifests in
+# test/e2e/testdata some by digest, both of which load-test-e2e-images
+# gives the image it pulls by digest. hack/helm-smoke.sh preloads its own
+# from this list.
 E2E_IMAGES ?= \
 	curlimages/curl:8.7.1@sha256:25d29daeb9b14b89e2fa8cc17c70e4b188bca1466086907c2d9a4b56b59d8e21 \
 	registry.k8s.io/pause:3.10@sha256:ee6521f290b2168b6e0935a181d4cff9be1ac3f505666ef0e3c98fae8199917a \
@@ -123,21 +125,42 @@ E2E_PLATFORM ?= linux/$(shell go env GOARCH)
 # Desktop's containerd image store: a pull only fetches the host platform,
 # so the other platforms' content is missing. An image pulled by digest has
 # no tag, so it's tagged before it's saved, and the node has it by its tag.
+# The node then names it by its digest too, as the kubelet looks for one a
+# manifest pins by digest by that name, and pulls it if it's missing: the
+# full name, with docker.io/ where the reference names no registry.
 .PHONY: load-test-e2e-images
 load-test-e2e-images: ## Preload the images the e2e specs run into the Kind cluster
 	@for img in $(E2E_IMAGES); do \
 		ref=$${img%@*}; \
+		case "$$ref" in \
+			*/*) case "$${ref%%/*}" in *.*|*:*|localhost) full=$$ref ;; *) full=docker.io/$$ref ;; esac ;; \
+			*) full=docker.io/library/$$ref ;; \
+		esac; \
 		echo "Loading $$img ($(E2E_PLATFORM)) into $(KIND_CLUSTER)"; \
 		docker pull --quiet --platform $(E2E_PLATFORM) $$img >/dev/null && \
 		docker tag $$img $$ref && \
 		docker save $$ref | docker exec -i $(KIND_CLUSTER)-control-plane \
-			ctr --namespace=k8s.io images import --platform $(E2E_PLATFORM) --snapshotter=overlayfs - >/dev/null \
+			ctr --namespace=k8s.io images import --platform $(E2E_PLATFORM) --snapshotter=overlayfs - >/dev/null && \
+		docker exec $(KIND_CLUSTER)-control-plane \
+			ctr --namespace=k8s.io images tag --force $$full $${full%:*}@$${img#*@} >/dev/null \
 		|| exit 1; \
 	done
 
+# Runs each preloaded image by its digest, with imagePullPolicy Never, so an
+# image the node has only by its tag fails here, rather than being pulled
+# mid-run for a manifest that pins it by digest.
+.PHONY: check-test-e2e-images
+check-test-e2e-images: ## Check the Kind cluster runs each preloaded image by its digest, without pulling it
+	KUBECONFIG="$(E2E_KUBECONFIG)" hack/check-preloaded-images.sh $(E2E_IMAGES)
+
+# The images hack/helm-smoke.sh preloads its own from.
+.PHONY: e2e-images
+e2e-images:
+	@echo $(E2E_IMAGES)
+
 .PHONY: test-e2e
 test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
-	$(MAKE) load-test-e2e-images
+	$(MAKE) load-test-e2e-images check-test-e2e-images
 	@# The specs wait on real idle clocks, so their containers run in
 	@# parallel against the one cluster, through the Ginkgo CLI, which go
 	@# test can't do.
