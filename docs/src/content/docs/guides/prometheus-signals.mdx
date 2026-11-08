@@ -86,6 +86,8 @@ Any result above zero keeps the workload awake, and [wakes it](#while-the-worklo
 
     Queries add to CPU, deploys and activity annotations, the other activity sources. Any one keeps the workload awake.
 
+    This one needs ingress-nginx's metrics, which are off by default. Turn them on with `--enable-metrics=true`, or `controller.metrics.enabled: true` in its chart.
+
     There's no annotation for queries. On a ManagedWorkload created from the `napwake.dev/managed` label, add them to its `spec.idlePolicy.activity.prometheus`. The opt-in controller keeps them when it updates the rest from the annotations.
 
 3. <GuidesTabAnchor id="test-the-query-directly" />Test the same query in Prometheus.
