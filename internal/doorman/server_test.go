@@ -1197,7 +1197,13 @@ func TestServer_RetriesAFailedDial(t *testing.T) {
 	slice.Ports[0].Port = ptr.To(echoPort(t))
 	require.NoError(t, c.Update(context.Background(), &slice))
 
-	echoed(t, conn, "hello\n")
+	// A dial to the refusing port fails at once on Linux, and only at
+	// dialTimeout on macOS, which drops the connection instead.
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(dialTimeout+closeBound)))
+	got := make([]byte, len("hello\n"))
+	_, err := io.ReadFull(conn, got)
+	require.NoError(t, err)
+	assert.Equal(t, "hello\n", string(got))
 }
 
 func TestDialAny_SpreadsConnectionsOverPods(t *testing.T) {
