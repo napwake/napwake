@@ -1229,8 +1229,7 @@ func TestServer_RefusesAPortClaimedTwice(t *testing.T) {
 	b.Namespace = "other-team"
 	s, _ := startServer(t, a, b)
 
-	_, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(int(port))), time.Second)
-	assert.Error(t, err)
+	assert.Nil(t, listenerOn(s, port), "the doorman doesn't listen on a port claimed twice")
 	assert.Equal(t, float64(1), testutil.ToFloat64(opmetrics.DoormanPortConflicts))
 
 	b.Status.Doorman[0].DoormanPort = freePort(t)
@@ -1277,6 +1276,7 @@ func TestServer_DrainsARemovedRouteThenReleasesIt(t *testing.T) {
 	s, c := startServerWith(t, func(s *Server) { s.now = clock.Now }, pausedWorkload("api", port, time.Minute))
 	require.NoError(t, c.Create(context.Background(), readySlice(echoPort(t))))
 	removeRoute(t, s, c)
+	held := heldListener(t, s, port)
 
 	conn := dial(t, port)
 	send(t, conn, browserGET)
@@ -1284,8 +1284,32 @@ func TestServer_DrainsARemovedRouteThenReleasesIt(t *testing.T) {
 
 	clock.Advance(RouteDrain)
 	require.NoError(t, s.syncRoutes(context.Background(), context.Background()))
-	_, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(int(port))), time.Second)
-	assert.Error(t, err, "the port is released once it has drained")
+	released(t, s, port, held)
+}
+
+// listenerOn is the listener the doorman holds on port, if any.
+func listenerOn(s *Server, port int32) net.Listener {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.listeners[port]
+}
+
+// heldListener is the listener the doorman holds on port, which it must.
+func heldListener(t *testing.T, s *Server, port int32) net.Listener {
+	t.Helper()
+	l := listenerOn(s, port)
+	require.NotNil(t, l, "the doorman listens on port %d", port)
+	return l
+}
+
+// released asserts the doorman has let go of port: it holds no listener
+// there, and the one it held is closed. It never dials the port. Once the
+// doorman lets go, any listener on :0, in this package or another that go
+// test runs alongside, may take the port, and answer.
+func released(t *testing.T, s *Server, port int32, held net.Listener) {
+	t.Helper()
+	assert.Nil(t, listenerOn(s, port), "the doorman holds no listener on port %d", port)
+	assert.ErrorIs(t, held.Close(), net.ErrClosed, "the listener it held on port %d is closed", port)
 }
 
 // A route that leaves status while its workload is still at zero, because
@@ -1320,6 +1344,7 @@ func TestServer_ShutdownDrainsConnections(t *testing.T) {
 	s.acceptFor = 500 * time.Millisecond
 	s.grace = time.Second
 	stop := run(t, s)
+	held := heldListener(t, s, port)
 
 	before := dial(t, port)
 	send(t, before, "before\n")
@@ -1341,13 +1366,9 @@ func TestServer_ShutdownDrainsConnections(t *testing.T) {
 	echoed(t, before, "before\n")
 	echoed(t, during, "during\n")
 
-	require.Eventually(t, func() bool {
-		conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(int(port))), time.Second)
-		if err == nil {
-			_ = conn.Close()
-		}
-		return err != nil
-	}, 2*time.Second, 10*time.Millisecond, "no new connections once the accepting part of the drain is over")
+	require.Eventually(t, func() bool { return listenerOn(s, port) == nil }, 2*time.Second, 10*time.Millisecond,
+		"no new connections once the accepting part of the drain is over")
+	released(t, s, port, held)
 	send(t, during, "still\n")
 	echoed(t, during, "still\n")
 
@@ -1785,15 +1806,6 @@ func TestServer_ClosesProxiedConnectionsOnceTheRouteDrains(t *testing.T) {
 	closedWithin(t, conn)
 }
 
-func refused(t *testing.T, port int32) bool {
-	t.Helper()
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(int(port))), time.Second)
-	if err == nil {
-		_ = conn.Close()
-	}
-	return err != nil
-}
-
 // A port given to another workload while its old route drains is served
 // for neither until the drain is over, however many syncs that takes:
 // traffic still sent to it for the old workload must not reach the new
@@ -1804,6 +1816,7 @@ func TestServer_APortReassignedWhileDrainingWaitsForTheDrain(t *testing.T) {
 	s, c := startServerWith(t, func(s *Server) { s.now = clock.Now }, pausedWorkload("api", port, time.Minute))
 	ctx := context.Background()
 	removeRoute(t, s, c)
+	held := heldListener(t, s, port)
 
 	other := pausedWorkload("billing", port, time.Minute)
 	other.Namespace = "other-team"
@@ -1811,7 +1824,7 @@ func TestServer_APortReassignedWhileDrainingWaitsForTheDrain(t *testing.T) {
 	for range 3 {
 		clock.Advance(RouteSyncInterval)
 		require.NoError(t, s.syncRoutes(ctx, ctx))
-		assert.True(t, refused(t, port), "the port is served for neither while the old route drains")
+		released(t, s, port, held)
 		assert.Equal(t, float64(1), testutil.ToFloat64(opmetrics.DoormanPortConflicts))
 	}
 
@@ -1829,13 +1842,14 @@ func TestServer_APortMovedToAnotherServiceDrains(t *testing.T) {
 	clock := &testClock{now: time.Now()}
 	s, c := startServerWith(t, func(s *Server) { s.now = clock.Now }, pausedWorkload("api", port, time.Minute))
 	ctx := context.Background()
+	held := heldListener(t, s, port)
 
 	var w v1alpha1.ManagedWorkload
 	require.NoError(t, c.Get(ctx, apiKey, &w))
 	w.Status.Doorman[0].Service = "api-v2"
 	require.NoError(t, c.Update(ctx, &w))
 	require.NoError(t, s.syncRoutes(ctx, ctx))
-	assert.True(t, refused(t, port), "the port is served for neither while the old route drains")
+	released(t, s, port, held)
 
 	clock.Advance(RouteDrain)
 	require.NoError(t, s.syncRoutes(ctx, ctx))
