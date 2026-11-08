@@ -561,9 +561,11 @@ func TestDoormanCacheHoldsManagedWorkloadsTrimmed(t *testing.T) {
 		Spec: v1alpha1.ManagedWorkloadSpec{Target: v1alpha1.WorkloadRef{Kind: v1alpha1.TargetKindDeployment, Name: "web"}},
 	}
 	require.NoError(t, direct.Create(ctx, w))
+	routed := metav1.Condition{Type: "WakeOnRequest", Status: metav1.ConditionTrue, Reason: "DoormanRouted",
+		Message: "routed", LastTransitionTime: metav1.Now()}
 	w.Status = v1alpha1.ManagedWorkloadStatus{
 		Phase:      v1alpha1.PhasePaused,
-		Conditions: []metav1.Condition{{Type: "WakeOnRequest", Status: metav1.ConditionTrue, Reason: "DoormanRouted", Message: "routed", LastTransitionTime: metav1.Now()}},
+		Conditions: []metav1.Condition{routed},
 		Prediction: &v1alpha1.PredictionStatus{DailyPhase: "Active", WeeklyPhase: "Suggesting", State: "{}"},
 		Doorman:    []v1alpha1.DoormanRoute{{Service: "web", PortName: "http", DoormanPort: 20417}},
 	}
