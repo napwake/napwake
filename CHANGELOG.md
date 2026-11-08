@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `kubectl napwake status` no longer shows a workload whose ManagedWorkload is being deleted as `running`, with NEXT `pauses soon`, nor counts it in "Napwake manages N workloads", for the minute it stays while its doorman ports drain. It says `Letting go of` the workload, which `-o json` lists as `lettingGo`, and its hand-back stays in Recent pauses and wakes
 - A workload paused before its first pods had metrics, such as with `kubectl napwake pause` minutes after opting it in, is no longer warned `NoPodMetrics` the moment it wakes. The 3 minutes its pods get to report metrics were counted from before the pause; they start again as a wake brings its pods back
 - The `Autoscaled` condition no longer says Napwake resumes a workload "within that range" when its HPA or KEDA ScaledObject scales it from 0, nor leaves out that autoscaler's own zero. It now says the autoscaler can take it to zero itself, which Napwake leaves to it, holding no requests there, and that Napwake resumes it to at least 1 replica. A ScaledObject's range starts at 0 unless it sets `minReplicaCount`
+- A paused dependent handed back, as when its ManagedWorkload is deleted, wakes its dependencies without counting a wrong pause against them. Before, nothing held a dependency it woke, since the dependent was going, so a wake soon after the dependency paused counted as a wrong pause: its next idle wait doubled, and a `PausedWhileInUse` warning said it had been paused while in use
 
 ## [0.2.0] - 2026-11-08
 
