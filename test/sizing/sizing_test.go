@@ -87,7 +87,7 @@ const (
 	endpointBytes int64 = 320
 	serviceBytes  int64 = 1200
 	// The doorman, for each ManagedWorkload.
-	managedWorkloadBytes int64 = 9400
+	managedWorkloadBytes int64 = 1300
 	// A figure may round up this far, and no further.
 	roundedUp = 1.25
 	// The counts below this aren't held to it.
@@ -198,12 +198,12 @@ func TestDoormanEndpointSliceCache(t *testing.T) {
 	}
 }
 
-// The doorman caches every ManagedWorkload in the watched namespaces,
-// without its managed fields: of a ManagedWorkload, trimForCache drops only
-// those, as cache.TransformStripManagedFields does. The operator caches
-// them the same way, and indexes them too, which this leaves out. Measured
-// with what a paused workload's status holds after weeks of use, the
-// forecast's state among it.
+// The doorman caches every ManagedWorkload in the watched namespaces, cut
+// down by doorman.TrimManagedWorkload to what it reads, without the
+// forecast's state, the costs and the conditions. Measured with what a
+// paused workload's status holds after weeks of use, the forecast's state
+// among it. The operator caches them whole but for their managed fields,
+// and indexes them too, which this leaves out.
 func TestManagedWorkloadCache(t *testing.T) {
 	api := startAPIServer(t, filepath.Join("..", "..", "config", "crd", "bases"))
 	template := managedWorkload(t)
@@ -211,7 +211,7 @@ func TestManagedWorkloadCache(t *testing.T) {
 		name:   "managedworkloads",
 		obj:    &v1alpha1.ManagedWorkload{},
 		list:   &v1alpha1.ManagedWorkloadList{},
-		cache:  cache.ByObject{Transform: cache.TransformStripManagedFields()},
+		cache:  cache.ByObject{Transform: doorman.TrimManagedWorkload},
 		counts: workloadCounts,
 		create: func(ctx context.Context, c client.Client, i int) error {
 			w := template.DeepCopy()
@@ -228,8 +228,8 @@ func TestManagedWorkloadCache(t *testing.T) {
 		trimmed: func(t *testing.T, list client.ObjectList) {
 			w := list.(*v1alpha1.ManagedWorkloadList).Items[0]
 			assert.Empty(t, w.ManagedFields, "a cached ManagedWorkload keeps no managed fields")
-			require.NotNil(t, w.Status.Prediction)
-			assert.Equal(t, template.Status.Prediction.State, w.Status.Prediction.State, "but its whole status")
+			assert.Nil(t, w.Status.Prediction, "nor the forecast's state")
+			assert.Equal(t, template.Status.Doorman, w.Status.Doorman, "but its routes")
 		},
 	})
 	for _, n := range workloadCounts {

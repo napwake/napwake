@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - A request the doorman held for a wake that ended back at zero, before any pod was Ready, was closed with no warning and no log line, and counted as `refused`. That happens when something else takes the workload to zero as it wakes, such as an HPA with `minReplicas: 0`. Now a `RequestNotServed` warning says why, the doorman logs it, and `napwake_doorman_wakes_total` counts it as `drained`. `refused` is left for a connection that arrives once the workload is no longer routed through the doorman
+- The doorman copied every ManagedWorkload every 2 seconds, and cached each whole, the forecast's state among it, though it reads little of any. It now syncs its routes without copying them, and caches about 1.3 KB of each ManagedWorkload, down from 9.4 KB. Its default 256Mi covers some 10,000 ManagedWorkloads with a pod and a Service each, up from 5,000
 
 ## [0.2.0] - 2026-11-08
 
