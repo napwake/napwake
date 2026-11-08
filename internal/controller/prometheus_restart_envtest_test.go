@@ -92,7 +92,7 @@ func TestPrometheusRestart_DoesNotPauseABusyWorkload(t *testing.T) {
 	finder := autoscaler.NewFinder(c)
 	idle := idleCPU
 	r := &Reconciler{Client: c, Scheme: scheme, Recorder: events.NewFakeRecorder(1000), PodReader: admin,
-		pauser: lifecycle.NewPauser(c, finder), autoscalers: finder, metrics: &idle,
+		pauser: lifecycle.NewPauser(c, finder).WithClock(func() time.Time { return now }), autoscalers: finder, metrics: &idle,
 		engines: newEngineRegistry(func() forecaster { return &stubForecaster{} }),
 		clock:   func() time.Time { return now }, prometheus: signal.NewPrometheus(srv.URL)}
 	remember(r, mw)

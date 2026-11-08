@@ -123,7 +123,7 @@ func (c *ingressCase) reconciler(t *testing.T) *Reconciler {
 	finder := autoscaler.NewFinder(cl)
 	return &Reconciler{
 		Client: cl, Scheme: testScheme(t), Recorder: events.NewFakeRecorder(1000),
-		pauser: lifecycle.NewPauser(cl, finder), autoscalers: finder,
+		pauser: lifecycle.NewPauser(cl, finder).WithClock(func() time.Time { return c.now }), autoscalers: finder,
 		metrics:        &stubMetrics{cpuPerReplica: 100, memoryPerReplica: 1 << 30, replicas: 1},
 		engines:        newEngineRegistry(func() forecaster { return c.forecast }),
 		DoormanService: "napwake-doorman", DoormanNamespace: c.env.doormanNS,

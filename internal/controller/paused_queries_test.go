@@ -59,11 +59,10 @@ func newQueuePrometheus(t *testing.T) (*queuePrometheus, *signal.Prometheus) {
 	return q, signal.NewPrometheus(srv.URL)
 }
 
-// steadyClock is the real clock moved on to ten past the coming hour, for
-// tests the real lifecycle pauser runs in: it stamps pausedAt with the real
-// clock, which this one is never behind. Read straight, the real clock put a
-// test within a minute of a quarter to or of an hour now and then, where a
-// paused workload is looked at sooner than every minute.
+// steadyClock is the real clock moved on to ten past the coming hour. Read
+// straight, the real clock put a test within a minute of a quarter to or of
+// an hour now and then, where a paused workload is looked at sooner than
+// every minute.
 func steadyClock() func() time.Time {
 	now := time.Now()
 	offset := now.Truncate(time.Hour).Add(time.Hour + 10*time.Minute).Sub(now)

@@ -485,9 +485,9 @@ func TestReconcileDelete_RestoresAPausedWorkload(t *testing.T) {
 			}
 			c := builder.Build()
 			r := &Reconciler{Client: c, Scheme: testScheme(t), Recorder: events.NewFakeRecorder(10),
-				pauser:  lifecycle.NewPauser(c, autoscaler.NewFinder(c)),
 				engines: newEngineRegistry(func() forecaster { return &stubForecaster{} }),
 				clock:   func() time.Time { return fixedTime }}
+			r.pauser = lifecycle.NewPauser(c, autoscaler.NewFinder(c)).WithClock(r.now)
 
 			_, err := r.Reconcile(context.Background(), reconcileFor("api"))
 			require.NoError(t, err)
@@ -1408,16 +1408,17 @@ func lifecycleReconciler(t *testing.T, workload *v1alpha1.ManagedWorkload, repli
 		WithObjects(append([]client.Object{workload, target}, objs...)...).
 		WithInterceptorFuncs(funcs).Build()
 	finder := autoscaler.NewFinder(c)
-	return holding(&Reconciler{
+	r := &Reconciler{
 		Client:      c,
 		Scheme:      scheme,
 		Recorder:    events.NewFakeRecorder(100),
-		pauser:      lifecycle.NewPauser(c, finder),
 		autoscalers: finder,
 		metrics:     &stubMetrics{cpuMillis: 5, cpuPerReplica: 500, memoryPerReplica: 1 << 30, replicas: max(replicas, 1)},
 		engines:     newEngineRegistry(func() forecaster { return &stubForecaster{} }),
 		clock:       func() time.Time { return fixedTime },
-	}, append([]client.Object{workload}, objs...)...)
+	}
+	r.pauser = lifecycle.NewPauser(c, finder).WithClock(r.now)
+	return holding(r, append([]client.Object{workload}, objs...)...)
 }
 
 func realPauserReconciler(t *testing.T, workload *v1alpha1.ManagedWorkload, objs ...client.Object) *Reconciler {

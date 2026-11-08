@@ -168,7 +168,7 @@ var _ = ginkgo.Describe("A pause interrupted by a conflict", func() {
 			Client:      indexedClient{c},
 			Scheme:      scheme.Scheme,
 			Recorder:    events.NewFakeRecorder(100),
-			pauser:      lifecycle.NewPauser(c, finder),
+			pauser:      lifecycle.NewPauser(c, finder).WithClock(time.Now),
 			autoscalers: finder,
 			engines:     newEngineRegistry(func() forecaster { return &stubForecaster{} }),
 			clock:       time.Now,

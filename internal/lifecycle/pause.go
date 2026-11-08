@@ -58,6 +58,15 @@ func NewPauser(c client.Client, autoscalers *autoscaler.Finder) *Pauser {
 	}
 }
 
+// WithClock has the Pauser read the time from clock, for a caller that
+// reads its own, such as a test that moves it: the pause and the scale-up
+// it records, and its wait for the pods to stop, are then timed by the
+// clock the caller judges them by.
+func (p *Pauser) WithClock(clock func() time.Time) *Pauser {
+	p.clock = func() metav1.Time { return metav1.NewTime(clock()) }
+	return p
+}
+
 // Prepare records in workload.Status.Pause what pausing will change: the
 // replicas, and the KEDA ScaledObject with its own paused-replicas
 // annotation. It changes nothing in the cluster.
