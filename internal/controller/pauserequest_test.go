@@ -349,7 +349,7 @@ func TestPauseRequest_DryRun(t *testing.T) {
 	workload.Annotations[v1alpha1.AnnotationLastActivity] = fixedTime.Add(-10 * time.Minute).Format(time.RFC3339)
 	r := lifecycleReconciler(t, workload, 3, interceptor.Funcs{})
 	now := fixedTime
-	r.clock = func() time.Time { return now }
+	r.clock = func() time.Time { return monotonic(now) }
 
 	reconcileUntilSettled(t, r)
 

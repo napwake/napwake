@@ -243,7 +243,7 @@ func TestPausedQueries_TheForecastLearnsTheHoursTheyWatch(t *testing.T) {
 			}
 
 			for now := fixedTime; !now.After(fixedTime.Add(time.Hour)); now = now.Add(time.Minute) {
-				r.clock = func() time.Time { return now }
+				r.clock = func() time.Time { return monotonic(now) }
 				_, err := r.reconcileAutomation(context.Background(), worker, nil)
 				require.NoError(t, err)
 				require.Equal(t, v1alpha1.PhasePaused, worker.Status.Phase, "a query that fails never wakes it")
@@ -260,7 +260,7 @@ func TestPausedQueries_TheForecastLearnsTheHoursTheyWatch(t *testing.T) {
 				return
 			}
 			assert.Equal(t, []float64{0}, engine.observed, "a quiet hour")
-			assert.Equal(t, []time.Time{fixedTime}, engine.observedHours)
+			assert.Equal(t, []time.Time{fixedTime}, inUTC(engine.observedHours...))
 		})
 	}
 }
