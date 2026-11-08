@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - A dependency labelled within seconds of its dependent: `kubectl describe` on the dependent now shows the `DependenciesLearned` event saying the dependency is `now managed by Napwake, so woken and held with it`. Kubernetes' event recorder had folded that event into the dependent's earlier one, which said the dependency `isn't managed by Napwake`, so `describe` kept the old text, counted twice, for up to an hour. The new event names the dependency's ManagedWorkload as its related object, which keeps the two apart
+- `kubectl napwake status` no longer shows a workload whose ManagedWorkload is being deleted as `running`, with NEXT `pauses soon`, nor counts it in "Napwake manages N workloads", for the minute it stays while its doorman ports drain. It says `Letting go of` the workload, which `-o json` lists as `lettingGo`, and its hand-back stays in Recent pauses and wakes
 
 ## [0.2.0] - 2026-11-08
 

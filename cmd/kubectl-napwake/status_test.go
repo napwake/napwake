@@ -979,6 +979,70 @@ func TestProblemsOf_NotStuckYet(t *testing.T) {
 	assert.Empty(t, problemsOf(w, statusNow))
 }
 
+// beingLetGo is the named workload in shop as Napwake hands it back on its
+// ManagedWorkload's deletion: back at its replicas, Running, while its
+// doorman ports drain, with the clock it had paused on, and the events of
+// that pause and the hand-back.
+func beingLetGo(name string) []client.Object {
+	w := statusWorkloadObj("shop", name, v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, 10*time.Second)
+	w.DeletionTimestamp = before(20 * time.Second)
+	w.Finalizers = []string{"napwake.dev/cleanup"}
+	w.Status.Activity = activity(v1alpha1.ActivitySourceCPU, 62*time.Minute, -2*time.Minute)
+	w.Status.Conditions = []metav1.Condition{condition("PausedWhileInUse", metav1.ConditionTrue,
+		"WokenSoonAfterPause", "a request came 40 seconds after it paused")}
+	return []client.Object{w,
+		statusEvent("shop", name, "Paused", name+": paused", 2*time.Minute),
+		statusEvent("shop", name, "Resumed", name+": restored to 2 replicas: no longer managed", 15*time.Second)}
+}
+
+// While its ManagedWorkload is deleted, Napwake hands a workload back and
+// keeps the ManagedWorkload up to a minute, Running, as its doorman ports
+// drain. status doesn't show it as one Napwake manages, running and soon to
+// pause, nor count it: it says it's being let go, and lists the hand-back.
+func TestStatus_AWorkloadBeingLetGo(t *testing.T) {
+	api := statusWorkloadObj("shop", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, time.Hour)
+	api.Status.Activity = activity(v1alpha1.ActivitySourceCPU, 10*time.Minute, 50*time.Minute)
+	c := newStatusClient(t, interceptor.Funcs{}, append(beingLetGo("web"), api)...)
+
+	out := runStatus(t, c, statusOpts())
+
+	assert.Contains(t, out, "Napwake manages 1 workload.\n  1 running\n  Letting go of shop/web, whose "+
+		"ManagedWorkload is being deleted: Napwake hands it back and stops managing it.\n")
+	assert.NotContains(t, out, "deployment/web", "not a row")
+	assert.NotContains(t, out, "pauses soon")
+	assert.NotContains(t, out, "Needs attention", "its problems are over")
+	assert.Contains(t, out, "just now   shop/web   restored to 2 replicas: no longer managed")
+
+	result, err := clusterStatus(context.Background(), c, "shop", statusOpts())
+	require.NoError(t, err)
+	require.Len(t, result.Workloads, 1)
+	assert.Equal(t, "api", result.Workloads[0].Name)
+	assert.Equal(t, []lettingGo{{Namespace: "shop", Workload: "web", Target: "deployment/web", ManagedWorkload: "web"}},
+		result.LettingGo)
+
+	page := buildStatusPage(result, 24*time.Hour, statusNow)
+	assert.Equal(t, "Napwake manages 1 workload: 1 running.", page.Summary)
+	assert.Contains(t, page.Notes, "Letting go of shop/web, whose ManagedWorkload is being deleted: Napwake "+
+		"hands it back and stops managing it.")
+	require.Len(t, page.Workloads, 1)
+	assert.Equal(t, "deployment/api", page.Workloads[0].Workload)
+}
+
+// With every workload being let go, as a preview environment's namespace
+// is deleted, Napwake manages none, and names a few of those it lets go.
+func TestStatus_EveryWorkloadBeingLetGo(t *testing.T) {
+	var objs []client.Object
+	for _, name := range []string{"a", "b", "c", "d", "e", "f", "g"} {
+		objs = append(objs, beingLetGo(name)...)
+	}
+
+	out := runStatus(t, newStatusClient(t, interceptor.Funcs{}, objs...), statusOpts())
+
+	assert.True(t, strings.HasPrefix(out, "staging (EKS us-east-1): Napwake manages no workloads here.\n"+
+		"Letting go of shop/a, shop/b, shop/c, shop/d, shop/e and 2 more, whose ManagedWorkloads are being "+
+		"deleted: Napwake hands them back and stops managing them.\n"), out)
+}
+
 func TestStatus_NothingManaged(t *testing.T) {
 	out := runStatus(t, newStatusClient(t, interceptor.Funcs{}), statusOpts())
 
