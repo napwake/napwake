@@ -897,6 +897,7 @@ func (r *Reconciler) handleResume(ctx context.Context, workload *v1alpha1.Manage
 	} else {
 		r.clearCondition(workload, conditionResumeIncomplete, ReasonAllReplicasReady)
 	}
+	r.restartPodMetricsGrace(workload)
 	if err := r.transition(ctx, workload, v1alpha1.PhaseRunning, "Resumed"); err != nil {
 		return nil, err
 	}
