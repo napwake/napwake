@@ -431,7 +431,7 @@ func TestTrimTarget(t *testing.T) {
 	sts := &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Name: "db"},
 		Spec: appsv1.StatefulSetSpec{Template: *template.DeepCopy(),
 			VolumeClaimTemplates: []corev1.PersistentVolumeClaim{{ObjectMeta: metav1.ObjectMeta{Name: "data"}}}}}
-	forwarder := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "api-napwake-forwarder",
+	neg := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "api-napwake-forwarder",
 		OwnerReferences: []metav1.OwnerReference{{APIVersion: v1alpha1.GroupVersion.String(), Kind: "ManagedWorkload",
 			Name: "api", Controller: ptr.To(true)}}},
 		Spec: appsv1.DeploymentSpec{Template: *template.DeepCopy()}}
@@ -451,7 +451,7 @@ func TestTrimTarget(t *testing.T) {
 	assert.Equal(t, trimmedTemplate, out.(*appsv1.StatefulSet).Spec.Template)
 	assert.Len(t, out.(*appsv1.StatefulSet).Spec.VolumeClaimTemplates, 1)
 
-	out, err = trimTarget(forwarder)
+	out, err = trimTarget(neg)
 	require.NoError(t, err)
 	assert.Equal(t, template, out.(*appsv1.Deployment).Spec.Template, "a forwarder keeps its whole template")
 

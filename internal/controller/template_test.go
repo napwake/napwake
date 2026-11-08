@@ -174,8 +174,9 @@ func TestTrimPodTemplate_ReadersAgree(t *testing.T) {
 			{Namespace: "shop", Kind: v1alpha1.TargetKindDeployment, Name: "api", Template: template}}
 	}
 	containerNames := func(spec corev1.PodSpec) []string {
-		var names []string
-		for _, c := range metrics.WorkloadContainers(spec) {
+		containers := metrics.WorkloadContainers(spec)
+		names := make([]string, 0, len(containers))
+		for _, c := range containers {
 			names = append(names, c.Name)
 		}
 		return names
