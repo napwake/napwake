@@ -1830,7 +1830,7 @@ func (r *Reconciler) setupHistoryLearner(mgr ctrl.Manager) error {
 		Named("forecasthistory").
 		For(&v1alpha1.ManagedWorkload{}, builder.WithPredicates(predicate.NewPredicateFuncs(func(o client.Object) bool {
 			workload, ok := o.(*v1alpha1.ManagedWorkload)
-			return ok && needsHistory(workload)
+			return ok && needsHistory(workload, true, r.now())
 		}))).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
 		Complete(learner)

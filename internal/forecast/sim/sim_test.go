@@ -18,6 +18,7 @@ package sim
 
 import (
 	"errors"
+	"math"
 	"sync"
 	"testing"
 	"time"
@@ -488,6 +489,34 @@ func TestWarmStart(t *testing.T) {
 	assert.Equal(t, 10, s.UsedDays)
 	assert.Equal(t, 10, s.Ready, "ready from the first morning")
 	assert.Zero(t, s.WastedWakes)
+}
+
+// A workload taken on before the operator had a Prometheus URL learns live,
+// and acts after 8 days. Given one on its third day, its forecast learns
+// the four weeks before take-on beneath those three days, and acts, and is
+// fully active, from then: every morning from the next is ready. Given one
+// a week or more after take-on, it goes on learning live.
+func TestWarmStart_URLSetLater(t *testing.T) {
+	live := simulate(t, Scenario{Duration: 3 * week, Traffic: OfficeHours(time.UTC)})
+	liveActs, ok := live.Reached(forecast.DailyActive)
+	require.True(t, ok)
+	assert.Equal(t, 8.0, math.Round(liveActs.Hours()/24), "learning live, it acts after 8 days")
+
+	later := simulate(t, Scenario{Duration: 3 * week, Traffic: OfficeHours(time.UTC), URLAt: 3 * day})
+	acts, ok := later.Reached(forecast.DailyActive)
+	require.True(t, ok)
+	assert.Equal(t, 3*day, acts, "acting from the moment it learns its history")
+	full, ok := later.Reached(forecast.FullyActive)
+	require.True(t, ok)
+	assert.Equal(t, 3*day, full)
+	s := later.Summarize(monday.Add(4 * day))
+	assert.Equal(t, s.UsedDays, s.Ready, "every morning ready from the next")
+	assert.Zero(t, s.WastedWakes)
+
+	tooLate := simulate(t, Scenario{Duration: 3 * week, Traffic: OfficeHours(time.UTC), URLAt: HistoryLateFor})
+	lateActs, ok := tooLate.Reached(forecast.DailyActive)
+	require.True(t, ok)
+	assert.Equal(t, liveActs, lateActs, "a week on, as if never set")
 }
 
 // What the outlook projects in the first week, before the forecast acts, is

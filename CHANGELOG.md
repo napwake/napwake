@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A workload Napwake took on before the operator had a Prometheus URL learns its history once a URL is set, within a week of take-on. Its forecast learns the four weeks before the hour Napwake took it on in, then every hour it had learned live since, in order, and with a steady pattern it acts from then rather than after 8 days. The hours after take-on, when Napwake may have paused it, are never read. Set later than a week, the URL changes nothing, and `status.prediction.history` says it came too late.
+
 ## [0.2.0] - 2026-11-08
 
 Napwake pauses idle Kubernetes workloads in staging, preview and dev, and wakes them on the first request. It never deletes a workload or its data.

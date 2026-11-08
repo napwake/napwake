@@ -40,6 +40,7 @@ func TestSimulatorMatchesTheReconciler(t *testing.T) {
 	}
 	t.Parallel()
 	require.Equal(t, unobservedGap, sim.LookGap, "an hour is seen whole on the same terms")
+	require.Equal(t, historyLateFor, sim.HistoryLateFor, "a Prometheus URL set later is used as long")
 
 	monday := time.Date(2026, 3, 16, 0, 0, 0, 0, time.UTC)
 	const days = 42
