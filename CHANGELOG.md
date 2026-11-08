@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Cost is counted to the second, as `status.cost.lastAccumulatedAt` is kept. Each five-minute update counted again the fraction of a second the last one's stamp lost when written, so `tracked` and the month's resource-hours, cost and freed ran about 0.17% high, and the projected savings as much low
+
 ## [0.2.0] - 2026-11-08
 
 Napwake pauses idle Kubernetes workloads in staging, preview and dev, and wakes them on the first request. It never deletes a workload or its data.
