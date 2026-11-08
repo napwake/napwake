@@ -237,8 +237,9 @@ Its memory grows with the cluster, managed or not.
 | Objects | Held |
 |---------|------|
 | ManagedWorkloads, Deployments, StatefulSets, Services, Ingresses, PVCs, HPAs, Namespaces | Cached, only the watched namespaces' with `watchNamespaces` |
+| Deployments and StatefulSets | With only what the operator reads of their pod templates. Measured at about 9.6 KB each for a chart's with a service mesh, 14 KB whole |
 | Nodes | Cached without image lists |
-| Pods | Cached only as spare capacity needs, if bound to a node and not finished, as node, phase and requests. Measured at about 2.7 KB each |
+| Pods | Cached only as spare capacity needs, if bound to a node and not finished, as node, phase and requests. Measured at about 2.3 KB each |
 | The EndpointSlices it writes, the doorman Service's | Cached |
 | Other EndpointSlices, ConfigMaps, KEDA ScaledObjects | Read when needed, not cached |
 

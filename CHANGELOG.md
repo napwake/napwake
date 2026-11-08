@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The operator caches less of what it watches, managed or not (P82). Of each Deployment and StatefulSet it keeps only what it reads of the pod template, with the hash of the whole that tells a deploy apart, as before: about 9.6 KB for a chart's with a service mesh, from 14 KB. Of each pod bound to a node, its requests are held without a container: about 2.3 KB, from 2.7 KB. A NEG forwarder's Deployment, which the operator patches from its cache, is kept whole, and ManagedWorkloads, which it updates from its cache, as before
 - The chart's and the Helm values page's memory figures for the operator are measured on the operator binary as the chart runs it, at its peak resident memory, with ManagedWorkloads that have weeks of forecasts behind them (P82). The default 512Mi covers some 4,000 ManagedWorkloads with a Deployment, a pod and a Service each (403 MiB), or 40,000 pods behind 4,000 Deployments (443 MiB). 5,000 workloads took 472 MiB, past the soft limit, and 100,000 pods behind 10,000 Deployments 884 MiB, past the limit, since the operator caches every Deployment, Service and pod it watches, managed or not. Raise `resources.limits.memory` beyond, by about 85Mi for each 1,000 more workloads, or 100Mi for each 1,000 more Deployments of 10 pods. `go test -tags sizing ./test/sizing` measures them
 
 ## [0.2.0] - 2026-11-08

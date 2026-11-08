@@ -32,8 +32,10 @@ timezone: UTC
 # StatefulSets, Services, Ingresses, PVCs, HPAs, nodes and namespaces, or only the
 # watched namespaces', the EndpointSlices it writes and the doorman's, and,
 # watching every namespace, what each pod bound to a node requests,
-# measured at about 2.7 KB a pod, so its memory grows with the cluster,
-# managed or not. Running, at its peak resident memory, it measured 150Mi
+# measured at about 2.3 KB a pod. Of each Deployment and StatefulSet it
+# keeps only what it reads of the pod template, about 9.6 KB for a chart's
+# with a service mesh. So its memory grows with the cluster, managed or
+# not. Running, at its peak resident memory, it measured 150Mi
 # with 1,000 ManagedWorkloads, each with weeks of forecasts, a Deployment,
 # a pod and a Service, about 85Ki more for each one more, and about 100Ki
 # for each Deployment of 10 pods with a Service. 512Mi covers some 4,000
