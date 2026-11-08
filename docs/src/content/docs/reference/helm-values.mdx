@@ -227,12 +227,12 @@ Values that are there stay, `false`, `0` and `""` included. With its own default
 | <Ref id="resources-requests-cpu">resources.requests.cpu</Ref> | `10m` | CPU request |
 | <Ref id="resources-requests-memory">resources.requests.memory</Ref> | `128Mi` | Memory request |
 | <Ref id="resources-limits-cpu">resources.limits.cpu</Ref> | `500m` | CPU limit |
-| <Ref id="resources-limits-memory">resources.limits.memory</Ref> | `512Mi` | Memory limit. Raise it on clusters with many thousands of workloads |
+| <Ref id="resources-limits-memory">resources.limits.memory</Ref> | `512Mi` | Memory limit, enough for some 4,000 ManagedWorkloads with a pod and a Service each, or 40,000 pods behind 4,000 Deployments. Raise it beyond, by about 85Mi for each 1,000 more workloads, or 100Mi for each 1,000 more Deployments of 10 pods |
 
 <details class="nw-details">
 <summary>What the operator keeps in memory</summary>
 
-Its memory grows with the cluster.
+Its memory grows with the cluster, managed or not.
 
 | Objects | Held |
 |---------|------|
@@ -241,6 +241,16 @@ Its memory grows with the cluster.
 | Pods | Cached only as spare capacity needs, if bound to a node and not finished, as node, phase and requests. Measured at about 2.7 KB each |
 | The EndpointSlices it writes, the doorman Service's | Cached |
 | Other EndpointSlices, ConfigMaps, KEDA ScaledObjects | Read when needed, not cached |
+
+Measured on the operator binary as the chart runs it, at its peak resident memory, with ManagedWorkloads that have weeks of forecasts behind them:
+
+| Cluster | Peak |
+|---------|------|
+| 1,000 ManagedWorkloads, each with a Deployment, a pod and a Service | 148 MiB |
+| 4,000 of them | 403 MiB |
+| 5,000 of them | 472 MiB, past the garbage collector's soft limit |
+| 40,000 pods, behind 4,000 Deployments and Services, 1,000 of them managed | 443 MiB |
+| 100,000 pods, behind 10,000 Deployments and Services, 1,000 of them managed | 884 MiB, past the limit |
 
 Go's garbage collector, in the operator and the doorman, gets a soft limit of 90% of the memory limit. That leaves the rest for memory outside its heap.
 

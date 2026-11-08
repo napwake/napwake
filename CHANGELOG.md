@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The chart's and the Helm values page's memory figures for the operator are measured on the operator binary as the chart runs it, at its peak resident memory, with ManagedWorkloads that have weeks of forecasts behind them (P82). The default 512Mi covers some 4,000 ManagedWorkloads with a Deployment, a pod and a Service each (403 MiB), or 40,000 pods behind 4,000 Deployments (443 MiB). 5,000 workloads took 472 MiB, past the soft limit, and 100,000 pods behind 10,000 Deployments 884 MiB, past the limit, since the operator caches every Deployment, Service and pod it watches, managed or not. Raise `resources.limits.memory` beyond, by about 85Mi for each 1,000 more workloads, or 100Mi for each 1,000 more Deployments of 10 pods. `go test -tags sizing ./test/sizing` measures them
+
 ### Fixed
 
 - `helm rollback` no longer fails on Helm 3 with `no Role with the name "napwake-manager" found` after a refused upgrade (P66). An upgrade whose `watchNamespaces` would leave out ManagedWorkloads the operator took on is now refused as the chart renders, with the upgrade guard's message, so Helm records no failed revision and the release stays `deployed`. The chart reads the running operator's Deployment for the namespaces it watches, then the ManagedWorkloads in those the upgrade leaves out, with the access of whoever runs `helm upgrade`. `--no-hooks` doesn't skip it; `guard.upgrade: false` drops it. The hook stays for what the chart can't see as it renders: `helm rollback`, Argo CD, and ManagedWorkloads still being deleted. The Helm smoke test runs on Helm 3.18 in CI too
