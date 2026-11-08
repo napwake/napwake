@@ -158,16 +158,24 @@ func (s *Server) stamp(ctx context.Context, rt route, from netip.Addr) error {
 	s.stamped[rt.workload] = stampRecord{began: began, at: now}
 	s.mu.Unlock()
 	// A stamp while the workload pauses calls the pause off, which the
-	// operator's PauseCancelled announces.
+	// operator's PauseCancelled announces. A workload that asks first is
+	// stamped only for a person's click.
 	if s.recorder != nil && won && w.Status.Phase == v1alpha1.PhasePaused {
-		what := "request"
+		reason, what := reasonWokenByRequest, "request"
 		if rt.asks {
-			what = "a person asked"
+			reason, what = reasonWokenByClick, "a person asked"
 		}
-		s.recorder.Eventf(&w, nil, "Normal", "WokenByRequest", "Wake", "%s on Service %s, waking", what, rt.service)
+		s.recorder.Eventf(&w, nil, "Normal", reason, "Wake", "%s on Service %s, waking", what, rt.service)
 	}
 	return nil
 }
+
+// The reasons of the event the doorman announces a wake with, one for each
+// cause, as the operator's for the same wake are.
+const (
+	reasonWokenByRequest = "WokenByRequest"
+	reasonWokenByClick   = "WokenByClick"
+)
 
 // stampAttempts is how many times patchStamp writes the stamp, the last of
 // them unlocked.

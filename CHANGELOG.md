@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Each cause of a wake has an event reason of its own, so what woke a workload can be told from its events' reasons. A person's click on **Wake it** is `WokenByClick`, no longer `WokenByRequest`, which keeps its meaning for a request the doorman held. A dependent's wake is `WokenByDependent`, naming the dependent, no longer `WokeByActivity`, which keeps its meaning for an activity annotation set by anything else, or a Prometheus activity query. The operator's own event for a request or a click is `WokenByRequest` or `WokenByClick` too, no longer `WokeByActivity`, so a wake by a request has two `WokenByRequest` events, the doorman's naming the Service and the operator's. An alert on `WokenByRequest` that should count clicks needs `WokenByClick` as well, and one on `WokeByActivity` that should count every wake needs the new reasons. `PauseCancelled` is as it was. In `kubectl napwake status -o json`, `wokenBy` says `click` and `dependent` for these wakes, which `request` and `activity` included before
+
 ### Fixed
 
 - A request the doorman held for a wake that ended back at zero, before any pod was Ready, was closed with no warning and no log line, and counted as `refused`. That happens when something else takes the workload to zero as it wakes, such as an HPA with `minReplicas: 0`. Now a `RequestNotServed` warning says why, the doorman logs it, and `napwake_doorman_wakes_total` counts it as `drained`. `refused` is left for a connection that arrives once the workload is no longer routed through the doorman

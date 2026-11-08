@@ -1932,14 +1932,45 @@ func staleReads(t *testing.T, c client.Client) interceptor.Funcs {
 	}}
 }
 
+// wokenEvents is how many wakes the doorman announced to r.
 func wokenEvents(r *events.FakeRecorder) int {
-	var n int
+	return len(announced(r))
+}
+
+// announced is the wakes the doorman announced to r, a request's or a
+// click's.
+func announced(r *events.FakeRecorder) []string {
+	var wakes []string
 	for len(r.Events) > 0 {
-		if strings.Contains(<-r.Events, "WokenByRequest") {
-			n++
+		if e := <-r.Events; strings.Contains(e, " "+reasonWokenByRequest+" ") || strings.Contains(e, " "+reasonWokenByClick+" ") {
+			wakes = append(wakes, e)
 		}
 	}
-	return n
+	return wakes
+}
+
+// A request and a person's click each wake with a reason of their own, so
+// what woke a workload is told by its events' reasons alone (P38).
+func TestServer_AnnouncesARequestAndAClickApart(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		asks bool
+		want string
+	}{
+		{name: "a request", want: "Normal WokenByRequest request on Service api, waking"},
+		{name: "a click", asks: true, want: "Normal WokenByClick a person asked on Service api, waking"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := events.NewFakeRecorder(10)
+			s, _ := newTestServer(t, nil, pausedWorkload("api", freePort(t), time.Minute))
+			s.recorder = recorder
+			rt := route{workload: apiKey, service: "api", asks: tt.asks}
+
+			require.NoError(t, s.stamp(context.Background(), rt, caller))
+
+			assert.Equal(t, []string{tt.want}, announced(recorder))
+		})
+	}
 }
 
 // Two doorman replicas can each get a connection from the same burst, the

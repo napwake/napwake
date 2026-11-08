@@ -331,24 +331,30 @@ var untroubled = map[string]bool{
 // each says woke it, as WokenBy gives it. The Resumed that follows one adds
 // nothing, so it's left out; a Resumed with no cause before it, such as a
 // hand-back on protecting the namespace, is the only record of that wake,
-// so it's kept, with no cause. One reason stands for every cause it's
-// written for: WokeByActivity for an activity annotation, a dependent
-// waking it or a Prometheus activity query, and PauseCancelled for any of
-// what would wake a paused workload, come as it paused, which only its
-// message names.
+// so it's kept, with no cause. Each cause has a reason of its own, but for
+// WokeByActivity, an activity annotation or a Prometheus activity query,
+// and PauseCancelled, any of what would wake a paused workload, come as it
+// paused, which only its message names. An operator before 0.2.1 wrote
+// WokeByActivity for a dependent's wake too, and the doorman WokenByRequest
+// for a person's click.
 var wakeCauses = map[string]string{
-	"WokeByActivity": "activity",
-	"WokenByRequest": wokenByRequest,
-	"WakeRequested":  "wakeRequest",
-	"AutoResume":     "forecast",
-	"ScaledUp":       "outside",
-	"PauseCancelled": "pauseCancelled",
+	"WokeByActivity":   "activity",
+	"WokenByRequest":   wokenByRequest,
+	"WokenByClick":     wokenByClick,
+	"WokenByDependent": "dependent",
+	"WakeRequested":    "wakeRequest",
+	"AutoResume":       "forecast",
+	"ScaledUp":         "outside",
+	"PauseCancelled":   "pauseCancelled",
 }
 
 // wokenByRequest is a wake by a request on one of the workload's Services,
-// which the doorman held or passed on, a person's click on one that asks
-// first included.
-const wokenByRequest = "request"
+// which the doorman held or passed on, and wokenByClick one by a person's
+// click on one that asks first.
+const (
+	wokenByRequest = "request"
+	wokenByClick   = "click"
+)
 
 // What a pause or wake is, as status's recent events give it.
 const (
@@ -363,6 +369,8 @@ var happenings = map[string]bool{
 	"Resumed":          true,
 	"WokeByActivity":   true,
 	"WokenByRequest":   true,
+	"WokenByClick":     true,
+	"WokenByDependent": true,
 	"WakeRequested":    true,
 	"AutoResume":       true,
 	"ScaledUp":         true,
@@ -371,9 +379,13 @@ var happenings = map[string]bool{
 }
 
 // A wake by a request the doorman held, or a person's click, is reported by
-// the doorman's WokenByRequest, which names the Service, so the operator's
-// own WokeByActivity for it is left out, and taken for the request it is.
-var requestWakeMessages = []string{"a request is waiting, waking", "a person asked to wake it, waking"}
+// the doorman's WokenByRequest or WokenByClick, which names the Service, so
+// the operator's own event for it is left out, and taken for what it is: of
+// the same reason, or WokeByActivity from an operator before 0.2.1.
+var requestWakeMessages = map[string]string{
+	"a request is waiting, waking":      wokenByRequest,
+	"a person asked to wake it, waking": wokenByClick,
+}
 
 // targetKey is a Deployment or StatefulSet.
 type targetKey struct {
@@ -1082,10 +1094,13 @@ func recentHappenings(events []corev1.Event, targets map[types.UID]string, since
 			continue
 		}
 		message := strings.TrimPrefix(ev.Message, target+": ")
-		heldRequest := ev.Reason == "WokeByActivity" && slices.Contains(requestWakeMessages, message)
 		kind, cause := happeningWake, wakeCauses[ev.Reason]
+		echoed, heldRequest := requestWakeMessages[message]
 		if heldRequest {
-			cause = wokenByRequest
+			cause = echoed
+		}
+		if ev.Reason == "WokenByRequest" && strings.HasPrefix(message, "a person asked on Service ") {
+			cause = wokenByClick
 		}
 		switch {
 		case ev.Reason == "Paused":

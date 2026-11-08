@@ -858,7 +858,8 @@ func doormanDays(t *testing.T, monday time.Time, days int, policy v1alpha1.IdleP
 		}
 		for len(recorder.Events) > 0 {
 			e := <-recorder.Events
-			for _, reason := range []string{ReasonAutoResume, ReasonWokeByActivity, ReasonPaused, ReasonPausedEarly} {
+			for _, reason := range []string{ReasonAutoResume, ReasonWokenByRequest, ReasonWokeByActivity, ReasonPaused,
+				ReasonPausedEarly} {
 				if !strings.HasPrefix(e, "Normal "+reason+" ") {
 					continue
 				}
@@ -925,7 +926,7 @@ func TestAutoResume_LearnsToWakeBeforePeopleArrive(t *testing.T) {
 	at := func(d int, clock time.Duration) time.Time { return monday.AddDate(0, 0, d).Add(clock) }
 
 	assert.Equal(t, []lifecycleEvent{
-		{at: at(1, 9*time.Hour+10*time.Minute), reason: ReasonWokeByActivity},
+		{at: at(1, 9*time.Hour+10*time.Minute), reason: ReasonWokenByRequest},
 		{at: at(1, 18*time.Hour+29*time.Minute), reason: ReasonPaused},
 	}, day(1), "the first Tuesday, people wake it as they arrive")
 

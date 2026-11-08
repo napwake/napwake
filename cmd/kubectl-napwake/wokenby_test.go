@@ -49,18 +49,29 @@ func TestStatus_WokenBy(t *testing.T) {
 	}{
 		{name: "a request the doorman held", events: []*eventAt{
 			{"WokenByRequest", "request on Service web, waking", 2 * time.Minute},
-			{"WokeByActivity", "web: a request is waiting, waking", time.Minute},
+			{"WokenByRequest", "web: a request is waiting, waking", time.Minute},
 		}, want: "request", wantListed: []string{"request"}},
 		{name: "a person's click, on a workload that asks", events: []*eventAt{
-			{"WokenByRequest", "a person asked on Service web, waking", time.Minute},
-		}, want: "request", wantListed: []string{"request"}},
+			{"WokenByClick", "a person asked on Service web, waking", time.Minute},
+		}, want: "click", wantListed: []string{"click"}},
 		{name: "a person's click, with the operator's own event", events: []*eventAt{
+			{"WokenByClick", "a person asked on Service web, waking", 2 * time.Minute},
+			{"WokenByClick", "web: a person asked to wake it, waking", time.Minute},
+		}, want: "click", wantListed: []string{"click"}},
+		{name: "a request, without the doorman's own event", events: []*eventAt{
+			{"WokenByRequest", "web: a request is waiting, waking", time.Minute},
+		}, want: "request"},
+		{name: "a request, before 0.2.1", events: []*eventAt{
+			{"WokenByRequest", "request on Service web, waking", 2 * time.Minute},
+			{"WokeByActivity", "web: a request is waiting, waking", time.Minute},
+		}, want: "request", wantListed: []string{"request"}},
+		{name: "a person's click, before 0.2.1", events: []*eventAt{
 			{"WokenByRequest", "a person asked on Service web, waking", 2 * time.Minute},
 			{"WokeByActivity", "web: a person asked to wake it, waking", time.Minute},
-		}, want: "request", wantListed: []string{"request"}},
-		{name: "a request, without the doorman's own event", events: []*eventAt{
-			{"WokeByActivity", "web: a request is waiting, waking", time.Minute},
-		}, want: "request"},
+		}, want: "click", wantListed: []string{"click"}},
+		{name: "a dependent waking", events: []*eventAt{
+			{"WokenByDependent", "web: its dependent shop/frontend woke, waking", time.Minute},
+		}, want: "dependent", wantListed: []string{"dependent"}},
 		{name: "an activity annotation", events: []*eventAt{
 			{"WokeByActivity", "web: activity annotation is newer than the pause, waking", time.Minute},
 		}, want: "activity", wantListed: []string{"activity"}},
@@ -232,18 +243,20 @@ func TestStatus_JSONSaysWhatWokeEach(t *testing.T) {
 }
 
 // What status reads a wake's cause from is the reason of the operator's
-// own events, so a reason renamed there is a test that fails here.
+// own events, so a reason renamed there is a test that fails here. The
+// doorman's are the operator's for a request and a click.
 func TestWakeCauses_AreTheOperatorsReasons(t *testing.T) {
-	operators := []string{controller.ReasonWokeByActivity, controller.ReasonAutoResume, controller.ReasonScaledUp,
-		controller.ReasonWakeRequested, controller.ReasonPauseCancelled}
+	operators := []string{controller.ReasonWokeByActivity, controller.ReasonWokenByRequest,
+		controller.ReasonWokenByClick, controller.ReasonWokenByDependent, controller.ReasonAutoResume,
+		controller.ReasonScaledUp, controller.ReasonWakeRequested, controller.ReasonPauseCancelled}
 	for _, reason := range operators {
 		assert.Contains(t, wakeCauses, reason)
 		assert.True(t, happenings[reason], reason)
 	}
-	doormans := slices.DeleteFunc(slices.Collect(maps.Keys(wakeCauses)), func(r string) bool {
+	others := slices.DeleteFunc(slices.Collect(maps.Keys(wakeCauses)), func(r string) bool {
 		return slices.Contains(operators, r)
 	})
-	assert.Equal(t, []string{"WokenByRequest"}, doormans, "the doorman's own, which it writes on a request")
+	assert.Empty(t, others, "every cause is one the operator writes")
 	assert.True(t, happenings[controller.ReasonPaused])
 	assert.True(t, happenings[controller.ReasonResumed])
 }

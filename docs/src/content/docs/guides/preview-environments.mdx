@@ -215,7 +215,7 @@ Someone opens the preview, say `https://pr-42.preview.example.com/orders/7`, and
 
 The button posts back to the same address, with a token the doorman signed for this preview and this pause. It's good for 10 minutes.
 
-A current browser says the click came from the page, with `Sec-Fetch-Site` over HTTPS, or its `Origin` over plain HTTP. The preview then wakes, with what it depends on, and a `WokenByRequest` event says a person asked.
+A current browser says the click came from the page, with `Sec-Fetch-Site` over HTTPS, or its `Origin` over plain HTTP. The preview then wakes, with what it depends on, and a `WokenByClick` event says a person asked.
 
 Next comes the waking-up page. It says the preview is starting, and for how long, and reloads every 3 seconds. Once a pod is Ready, the next reload is the page they opened, `/orders/7`.
 

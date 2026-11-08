@@ -188,7 +188,7 @@ func TestServer_AClickWakesIt(t *testing.T) {
 	assert.Contains(t, body, `<meta http-equiv="refresh" content="3">`, "it reloads the page it's on, with a GET")
 	assert.Contains(t, body, `<meta name="referrer" content="no-referrer">`, "the waking-up page posts nothing")
 	assert.NotEmpty(t, lastRequest(t, c), "the click stamps the request annotation, as a held request does")
-	assert.Equal(t, 1, wokenEvents(recorder))
+	assert.Equal(t, []string{"Normal WokenByClick a person asked on Service api, waking"}, announced(recorder))
 }
 
 // Once it has been asked to wake, a person's browser gets the waking-up

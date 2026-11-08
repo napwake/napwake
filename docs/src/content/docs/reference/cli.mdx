@@ -823,8 +823,7 @@ It's a note, not a problem, since most wakes take seconds. Once a wake by a requ
 
 | Recent pauses and wakes | |
 |---|---|
-| A wake's cause | A request on a Service, an activity annotation, a wake request, the forecast, or a scale-up from outside Napwake |
-| Activity annotations | Including a dependent waking |
+| A wake's cause | A request on a Service, a person's click, a dependent waking, an activity annotation, a wake request, the forecast, or a scale-up from outside Napwake |
 | Wake requests | From `kubectl napwake wake`, or a tool setting `napwake.dev/wake-requested`, by their `WakeRequested` event |
 | Whose | Only the ManagedWorkloads there now, by their UID. Not a deleted one's, nor those of the one before one made again under the same name, as after a reinstall |
 | Requests the doorman closed without reaching the workload | Listed too |
@@ -838,8 +837,10 @@ It's a note, not a problem, since most wakes take seconds. Once a wake by a requ
 
 | `wokenBy` | What woke it |
 |---|---|
-| `request` | A request on one of its Services, through the doorman, including a person's click on one that asks first |
-| `activity` | An activity annotation, a dependent waking, or a Prometheus activity query |
+| `request` | A request on one of its Services, through the doorman |
+| `click` | A person's click on **Wake it**, for a workload that asks first |
+| `dependent` | A dependent waking, which wakes what it depends on |
+| `activity` | An activity annotation, or a Prometheus activity query |
 | `wakeRequest` | A wake request, such as `kubectl napwake wake` |
 | `forecast` | `autoResume`, ahead of the demand the forecast expects |
 | `outside` | A scale-up from outside Napwake |
