@@ -162,7 +162,7 @@ To a newer version, Helm then renders with the installed version's defaults, whi
 
 ## Narrowing `watchNamespaces`
 
-`helm upgrade` stops with `job napwake-upgrade-guard failed`, or with Helm 4 `resource Job/napwake-system/napwake-upgrade-guard not ready`.
+`helm upgrade` stops with `UPGRADE FAILED: execution error at (napwake/templates/guard.yaml...): Napwake refuses this upgrade: ...`, naming the ManagedWorkloads it would leave. Helm records no revision, so the release stays `deployed`.
 
 The upgrade leaves a namespace with ManagedWorkloads out of `watchNamespaces`, by dropping it or by setting `watchNamespaces` where it was empty. That ends the operator's and the doorman's access there, so they'd stop watching it. Paused workloads there would stay at zero, with Services routed to doorman ports nothing serves and finalizers that never run.
 
@@ -187,15 +187,15 @@ So the chart's upgrade guard refuses. Stop managing them first, while the operat
 
 | The guard | |
 |---|---|
-| What it is | The `<fullname>-upgrade-guard` Job, a pre-upgrade hook |
-| When it fails | The running operator took on ManagedWorkloads, with its `napwake.dev/cleanup` finalizer, in the namespaces left out. It fails before anything changes, after waiting two and a half minutes for any being deleted |
-| What it says | With Helm 3.18 and later, a message starting `Napwake refuses this upgrade: ...` that names them and what to do, then the steps above. `kubectl logs job/napwake-upgrade-guard -n napwake-system` shows the same |
-| What else it guards | `helm rollback` to a revision with a narrower `watchNamespaces` |
-| What it reads | ManagedWorkloads' metadata cluster-wide, through a ClusterRole that, like its ServiceAccount, Helm deletes once the hooks have run |
+| What it is | Two checks. `helm upgrade` refuses as it renders the chart, before Helm records a revision. Then the `<fullname>-upgrade-guard` Job, a pre-upgrade hook, checks again |
+| When it fails | The running operator took on ManagedWorkloads, with its `napwake.dev/cleanup` finalizer, in the namespaces left out. It fails before anything changes. The hook first waits two and a half minutes for any being deleted |
+| What it says | `Napwake refuses this upgrade: ...`, naming them and what to do. When the hook refuses, Helm 3.18 and later print the same, then the steps above, and `kubectl logs job/napwake-upgrade-guard -n napwake-system` shows it |
+| What it reads | As it renders, with your access, the operator's Deployment, for the namespaces it watches. Then the ManagedWorkloads in those the upgrade leaves out, or in every namespace when it watches all. The hook reads ManagedWorkloads' metadata cluster-wide, through a ClusterRole that, like its ServiceAccount, Helm deletes once the hooks have run |
+| Only the hook | Guards `helm rollback` to a revision with a narrower `watchNamespaces`, since a rollback doesn't render the chart. Runs under Argo CD, which renders with no cluster to look in, as a PreSync hook, before every sync. Waits for ManagedWorkloads being deleted. Counts those the operator took on in namespaces it no longer watches |
 | What a refusal leaves of it | Before Helm 3.19, its ServiceAccount and RBAC, until it runs again or `helm uninstall` deletes them. Its Job, for an hour, for `kubectl logs` |
-| When it runs | Only when `watchNamespaces` is set, since widening to every namespace strands nothing. Argo CD runs it as a PreSync hook, before every sync |
-| How to skip it | `helm upgrade --no-hooks` skips it, and `guard.upgrade: false` drops it. Then restore the workloads left behind there by hand ([Restoring workloads after the operator is gone](/getting-started/installation/#restoring-workloads-after-the-operator-is-gone)) |
-| What a refusal leaves | A failed revision, and the release running the previous one. An upgrade with `--reuse-values` alone marks it deployed again ([After a refusal](/operations/troubleshooting/#after-a-refusal-the-release-isnt-deployed)). `helm uninstall` stays guarded. It runs with the failed revision's values, so it also counts ManagedWorkloads the operator took on outside them |
+| When it runs | Only when `watchNamespaces` is set, since widening to every namespace strands nothing |
+| How to skip it | `guard.upgrade: false` drops both checks. `helm upgrade --no-hooks` skips only the hook. Then restore the workloads left behind there by hand ([Restoring workloads after the operator is gone](/getting-started/installation/#restoring-workloads-after-the-operator-is-gone)) |
+| What a refusal leaves | Refused as it renders, nothing, and the release stays `deployed`. Refused by the hook, a failed revision, and the release running the previous one. An upgrade with `--reuse-values` alone marks it deployed again ([After a refusal](/operations/troubleshooting/#after-a-refusal-the-release-isnt-deployed)). `helm uninstall` stays guarded. It runs with the failed revision's values, so it also counts ManagedWorkloads the operator took on outside them |
 
 </details>
 
@@ -230,7 +230,7 @@ Each ManagedWorkload keeps its forecast's state in `status.prediction.state`. On
 helm rollback napwake -n napwake-system
 ```
 
-After a refused upgrade, uninstall or rollback, recover instead with `helm upgrade --reuse-values` alone, or a rollback by revision number ([After a refusal](/operations/troubleshooting/#after-a-refusal-the-release-isnt-deployed)). Straight after a refused upgrade or rollback, Helm 3's `helm rollback` fails with `no Role ... found`.
+An upgrade refused as the chart renders leaves nothing to recover from. After a refused uninstall or rollback, or an upgrade the guard's hook refused, recover instead with `helm upgrade --reuse-values` alone, or a rollback by revision number ([After a refusal](/operations/troubleshooting/#after-a-refusal-the-release-isnt-deployed)). Straight after a rollback or upgrade the hook refused, Helm 3's `helm rollback` fails with `no Role ... found`.
 
 </TabItem>
 <TabItem label="install.yaml">

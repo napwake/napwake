@@ -349,6 +349,11 @@ func TestNodeAutoscalerLine(t *testing.T) {
 			want: "Node autoscaler: GKE Autopilot (scales nodes itself)",
 		},
 		{
+			name: "EKS Fargate",
+			a:    nodescale.Autoscaler{Scalers: []nodescale.Scaler{{Kind: nodescale.EKSFargate}}},
+			want: "Node autoscaler: EKS Fargate (a node for each pod, gone when it stops)",
+		},
+		{
 			name: "two at once",
 			a: nodescale.Autoscaler{Scalers: []nodescale.Scaler{{Kind: nodescale.Karpenter},
 				{Kind: nodescale.ClusterAutoscaler}}},

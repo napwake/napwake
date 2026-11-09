@@ -7,13 +7,15 @@
 # left alone. A StatefulSet opted in with dry-run, as the README's
 # quickstart does, is measured but not paused until kubectl napwake
 # enable ends dry-run. Neither the operator nor the doorman logs an error.
-# An upgrade that stops watching the namespace is refused. Last, helm
-# uninstall is refused while ManagedWorkloads are left, an upgrade with
-# --reuse-values alone marks the release deployed again, and the
-# uninstall goes ahead once the workloads are no longer opted in, which
-# restores the paused StatefulSet, and leaves none of the guards' RBAC
-# behind, even after a refusal. The e2e suite installs through kustomize,
-# with a ClusterRole, so this is what tests the chart.
+# An upgrade that stops watching the namespace is refused as the chart
+# renders, so Helm records no revision. Last, helm uninstall is refused
+# while ManagedWorkloads are left, a rollback to its revision marks the
+# release deployed again, helm rollback goes ahead after another refused
+# upgrade, and the uninstall goes ahead once the workloads are no
+# longer opted in, which restores the paused StatefulSet, and leaves none
+# of the guards' RBAC behind, even after a refusal. The e2e suite installs
+# through kustomize, with a ClusterRole, so this is what tests the chart.
+# Its images are the Makefile's E2E_IMAGES, pinned by digest.
 #
 # KIND_CLUSTER names the cluster, which is created and deleted here, so it
 # must not already exist. It's this checkout's own by default, and the
@@ -31,9 +33,20 @@ UNWATCHED=smoke-unwatched
 APP=web
 REPLICAS=2
 DB=db
-WEB_IMAGE=registry.k8s.io/e2e-test-images/agnhost:2.52
-CURL_IMAGE=curlimages/curl:8.7.1
-METRICS_SERVER_IMAGE=registry.k8s.io/metrics-server/metrics-server:v0.7.2
+# pinned is an image as the Makefile's E2E_IMAGES pins it, by tag and
+# digest, which make load-test-e2e-images preloads under both.
+pinned() {
+  local found
+  found=$(make -s --no-print-directory e2e-images | tr ' ' '\n' | awk -v want="$1@" 'index($0, want) == 1')
+  if [ -z "$found" ]; then
+    echo "the Makefile's E2E_IMAGES doesn't pin $1" >&2
+    return 1
+  fi
+  echo "$found"
+}
+WEB_IMAGE=$(pinned registry.k8s.io/e2e-test-images/agnhost:2.52)
+CURL_IMAGE=$(pinned curlimages/curl:8.7.1)
+METRICS_SERVER_IMAGE=$(pinned registry.k8s.io/metrics-server/metrics-server:v0.7.2)
 METRICS_SERVER_MANIFEST="$(dirname "$0")/../test/e2e/testdata/metrics-server-v0.7.2.yaml"
 # A ManagedWorkload that routed through the doorman is deleted only once its
 # ports have drained, twice the doorman's RouteDrain, so its deletion is
@@ -135,7 +148,8 @@ unrouted() {
 
 "$KIND" create cluster --name "$CLUSTER" --kubeconfig "$KUBECONFIG" --wait 2m
 make docker-build IMG="$IMG"
-make load-test-e2e-images KIND_CLUSTER="$CLUSTER" E2E_IMAGES="$WEB_IMAGE $CURL_IMAGE $METRICS_SERVER_IMAGE"
+make load-test-e2e-images check-test-e2e-images KIND_CLUSTER="$CLUSTER" E2E_KUBECONFIG="$KUBECONFIG" \
+  E2E_IMAGES="$WEB_IMAGE $CURL_IMAGE $METRICS_SERVER_IMAGE"
 "$KIND" load docker-image "$IMG" --name "$CLUSTER"
 PLUGIN="$PLUGIN_DIR/kubectl-napwake"
 go build -o "$PLUGIN" ./cmd/kubectl-napwake
@@ -293,31 +307,48 @@ if [ -n "$errors" ]; then
   exit 1
 fi
 
-echo "checking helm upgrade is refused when it would stop watching $WATCHED"
-if refusal=$(helm upgrade napwake charts/napwake --namespace "$RELEASE_NAMESPACE" --reuse-values \
-  --set "watchNamespaces={$UNWATCHED}" --wait --timeout 5m 2>&1); then
-  echo "$refusal" >&2
-  echo "helm upgrade stopped watching $WATCHED, leaving its ManagedWorkloads with no operator" >&2
-  exit 1
-fi
-# Helm 4 prints the hook's output as one log message with its line breaks
-# escaped, so the refusal's first line, up to the first break, must name
-# what's left and link the docs on its own.
-lead=$(grep -o 'Napwake refuses this upgrade: [^\\]*' <<<"$refusal" || true)
-if ! grep -qF "$WATCHED/$APP" <<<"$lead" || ! grep -qF 'upgrading/#narrowing-watchnamespaces' <<<"$lead"; then
-  echo "$refusal" >&2
-  echo "the refused upgrade didn't lead with a line naming the ManagedWorkloads it would leave, and the docs" >&2
-  exit 1
-fi
-kubectl get deployment napwake -n "$RELEASE_NAMESPACE" -o 'jsonpath={.spec.template.spec.containers[0].args}' |
-  grep -qF -- "--watch-namespaces=$WATCHED" || {
-  echo "the refused upgrade changed the operator's namespaces" >&2
-  exit 1
+# last_revision is the release's last revision, and its status.
+last_revision() {
+  helm history napwake --namespace "$RELEASE_NAMESPACE" --max 1 -o json |
+    sed -E 's/.*"revision":([0-9]+).*"status":"([a-z-]+)".*/\1 \2/'
 }
 
-# The release's last revision is now the refused upgrade's, which Helm
-# uninstalls with, so the guard must still find the ManagedWorkloads the
-# operator took on in a namespace those values don't watch.
+# refuse_narrowing checks that an upgrade that would stop watching $WATCHED
+# is refused as the chart renders, before Helm records a revision, with
+# the upgrade guard's words, and changes nothing.
+refuse_narrowing() {
+  local before refusal lead
+  before=$(last_revision)
+  if refusal=$(helm upgrade napwake charts/napwake --namespace "$RELEASE_NAMESPACE" --reuse-values \
+    --set "watchNamespaces={$UNWATCHED}" --wait --timeout 5m 2>&1); then
+    echo "$refusal" >&2
+    echo "helm upgrade stopped watching $WATCHED, leaving its ManagedWorkloads with no operator" >&2
+    return 1
+  fi
+  # The refusal's first line, up to the first break, names what's left and
+  # links the docs on its own, as the guard's does: Helm 4 prints a hook's
+  # output as one log message with its line breaks escaped.
+  lead=$(grep -o 'Napwake refuses this upgrade: [^\\]*' <<<"$refusal" || true)
+  if ! grep -qF "$WATCHED/$APP" <<<"$lead" || ! grep -qF 'upgrading/#narrowing-watchnamespaces' <<<"$lead"; then
+    echo "$refusal" >&2
+    echo "the refused upgrade didn't lead with a line naming the ManagedWorkloads it would leave, and the docs" >&2
+    return 1
+  fi
+  if [ "$(last_revision)" != "$before" ]; then
+    echo "$refusal" >&2
+    echo "the refused upgrade left a revision, $(last_revision), after $before: the chart didn't refuse it as it rendered" >&2
+    return 1
+  fi
+  kubectl get deployment napwake -n "$RELEASE_NAMESPACE" -o 'jsonpath={.spec.template.spec.containers[0].args}' |
+    grep -qF -- "--watch-namespaces=$WATCHED" || {
+    echo "the refused upgrade changed the operator's namespaces" >&2
+    return 1
+  }
+}
+
+echo "checking helm upgrade is refused when it would stop watching $WATCHED, with no revision recorded"
+refuse_narrowing
+
 echo "checking helm uninstall is refused while ManagedWorkloads are left"
 if refusal=$(helm uninstall napwake --namespace "$RELEASE_NAMESPACE" --wait --timeout 5m 2>&1); then
   echo "$refusal" >&2
@@ -333,42 +364,52 @@ if ! grep -qF "$WATCHED/$APP" <<<"$lead" || ! grep -qF "$WATCHED/$DB" <<<"$lead"
 fi
 is deployment/napwake "$RELEASE_NAMESPACE" '{.status.readyReplicas}' 1
 
-# After a refused upgrade, the docs recover with an upgrade with
-# --reuse-values alone, which takes the deployed revision's values, not the
-# refused one's. Helm 3 fails a helm rollback here: it compares the
-# rollback with the refused revision, which lacks the Roles that run.
-echo "checking an upgrade with --reuse-values alone marks the release deployed again, as the docs say"
+# A refused uninstall marks the last revision uninstalling, and with no
+# revision deployed, helm upgrade fails. The docs recover with a rollback
+# to that revision, by its number.
+echo "checking a rollback to the uninstalling revision marks the release deployed again, as the docs say"
+read -r revision status <<<"$(last_revision)"
+if [ "$status" != uninstalling ]; then
+  echo "after the refused uninstall the last revision, $revision, is $status, not uninstalling" >&2
+  exit 1
+fi
 generations=$(kubectl get deployments -n "$RELEASE_NAMESPACE" -l app.kubernetes.io/instance=napwake \
   -o 'jsonpath={.items[*].metadata.generation}')
-helm upgrade napwake charts/napwake --namespace "$RELEASE_NAMESPACE" --reuse-values --wait --timeout 5m
+helm rollback napwake "$revision" --namespace "$RELEASE_NAMESPACE" --wait --timeout 5m
 status=$(helm status napwake --namespace "$RELEASE_NAMESPACE" | awk '/^STATUS:/ {print $2}')
 if [ "$status" != deployed ]; then
-  echo "after the upgrade the release is $status, not deployed" >&2
+  echo "after the rollback the release is $status, not deployed" >&2
   exit 1
 fi
 kubectl get deployment napwake -n "$RELEASE_NAMESPACE" -o 'jsonpath={.spec.template.spec.containers[0].args}' |
   grep -qF -- "--watch-namespaces=$WATCHED" || {
-  echo "the upgrade that marks the release deployed changed the operator's namespaces" >&2
+  echo "the rollback that marks the release deployed changed the operator's namespaces" >&2
   exit 1
 }
 if [ "$(kubectl get deployments -n "$RELEASE_NAMESPACE" -l app.kubernetes.io/instance=napwake \
   -o 'jsonpath={.items[*].metadata.generation}')" != "$generations" ]; then
-  echo "the upgrade that marks the release deployed changed the operator's or the doorman's Deployment" >&2
+  echo "the rollback that marks the release deployed changed the operator's or the doorman's Deployment" >&2
   exit 1
 fi
 
-# Helm 3 before 3.19 deletes only the failed hook, so a refusal leaves the
-# upgrade guard's ServiceAccount and RBAC. A later upgrade without the
-# upgrade guard doesn't run it again, so only the uninstall can clear them.
-echo "refusing the narrowing upgrade again, then upgrading without the upgrade guard"
-if refusal=$(helm upgrade napwake charts/napwake --namespace "$RELEASE_NAMESPACE" --reuse-values \
-  --set "watchNamespaces={$UNWATCHED}" --wait --timeout 5m 2>&1); then
-  echo "$refusal" >&2
-  echo "helm upgrade stopped watching $WATCHED, leaving its ManagedWorkloads with no operator" >&2
+# A refusal by the upgrade guard's hook left a failed revision without the
+# per-namespace Roles, and Helm 3's helm rollback, which compares with the
+# last revision, then failed with no Role found (P66). Refused as the chart
+# renders, the last revision is still the deployed one, so the upgrading
+# guide's rollback goes ahead on any Helm.
+echo "refusing the narrowing upgrade again, then rolling back as the upgrading guide does"
+refuse_narrowing
+helm rollback napwake --namespace "$RELEASE_NAMESPACE" --wait --timeout 5m
+status=$(helm status napwake --namespace "$RELEASE_NAMESPACE" | awk '/^STATUS:/ {print $2}')
+if [ "$status" != deployed ]; then
+  echo "after the rollback the release is $status, not deployed" >&2
   exit 1
 fi
-helm upgrade napwake charts/napwake --namespace "$RELEASE_NAMESPACE" --reuse-values --set guard.upgrade=false \
-  --wait --timeout 5m
+kubectl get deployment napwake -n "$RELEASE_NAMESPACE" -o 'jsonpath={.spec.template.spec.containers[0].args}' |
+  grep -qF -- "--watch-namespaces=$WATCHED" || {
+  echo "the rollback changed the operator's namespaces" >&2
+  exit 1
+}
 
 echo "stopping managing the workloads, which restores the paused StatefulSet, then uninstalling"
 kubectl label deployment "$APP" -n "$WATCHED" napwake.dev/managed-

@@ -32,11 +32,15 @@ timezone: UTC
 # StatefulSets, Services, Ingresses, PVCs, HPAs, nodes and namespaces, or only the
 # watched namespaces', the EndpointSlices it writes and the doorman's, and,
 # watching every namespace, what each pod bound to a node requests,
-# measured at about 2.7 KB a pod, so its memory grows with the cluster.
-# Raise the limit on clusters with many thousands of workloads. The garbage
-# collector aims at 90% of the limit, leaving the rest for memory outside
-# its heap, and works harder near it rather than letting the operator be
-# OOM-killed.
+# measured at about 2.7 KB a pod, so its memory grows with the cluster,
+# managed or not. Running, at its peak resident memory, it measured 150Mi
+# with 1,000 ManagedWorkloads, each with weeks of forecasts, a Deployment,
+# a pod and a Service, about 85Ki more for each one more, and about 100Ki
+# for each Deployment of 10 pods with a Service. 512Mi covers some 4,000
+# such workloads, or 40,000 pods behind 4,000 Deployments. A cluster of
+# 100,000 pods took 884Mi. Raise the limit beyond. The garbage collector aims at
+# 90% of the limit, leaving the rest for memory outside its heap, and works
+# harder near it rather than letting the operator be OOM-killed.
 resources:
   limits:
     cpu: 500m
@@ -260,7 +264,9 @@ guard:
   # later runs it as a PreDelete hook, blocking the Application's deletion.
   uninstall: true
   # Refuses helm upgrade or rollback to a watchNamespaces that leaves out a
-  # namespace where the operator manages workloads. Argo CD runs it as a
+  # namespace where the operator manages workloads. helm upgrade refuses
+  # first as it renders the chart, so Helm records no revision, and
+  # --no-hooks doesn't skip that; false does. Argo CD runs the hook as a
   # PreSync hook, before every sync.
   upgrade: true
   # Empty uses the operator's settings above. Istio's and Linkerd's sidecar

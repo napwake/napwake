@@ -55,9 +55,10 @@ jobs:
         with:
           version: v3.22.1
       # Lints the chart, renders it for EKS-, GKE- and AKS-style versions,
-      # and checks it grants the operator what config/rbac/role.yaml does.
-      # With Helm 3, while helm-smoke installs with Helm 4, so the chart is
-      # proven on both.
+      # checks it grants the operator what config/rbac/role.yaml does, and
+      # that it refuses as it renders the upgrades its upgrade guard would.
+      # With Helm 3, while helm-smoke installs with Helm 4 and 3.18, so the
+      # chart is proven on both.
       - run: make check-chart
       - uses: ./.github/actions/setup-envtest
       - run: make test-doorman-policy
