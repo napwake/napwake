@@ -38,10 +38,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
-	"github.com/napwake/napwake/internal/autoscaler"
 	"github.com/napwake/napwake/internal/doorman"
 	"github.com/napwake/napwake/internal/forecast"
-	"github.com/napwake/napwake/internal/lifecycle"
 )
 
 // ingressEnv is an API server with a Ready doorman pod, in which each case
@@ -120,15 +118,13 @@ func (e *ingressEnv) start(t *testing.T, ns string, setup func(*v1alpha1.Managed
 func (c *ingressCase) reconciler(t *testing.T) *Reconciler {
 	t.Helper()
 	cl := client.WithFieldOwner(indexedClient{c.env.admin}, v1alpha1.FieldManager)
-	finder := autoscaler.NewFinder(cl)
-	return &Reconciler{
+	return withTheOperatorsPauser(&Reconciler{
 		Client: cl, Scheme: testScheme(t), Recorder: events.NewFakeRecorder(1000),
-		pauser: lifecycle.NewPauser(cl, finder), autoscalers: finder,
 		metrics:        &stubMetrics{cpuPerReplica: 100, memoryPerReplica: 1 << 30, replicas: 1},
 		engines:        newEngineRegistry(func() forecaster { return c.forecast }),
 		DoormanService: "napwake-doorman", DoormanNamespace: c.env.doormanNS,
 		clock: func() time.Time { return c.now },
-	}
+	}, cl)
 }
 
 func (c *ingressCase) workload(t *testing.T) *v1alpha1.ManagedWorkload {
@@ -269,6 +265,10 @@ func recordedStorefront(readTimeout string, timeout time.Duration) v1alpha1.Ngin
 func TestIngressTimeoutShort(t *testing.T) {
 	env := startIngressEnv(t)
 
+	t.Run("its pauser is on its reconciler's clock", func(t *testing.T) {
+		requirePauserOnItsClock(t, env.start(t, "clock", nil).reconciler(t), "clock")
+	})
+
 	t.Run("a slow wake by a request behind ingress-nginx's default warns, once", func(t *testing.T) {
 		c := env.start(t, "slow", nil, nginxIngress(storefront, "api", ""))
 		r := c.reconciler(t)
@@ -402,6 +402,21 @@ func TestIngressTimeoutShort(t *testing.T) {
 		cond := timeoutCondition(c.workload(t))
 		require.NotNil(t, cond, "held 75 seconds, though Ready 45 seconds after the scale-up")
 		assert.Contains(t, cond.Message, "a wake by a request took 75 seconds to its first Ready replica")
+		assert.Len(t, warnings(r), 1)
+	})
+
+	t.Run("timed from the scale-up, for a stamp from a doorman clock ahead of the operator's", func(t *testing.T) {
+		c := env.start(t, "ahead", nil, nginxIngress(storefront, "api", ""))
+		r := c.reconciler(t)
+		c.pause(t, r)
+		c.wake(t, r, func() {
+			c.annotate(t, map[string]string{
+				v1alpha1.AnnotationLastRequest: c.now.Add(10 * time.Minute).UTC().Format(time.RFC3339)})
+		}, 85*time.Second)
+
+		cond := timeoutCondition(c.workload(t))
+		require.NotNil(t, cond, "Ready 85 seconds after the scale-up, its stamp after that")
+		assert.Contains(t, cond.Message, "a wake by a request took 85 seconds to its first Ready replica")
 		assert.Len(t, warnings(r), 1)
 	})
 

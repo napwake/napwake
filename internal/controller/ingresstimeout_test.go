@@ -230,7 +230,7 @@ func TestReviewIngressTimeouts_DoormanOff(t *testing.T) {
 	w.Status.LastSlowWake = &v1alpha1.SlowWake{Took: metav1.Duration{Duration: time.Minute}}
 	w.Status.Conditions = []metav1.Condition{{Type: conditionIngressTimeoutShort, Status: metav1.ConditionTrue,
 		Reason: reasonWakeOutlastedTimeout}}
-	r := &Reconciler{Recorder: events.NewFakeRecorder(10), clock: func() time.Time { return fixedTime }}
+	r := &Reconciler{Recorder: events.NewFakeRecorder(10), clock: func() time.Time { return monotonic(fixedTime) }}
 
 	r.reviewIngressTimeouts(context.Background(), w)
 

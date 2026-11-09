@@ -55,12 +55,14 @@ func (r *Reconciler) accumulateCost(ctx context.Context, workload *v1alpha1.Mana
 
 // settleCost counts the time since cost was last brought up to date in the
 // workload's current phase. A transition settles before it changes the
-// phase, so a pause is counted as paused right up to the wake.
+// phase, so a pause is counted as paused right up to the wake. It counts to
+// the second, as status keeps lastAccumulatedAt: counted to the instant,
+// the next flush, reading it back without the fraction, counted that again.
 func (r *Reconciler) settleCost(ctx context.Context, workload *v1alpha1.ManagedWorkload) {
 	if r.metrics == nil {
 		return
 	}
-	now := r.now()
+	now := r.now().Truncate(time.Second)
 	if workload.Status.Cost == nil {
 		workload.Status.Cost = &v1alpha1.CostStatus{}
 	}

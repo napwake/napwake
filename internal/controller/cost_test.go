@@ -49,7 +49,7 @@ func costWorkload(phase v1alpha1.WorkloadPhase) *v1alpha1.ManagedWorkload {
 // costClock is a reconciler on a clock the test moves.
 func costClock(start time.Time, m *stubMetrics) (*Reconciler, *time.Time) {
 	now := start
-	r := &Reconciler{clock: func() time.Time { return now }}
+	r := &Reconciler{clock: func() time.Time { return monotonic(now) }}
 	if m != nil {
 		r.metrics = m
 	}
@@ -79,7 +79,7 @@ func dollars(t *testing.T, s string) float64 {
 // flushFor accumulates a workload's cost at every status flush for d.
 func flushFor(r *Reconciler, now *time.Time, w *v1alpha1.ManagedWorkload, d time.Duration) {
 	for end := now.Add(d); now.Before(end); {
-		*now = now.Add(statusFlushInterval)
+		*now = now.Add(statusFlushInterval + requeueLag)
 		r.accumulateCost(context.Background(), w)
 	}
 }
@@ -191,13 +191,41 @@ func TestAccumulateCost_FullPrecisionOverADayOfFlushes(t *testing.T) {
 			}
 			assert.InEpsilon(t, wantCPU, cpu.AsApproximateFloat64(), tolerance)
 			assert.InEpsilon(t, wantMem, mem.AsApproximateFloat64(), tolerance)
-			assert.Equal(t, 24*time.Hour, c.Tracked.Duration)
+			assert.Equal(t, 24*time.Hour, c.Tracked.Duration, "to the second status keeps")
 			if tt.phase == v1alpha1.PhasePaused {
 				want := cost.ComputeHourly(float64(tt.cpuMillis)/1000, float64(tt.memBytes)/bytesPerGiB, cost.DefaultRates) * 24
 				assert.Equal(t, cost.FormatDollars(want), c.FreedThisMonth)
 			}
 		})
 	}
+}
+
+// The operator reads each workload back from the API server, which keeps
+// lastAccumulatedAt to the second. Counted from a clock half a second into
+// each second, a day of flushes, each read back as the cache gives it,
+// tracked 24h2m24s and billed the dropped half seconds as well: each flush
+// counted again what the last one had. Counted to the second status keeps,
+// a day is a day.
+func TestAccumulateCost_ReadBackAfterEachFlushTracksADay(t *testing.T) {
+	w := costWorkload(v1alpha1.PhaseRunning)
+	r := newTestReconciler(t, w, &stubPauser{})
+	r.metrics = &stubMetrics{cpuPerReplica: 1000, replicas: 1}
+	now := fixedTime.Add(500 * time.Millisecond)
+	r.clock = func() time.Time { return monotonic(now) }
+	ctx := context.Background()
+
+	r.accumulateCost(ctx, w)
+	for range 24 * time.Hour / statusFlushInterval {
+		require.NoError(t, r.Status().Update(ctx, w))
+		w = getWorkload(t, r, w.Name)
+		now = now.Add(statusFlushInterval)
+		r.accumulateCost(ctx, w)
+	}
+
+	c := w.Status.Cost
+	assert.Equal(t, 24*time.Hour, c.Tracked.Duration)
+	assert.InDelta(t, 24, c.AwakeCPUHours.AsApproximateFloat64(), 1e-6, "a vCPU for a day")
+	assert.Equal(t, cost.FormatDollars(cost.ComputeHourly(1, 0, cost.DefaultRates)*24), c.CostThisMonth)
 }
 
 // Cost and what pausing freed are on the same basis, requests, over the
@@ -291,7 +319,7 @@ func TestTransition_SettlesCostInThePhaseItWasSpentIn(t *testing.T) {
 	pausedWith(w, v1alpha1.ResourceSnapshot{Replicas: 2, CPUMillis: 1000, MemoryBytes: bytesPerGiB})
 	r := newTestReconciler(t, w, &stubPauser{})
 	now := fixedTime
-	r.clock = func() time.Time { return now }
+	r.clock = func() time.Time { return monotonic(now) }
 	r.metrics = &stubMetrics{cpuPerReplica: 1000, memoryPerReplica: bytesPerGiB, replicas: 2}
 	ctx := context.Background()
 
@@ -665,7 +693,7 @@ func TestReconcile_PersistsSavedHoursWithTheCostFlush(t *testing.T) {
 	workload.Status.Cost = accumulatedAt(fixedTime.Add(-time.Minute))
 	r := newTestReconcilerWithReplicas(t, workload, &stubPauser{}, 0)
 	now := fixedTime
-	r.clock = func() time.Time { return now }
+	r.clock = func() time.Time { return monotonic(now) }
 	r.metrics = &stubMetrics{}
 	savings := &stubSavings{}
 	r.Savings = savings

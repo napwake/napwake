@@ -23,6 +23,7 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      - uses: ./.github/actions/setup-envtest
       - name: Running Tests
         run: make test
 
@@ -59,6 +60,7 @@ jobs:
       # With Helm 3, while helm-smoke installs with Helm 4 and 3.18, so the
       # chart is proven on both.
       - run: make check-chart
+      - uses: ./.github/actions/setup-envtest
       - run: make test-doorman-policy
 
   alerts:

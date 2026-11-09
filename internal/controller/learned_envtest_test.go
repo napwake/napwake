@@ -18,6 +18,8 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -26,7 +28,12 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	eventsv1 "k8s.io/api/events/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes"
+	typedeventsv1 "k8s.io/client-go/kubernetes/typed/events/v1"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -40,6 +47,13 @@ import (
 // isn't managed and isn't woken with it, and kubectl describe kept saying
 // so while postgres was held and woken with api. Once Napwake takes the
 // dependency on, api says so, once.
+//
+// The events are sent by the events.k8s.io recorder the operator runs, and
+// read back from the API server, as kubectl describe reads them. That
+// recorder folds an event into an earlier one with the same type, reason,
+// action, regarding object and related object, keeping the earlier note: on
+// kind (P85), the announcement became a second count of the stale one,
+// which a fake recorder never shows.
 func TestLearnedDependency_ManagedLaterIsAnnounced(t *testing.T) {
 	cfg := startEnvtest(t)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -64,27 +78,38 @@ func TestLearnedDependency_ManagedLaterIsAnnounced(t *testing.T) {
 	apiMW := envtestWorkload(ns)
 	require.NoError(t, createTakenOn(ctx, admin, apiMW))
 
-	recorder := events.NewFakeRecorder(100)
+	sent := startEventRecorder(t, cfg, scheme)
 	c := client.WithFieldOwner(indexedClient{admin}, v1alpha1.FieldManager)
-	r := &Reconciler{Client: c, Scheme: scheme, Recorder: recorder, PodReader: admin,
+	r := &Reconciler{Client: c, Scheme: scheme, Recorder: sent.recorder, PodReader: admin,
 		metrics: &stubMetrics{cpuPerReplica: 100, memoryPerReplica: 1 << 30, replicas: 2},
 		engines: newEngineRegistry(func() forecaster { return &stubForecaster{} }), clock: time.Now}
-	// api's DependenciesLearned events, by the target each event's note
-	// starts with.
+	// api's DependenciesLearned events as the API server keeps them, with
+	// how many times each was counted.
 	learned := func() []string {
 		var out []string
-		for len(recorder.Events) > 0 {
-			if e := <-recorder.Events; strings.HasPrefix(e, "Normal "+ReasonDependenciesLearned+" api: ") {
-				out = append(out, e)
+		for _, e := range sent.list(t, ns) {
+			if e.Regarding.Name != apiMW.Name || e.Reason != ReasonDependenciesLearned {
+				continue
 			}
+			count := int32(1)
+			if e.Series != nil {
+				count = e.Series.Count
+			}
+			out = append(out, fmt.Sprintf("x%d %s", count, e.Note))
 		}
 		return out
 	}
+	const isnt = "x1 api: depends on orders/postgres (PGRST_DB_URI), which isn't managed by Napwake, so it isn't " +
+		"woken with api: opt it in to have them paused and woken together"
+	const nowManaged = "x1 api: depends on orders/postgres (PGRST_DB_URI), now managed by Napwake, so " + wokenAndHeld
 
 	require.NoError(t, r.learnDependencies(ctx, apiMW, api))
-	before := learned()
-	require.Len(t, before, 1)
-	require.Contains(t, before[0], "api: depends on orders/postgres (PGRST_DB_URI), which isn't managed by Napwake")
+	// Written before postgres is taken on, as on kind, where the two were a
+	// second or more apart.
+	if !assert.Eventually(t, func() bool { return len(learned()) == 1 }, 10*time.Second, 50*time.Millisecond) {
+		t.Fatalf("api's first DependenciesLearned never reached the API server: %q", learned())
+	}
+	require.Equal(t, []string{isnt}, learned())
 
 	postgres := &v1alpha1.ManagedWorkload{ObjectMeta: metav1.ObjectMeta{Name: "postgres", Namespace: ns},
 		Spec: v1alpha1.ManagedWorkloadSpec{
@@ -99,7 +124,52 @@ func TestLearnedDependency_ManagedLaterIsAnnounced(t *testing.T) {
 	require.NoError(t, admin.Get(ctx, key, postgres))
 	require.Equal(t, v1alpha1.PhaseRunning, postgres.Status.Phase, "Napwake took postgres on")
 
-	after := learned()
-	assert.Equal(t, []string{"Normal DependenciesLearned api: depends on orders/postgres (PGRST_DB_URI), " +
-		"now managed by Napwake, so " + wokenAndHeld}, after, "said once, on api, as postgres is taken on")
+	if !assert.Eventually(t, func() bool { return slices.Contains(learned(), nowManaged) }, 10*time.Second,
+		50*time.Millisecond) {
+		t.Fatalf("kubectl describe would show api's DependenciesLearned as %q, without the announcement", learned())
+	}
+	assert.ElementsMatch(t, []string{isnt, nowManaged}, learned(), "said once, on api, as postgres is taken on, "+
+		"beside what api said before")
+	announced := slices.IndexFunc(sent.list(t, ns), func(e eventsv1.Event) bool {
+		return strings.Contains(e.Note, "now managed by Napwake")
+	})
+	require.GreaterOrEqual(t, announced, 0)
+	related := sent.list(t, ns)[announced].Related
+	require.NotNil(t, related, "the announcement names the dependency it's about")
+	assert.Equal(t, "ManagedWorkload", related.Kind)
+	assert.Equal(t, ns+"/postgres", related.Namespace+"/"+related.Name)
+}
+
+// sentEvents is the events.k8s.io recorder the operator runs, sending to an
+// envtest API server, and a client that reads what it sent back.
+type sentEvents struct {
+	recorder events.EventRecorder
+	events   typedeventsv1.EventsV1Interface
+}
+
+// startEventRecorder starts the recorder controller-runtime's manager
+// builds for GetEventRecorder, with its merging of repeated events, until
+// the test ends.
+func startEventRecorder(t *testing.T, cfg *rest.Config, scheme *runtime.Scheme) sentEvents {
+	t.Helper()
+	clientset, err := kubernetes.NewForConfig(cfg)
+	require.NoError(t, err)
+	broadcaster := events.NewBroadcaster(&events.EventSinkImpl{Interface: clientset.EventsV1()})
+	ctx, cancel := context.WithCancel(context.Background())
+	require.NoError(t, broadcaster.StartRecordingToSinkWithContext(ctx))
+	t.Cleanup(func() {
+		cancel()
+		broadcaster.Shutdown()
+	})
+	return sentEvents{recorder: broadcaster.NewRecorder(scheme, "napwake"), events: clientset.EventsV1()}
+}
+
+// list is every event in the namespace, as the API server has it.
+func (s sentEvents) list(t *testing.T, namespace string) []eventsv1.Event {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	list, err := s.events.Events(namespace).List(ctx, metav1.ListOptions{})
+	require.NoError(t, err)
+	return list.Items
 }

@@ -425,7 +425,9 @@ func (r *Reconciler) announceNowManaged(ctx context.Context, workload *v1alpha1.
 		if i < 0 || !g.allows(dependent.Namespace, id) {
 			continue
 		}
-		r.emitEvent(&dependent, false, "Normal", ReasonDependenciesLearned, actionLearnDependencies,
+		// Related to the dependency, or it would be folded into the event it
+		// corrects, whose note kubectl describe would go on showing.
+		r.emitRelatedEvent(&dependent, workload, false, "Normal", ReasonDependenciesLearned, actionLearnDependencies,
 			"depends on %s, now managed by Napwake, so %s",
 			learnedName(dependent.Status.LearnedDependencies.Dependencies[i]), wokenAndHeld)
 	}

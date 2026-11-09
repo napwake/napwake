@@ -423,7 +423,7 @@ func TestActivityClock_AnOutageIsNotIdleTime(t *testing.T) {
 			r := newAutomationReconciler(t, workload, &stubForecaster{}, automationOpts{metrics: &metrics, pauser: pauser})
 			r.prometheus = signal.NewPrometheus(srv.URL)
 			now := fixedTime
-			r.clock = func() time.Time { return now }
+			r.clock = func() time.Time { return monotonic(now) }
 			check := func() {
 				t.Helper()
 				_, err := r.reconcileAutomation(context.Background(), workload, target)
@@ -449,6 +449,7 @@ func TestActivityClock_AnOutageIsNotIdleTime(t *testing.T) {
 				require.Zero(t, pauser.pauseCalls, "paused at %s, within idleAfter of the outage ending",
 					now.Sub(fixedTime))
 			}
+			now = now.Add(requeueLag)
 			check()
 			assert.Equal(t, 1, pauser.pauseCalls, "paused once idleAfter has passed with every source seeing nothing")
 			gaps := recorded(r.Recorder.(*events.FakeRecorder), ReasonUnobserved)
@@ -518,7 +519,7 @@ func TestActiveSinceClockRanOut_CountsTheSecondItRanOut(t *testing.T) {
 			began := metav1.NewTime(wentIdle)
 			workload.Status.LastTransitionTime = &began
 
-			assert.Equal(t, tt.want, activeSinceClockRanOut(workload, wentIdle.Add(time.Minute), wentIdle))
+			assert.Equal(t, tt.want, activeSinceClockRanOut(workload, monotonic(wentIdle.Add(time.Minute)), wentIdle))
 		})
 	}
 }
@@ -536,7 +537,7 @@ func TestActivityClock_AShortBlindSpotKeepsWhatWokeIt(t *testing.T) {
 	metrics.err = errors.New("no pod metrics yet")
 	r := newAutomationReconciler(t, workload, &stubForecaster{}, automationOpts{metrics: &metrics, pauser: &stubPauser{}})
 	now := fixedTime
-	r.clock = func() time.Time { return now }
+	r.clock = func() time.Time { return monotonic(now) }
 
 	for range 2 {
 		now = now.Add(activityCheckInterval / 2)
@@ -650,7 +651,7 @@ func TestActivityClock_ARestartIsReportedOnceASourceCanBeRead(t *testing.T) {
 			r.prometheus = signal.NewPrometheus(srv.URL)
 			restarted(r, workload)
 			now := fixedTime
-			r.clock = func() time.Time { return now }
+			r.clock = func() time.Time { return monotonic(now) }
 			check := func() {
 				t.Helper()
 				_, err := r.reconcileAutomation(context.Background(), workload, target)
@@ -703,7 +704,7 @@ func TestActivityClock_ARestartRestartsAnAwakeClock(t *testing.T) {
 			r := newAutomationReconciler(t, workload, &stubForecaster{}, automationOpts{metrics: &metrics})
 			restarted(r, workload)
 			r.resetActivity(workload, source)
-			r.clock = func() time.Time { return fixedTime.Add(activityCheckInterval) }
+			r.clock = func() time.Time { return monotonic(fixedTime.Add(activityCheckInterval)) }
 
 			_, err := r.reconcileAutomation(context.Background(), workload, target)
 			require.NoError(t, err)
@@ -885,7 +886,7 @@ func TestActivityClock_VetoAndAutoResumeAgree(t *testing.T) {
 	require.Equal(t, v1alpha1.PhasePaused, workload.Status.Phase)
 
 	engine.predictValue = 15
-	r.clock = func() time.Time { return fixedTime.Add(5 * time.Minute) }
+	r.clock = func() time.Time { return monotonic(fixedTime.Add(5 * time.Minute)) }
 	_, err = r.reconcileAutomation(context.Background(), workload, target)
 	require.NoError(t, err)
 	assert.Equal(t, 1, pauser.resumeCalls, "the forecast that held it awake wakes it")
@@ -1039,7 +1040,7 @@ func TestTemplateHashes(t *testing.T) {
 }
 
 func TestNextCheck(t *testing.T) {
-	now := fixedTime
+	now := monotonic(fixedTime)
 	assert.Equal(t, activityCheckInterval, nextCheck(now, now.Add(time.Hour), time.Time{}))
 	assert.Equal(t, 20*time.Second, nextCheck(now, now.Add(20*time.Second), time.Time{}))
 	assert.Equal(t, 10*time.Second, nextCheck(now, now.Add(time.Hour), now.Add(10*time.Second)))
