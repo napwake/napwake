@@ -158,6 +158,9 @@ func buildStatusPage(result statusResult, since time.Duration, now time.Time) st
 		page.Summary = fmt.Sprintf("Napwake manages %s: %s.", countOf(len(result.Workloads), "workload"),
 			phaseCounts(result.Workloads))
 	}
+	if gone := lettingGoLine(result.LettingGo); gone != "" {
+		page.Notes = append(page.Notes, gone)
+	}
 	for _, why := range result.SavingsUnknown {
 		page.Notes = append(page.Notes, "What's saved can't be measured for some workloads: "+oneLine(why))
 	}

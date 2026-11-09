@@ -172,6 +172,7 @@ type Reconciler struct {
 	history         historyReader
 	doormanFamilies doormanFamilies
 	quietCPU        quietCPU
+	handBacks       handBackStamps
 	uids            workloadUIDs
 	graph           *workloadGraph
 	clock           func() time.Time
@@ -217,12 +218,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 			}
 			res.Priority = requeuePriority(&workload, res)
 		}
-		// A write that lost to a newer one is retried at the priority of what
-		// brought it, such as a wake.
-		res, retErr = retryIfStale(ctx, res, retErr)
-		if retErr != nil {
-			metrics.ReconcileErrors.WithLabelValues("managedworkload").Inc()
-		}
+		res, retErr = endReconcile(ctx, req, res, retErr)
 	}()
 
 	if found, err := r.readWorkload(ctx, req.NamespacedName, &workload); err != nil || !found {
@@ -897,6 +893,7 @@ func (r *Reconciler) handleResume(ctx context.Context, workload *v1alpha1.Manage
 	} else {
 		r.clearCondition(workload, conditionResumeIncomplete, ReasonAllReplicasReady)
 	}
+	r.restartPodMetricsGrace(workload)
 	if err := r.transition(ctx, workload, v1alpha1.PhaseRunning, "Resumed"); err != nil {
 		return nil, err
 	}
@@ -1132,6 +1129,7 @@ func (r *Reconciler) forgetWorkload(uid types.UID) {
 	r.doormanFailures.reset(uid)
 	r.doormanPorts.release(uid, r.now())
 	r.engines.forget(uid)
+	r.handBacks.take(uid)
 }
 
 // workloadUIDs remembers the UID of each workload by name. A workload
@@ -1190,7 +1188,7 @@ func (r *Reconciler) releaseTarget(ctx context.Context, workload *v1alpha1.Manag
 		if replicas, err = r.pauser.Restore(ctx, workload); err != nil {
 			return false, 0, fmt.Errorf("restoring the paused target: %w", err)
 		}
-		r.wakeDependencies(ctx, workload)
+		r.handBackDependencies(ctx, workload)
 	}
 	if err := r.removeDoorman(ctx, workload); err != nil {
 		return false, 0, fmt.Errorf("removing doorman routes: %w", err)
@@ -1782,10 +1780,10 @@ func (r *Reconciler) sinceTransition(workload *v1alpha1.ManagedWorkload) time.Du
 
 func (r *Reconciler) initDefaults() {
 	if r.autoscalers == nil {
-		r.autoscalers = autoscaler.NewFinder(r.Client)
+		r.autoscalers = autoscaler.NewFinder(r.Client).WithClock(r.now)
 	}
 	if r.pauser == nil {
-		r.pauser = lifecycle.NewPauser(r.Client, r.autoscalers)
+		r.pauser = lifecycle.NewPauser(r.Client, r.autoscalers).WithClock(r.now)
 	}
 	if r.metrics == nil {
 		pods := r.PodReader

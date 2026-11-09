@@ -26,6 +26,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	"github.com/napwake/napwake/internal/discovery"
 	"github.com/napwake/napwake/internal/nodescale"
@@ -115,10 +119,12 @@ func TestPricing(t *testing.T) {
 }
 
 // The Your bill line says what turns freed capacity into money: a node
-// autoscaler removing nodes, or, on GKE Autopilot, the pods stopping, since
-// it bills what pods request. Without one found, the bill won't drop until
-// something removes nodes, and the guide says how; when the user's access
-// can't tell, it says what it couldn't read.
+// autoscaler removing nodes, or, on GKE Autopilot and EKS Fargate, the pods
+// stopping, since they bill what pods request. On Fargate it also says,
+// once, that each container's requests must equal its limits, as
+// Napwake's chart doesn't set them. Without one found, the bill won't drop
+// until something removes nodes, and the guide says how; when the user's
+// access can't tell, it says what it couldn't read.
 func TestNodeScale(t *testing.T) {
 	tests := []struct {
 		name string
@@ -170,6 +176,13 @@ func TestNodeScale(t *testing.T) {
 		{name: "GKE Autopilot", a: nodescale.Autoscaler{Scalers: []nodescale.Scaler{{Kind: nodescale.GKEAutopilot}}},
 			want: nodeScale{State: scalePods, Kinds: []string{"GKE Autopilot"}},
 			line: "Your bill: drops as pods stop, since GKE Autopilot bills what pods request"},
+		{name: "EKS Fargate", a: nodescale.Autoscaler{Scalers: []nodescale.Scaler{{Kind: nodescale.EKSFargate,
+			Provider: "EKS"}}},
+			want: nodeScale{State: scalePods, Kinds: []string{"EKS Fargate"}, Detail: fargateRequests,
+				FixURL: fargateInstall},
+			line: "Your bill: drops as pods stop, since EKS Fargate bills what pods request. EKS Fargate needs each " +
+				"container's requests to equal its limits, Napwake's own included. See " +
+				"https://docs.napwake.dev/getting-started/installation/#on-eks-fargate"},
 		{name: "none found", want: nodeScale{State: scaleNone, FixURL: nodeScalingGuide},
 			line: "Your bill: won't drop until something removes nodes, and no node autoscaler was found. See " +
 				nodeScalingGuide},
@@ -231,6 +244,12 @@ func TestPages_PricesAndBillRows(t *testing.T) {
 			price: "Costs use the on-demand list price of the cluster's nodes (m6i.large, AWS us-east-1). CPU at your " +
 				"price, $0.050 per vCPU-hour. 1 workload runs on spot nodes, priced at spot.",
 			bill: "drops as pods stop, since GKE Autopilot bills what pods request"},
+		{name: "list prices on EKS Fargate", prices: prices{CPUPerHour: 0.031, MemoryPerHour: 0.004, CPUAssumed: true,
+			MemoryAssumed: true}, nodes: discovery.Prices{NodeTypes: []discovery.NodeTypePrice{m6i}},
+			a:     nodescale.Autoscaler{Scalers: []nodescale.Scaler{{Kind: nodescale.EKSFargate, Provider: "EKS"}}},
+			price: "AWS us-east-1 list prices · m6i.large · 1 workload on spot, priced at spot",
+			bill: "drops as pods stop, since EKS Fargate bills what pods request. EKS Fargate needs each container's " +
+				"requests to equal its limits, Napwake's own included. How to set Napwake's"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -248,6 +267,12 @@ func TestPages_PricesAndBillRows(t *testing.T) {
 			assert.Equal(t, tt.bill, rowText(t, out.String(), "Your bill"), "the status page's")
 			if tt.a.Known() && len(tt.a.Scalers) == 0 {
 				assert.Contains(t, out.String(), `<a href="`+nodeScalingGuide+`">How to fix it</a>`)
+			}
+			if tt.a.Has(nodescale.EKSFargate) {
+				for _, page := range []string{scan, out.String()} {
+					assert.Equal(t, 1, strings.Count(page, `<a href="`+fargateInstall+`">How to set Napwake&#39;s</a>`),
+						"the page says it once")
+				}
 			}
 		})
 	}
@@ -273,4 +298,31 @@ func TestWriteScan_PricesAndBillLines(t *testing.T) {
 	assert.NotContains(t, got, "Node autoscaler:")
 	assert.NotContains(t, got, "Costs use")
 	assert.NotContains(t, got, "What pausing frees comes off the bill", "Your bill says it")
+}
+
+// On a cluster whose every node is EKS Fargate's, scan and status say the
+// bill drops as pods stop, and say once what Fargate needs of Napwake's
+// own pods, rather than that no node autoscaler was found (P61).
+func TestCLI_EKSFargateSaidOnce(t *testing.T) {
+	fargate := func(name string) client.Object {
+		return &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name,
+			Labels: map[string]string{"eks.amazonaws.com/compute-type": "fargate"}}}
+	}
+	objs := []client.Object{&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "preview-42"}},
+		fargate("fargate-ip-10-0-1-1.ec2.internal"), fargate("fargate-ip-10-0-1-2.ec2.internal")}
+
+	for _, args := range [][]string{
+		{"scan", "-n", "preview-42", "--window", "0", "--open=false"},
+		{"status", "-n", "preview-42"},
+	} {
+		t.Run(args[0], func(t *testing.T) {
+			out, err := runCLI(t, newStatusClient(t, interceptor.Funcs{}, objs...), args...)
+			require.NoError(t, err, out)
+
+			assert.Contains(t, out, "Your bill: drops as pods stop, since EKS Fargate bills what pods request.")
+			assert.Equal(t, 1, strings.Count(out, fargateRequests), out)
+			assert.Equal(t, 1, strings.Count(out, fargateInstall), out)
+			assert.NotContains(t, out, "no node autoscaler was found")
+		})
+	}
 }

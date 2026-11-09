@@ -44,8 +44,6 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
-	"github.com/napwake/napwake/internal/autoscaler"
-	"github.com/napwake/napwake/internal/lifecycle"
 )
 
 func envtestNamespace() string {
@@ -163,16 +161,13 @@ var _ = ginkgo.Describe("A pause interrupted by a conflict", func() {
 				return c.SubResource(sub).Update(ctx, obj, opts...)
 			},
 		})
-		finder := autoscaler.NewFinder(c)
-		r = &Reconciler{
-			Client:      indexedClient{c},
-			Scheme:      scheme.Scheme,
-			Recorder:    events.NewFakeRecorder(100),
-			pauser:      lifecycle.NewPauser(c, finder),
-			autoscalers: finder,
-			engines:     newEngineRegistry(func() forecaster { return &stubForecaster{} }),
-			clock:       time.Now,
-		}
+		r = withTheOperatorsPauser(&Reconciler{
+			Client:   indexedClient{c},
+			Scheme:   scheme.Scheme,
+			Recorder: events.NewFakeRecorder(100),
+			engines:  newEngineRegistry(func() forecaster { return &stubForecaster{} }),
+			clock:    time.Now,
+		}, c)
 
 		// The conflict is retried promptly rather than reported, so the
 		// interruption shows as that retry.
@@ -210,6 +205,10 @@ var _ = ginkgo.Describe("A pause interrupted by a conflict", func() {
 		paused := workload()
 		gomega.Expect(paused.Status.Phase).To(gomega.Equal(v1alpha1.PhasePaused))
 		gomega.Expect(paused.Status.Pause.PreviousReplicas).To(gomega.Equal(int32(3)))
+	})
+
+	ginkgo.It("is made by a pauser on its reconciler's clock", func() {
+		requirePauserOnItsClock(ginkgo.GinkgoT(), r, ns)
 	})
 
 	ginkgo.It("is undone, at the replicas it had, when the ManagedWorkload is deleted", func() {
@@ -350,6 +349,7 @@ func TestResume_OfADegradedWorkloadFinishes(t *testing.T) {
 	key := env.create(t, "dev")
 	now := time.Now()
 	r := env.reconciler(t, env.admin)
+	requirePauserOnItsClock(t, r, "dev")
 	r.clock = func() time.Time { return now }
 	twoInThreeReady := func() {
 		d := env.deployment(t, key)

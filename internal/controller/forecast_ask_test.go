@@ -85,7 +85,7 @@ func TestPausedHour_PeoplesWakesInAsk(t *testing.T) {
 				metrics: &stubMetrics{cpuMillis: 1, cpuPerReplica: 100}, pauser: &stubPauser{resumeDone: true}})
 
 			for now := fixedTime; !now.After(fixedTime.Add(time.Hour)); now = now.Add(time.Minute) {
-				r.clock = func() time.Time { return now }
+				r.clock = func() time.Time { return monotonic(now) }
 				if tt.wakeBy != "" && now.Equal(fixedTime.Add(10*time.Minute)) {
 					value := tt.wakeVal
 					if value == "" {
@@ -119,7 +119,7 @@ func TestPausedHour_AskIsBlindedByAFailingQuery(t *testing.T) {
 	r.prometheus = prom
 
 	for now := fixedTime; !now.After(fixedTime.Add(time.Hour)); now = now.Add(time.Minute) {
-		r.clock = func() time.Time { return now }
+		r.clock = func() time.Time { return monotonic(now) }
 		_, err := r.reconcileAutomation(context.Background(), worker, nil)
 		require.NoError(t, err)
 		require.Equal(t, v1alpha1.PhasePaused, worker.Status.Phase, "a query that fails never wakes it")
@@ -146,7 +146,7 @@ func TestPausedHour_AskWorkerLearnsFromItsQueries(t *testing.T) {
 	r.prometheus = prom
 
 	for now := fixedTime; !now.After(fixedTime.Add(time.Hour)); now = now.Add(time.Minute) {
-		r.clock = func() time.Time { return now }
+		r.clock = func() time.Time { return monotonic(now) }
 		_, err := r.reconcileAutomation(context.Background(), worker, nil)
 		require.NoError(t, err)
 	}

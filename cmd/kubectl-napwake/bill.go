@@ -28,7 +28,7 @@ const (
 	// empties.
 	scaleFound = "found"
 	// scalePods is a cluster billed by what its pods request, as GKE
-	// Autopilot is, where the bill drops as pods stop.
+	// Autopilot and EKS Fargate are, where the bill drops as pods stop.
 	scalePods = "pods"
 	scaleNone = "none"
 	// scaleUnknown is a user whose access can't read what scales nodes.
@@ -37,8 +37,8 @@ const (
 
 // nodeScale is what turns freed capacity into money, for the pages' Your
 // bill row and the terminal's line: the autoscalers found, with how they
-// remove nodes, none, with the guide to setting one up, or unknown, with
-// what couldn't be read.
+// remove nodes, none, with the guide to setting one up, unknown, with what
+// couldn't be read, or pods, with what EKS Fargate needs of Napwake's own.
 type nodeScale struct {
 	State  string
 	Kinds  []string
@@ -54,6 +54,9 @@ func nodeScaleFor(a nodescale.Autoscaler) nodeScale {
 		return nodeScale{State: scaleNone, FixURL: nodeScalingGuide}
 	case a.Has(nodescale.GKEAutopilot):
 		return nodeScale{State: scalePods, Kinds: []string{string(nodescale.GKEAutopilot)}}
+	case a.Has(nodescale.EKSFargate):
+		return nodeScale{State: scalePods, Kinds: []string{string(nodescale.EKSFargate)},
+			Detail: fargateRequests, FixURL: fargateInstall}
 	}
 	ns := nodeScale{State: scaleFound}
 	var details []string
@@ -99,6 +102,14 @@ func scalerDetail(s nodescale.Scaler, pools []nodescale.NodePool) (subject, rest
 	return "", ""
 }
 
+// fargateRequests is what EKS Fargate needs of every pod, said once
+// wherever the bill is, since Napwake's chart requests less than its
+// limits.
+const fargateRequests = "EKS Fargate needs each container's requests to equal its limits, Napwake's own included."
+
+// fargateInstall is the docs on setting Napwake's requests to its limits.
+const fargateInstall = "https://docs.napwake.dev/getting-started/installation/#on-eks-fargate"
+
 // billLine is the terminal's Your bill line, in the pages' words.
 func billLine(a nodescale.Autoscaler) string {
 	ns := nodeScaleFor(a)
@@ -109,7 +120,11 @@ func billLine(a nodescale.Autoscaler) string {
 		return "Your bill: won't drop until something removes nodes, and no node autoscaler was found. See " +
 			ns.FixURL
 	case scalePods:
-		return "Your bill: drops as pods stop, since " + joinOr(ns.Kinds) + " bills what pods request"
+		line := "Your bill: drops as pods stop, since " + joinOr(ns.Kinds) + " bills what pods request"
+		if ns.Detail != "" {
+			line += ". " + ns.Detail + " See " + ns.FixURL
+		}
+		return line
 	}
 	line := "Your bill: drops only as " + strings.Join(ns.Kinds, " or ") + " removes nodes"
 	if ns.Detail != "" {

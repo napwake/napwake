@@ -185,7 +185,7 @@ func TestLearnDependencies_WhenToRelearn(t *testing.T) {
 	require.Equal(t, []string{"default/postgres DATABASE_URL"}, learnedNames(api))
 	learnedAt := api.Status.LearnedDependencies.At
 
-	r.clock = func() time.Time { return fixedTime.Add(30 * time.Minute) }
+	r.clock = func() time.Time { return monotonic(fixedTime.Add(30 * time.Minute)) }
 	require.NoError(t, r.learnDependencies(context.Background(), api, target))
 	assert.Equal(t, learnedAt, api.Status.LearnedDependencies.At, "nothing changed")
 
@@ -197,7 +197,7 @@ func TestLearnDependencies_WhenToRelearn(t *testing.T) {
 	relearnedAt := api.Status.LearnedDependencies.At
 
 	api.Status.Phase = v1alpha1.PhasePaused
-	r.clock = func() time.Time { return fixedTime.Add(2 * time.Hour) }
+	r.clock = func() time.Time { return monotonic(fixedTime.Add(2 * time.Hour)) }
 	require.NoError(t, r.learnDependencies(context.Background(), api, changed))
 	assert.Equal(t, relearnedAt, api.Status.LearnedDependencies.At, "paused, nothing it runs reads the environment")
 
@@ -348,7 +348,7 @@ func TestLearnDependencies_AnnouncedOnceRecorded(t *testing.T) {
 	assert.Equal(t, 1, learnedEvents())
 	assert.Equal(t, []string{"default/postgres DATABASE_URL"}, learnedNames(fetch(t, r, "api")), "and recorded")
 
-	r.clock = func() time.Time { return fixedTime.Add(2 * time.Hour) }
+	r.clock = func() time.Time { return monotonic(fixedTime.Add(2 * time.Hour)) }
 	require.NoError(t, r.learnDependencies(context.Background(), api, target))
 	assert.Zero(t, learnedEvents(), "learning the same again says nothing")
 }
@@ -805,7 +805,7 @@ func TestLearnFromWake_FirstLearnedIsValid(t *testing.T) {
 		require.NoError(t, c.Patch(ctx, postgres, patch, client.FieldOwner(manager)))
 	}
 	r := &Reconciler{Client: c, PodReader: c, Scheme: scheme, Recorder: events.NewFakeRecorder(20),
-		clock: func() time.Time { return fixedTime }}
+		clock: func() time.Time { return monotonic(fixedTime) }}
 
 	stamp("kubectl-annotate")
 	require.NoError(t, r.learnFromWake(ctx, wokenPostgres()))

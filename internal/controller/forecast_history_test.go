@@ -88,7 +88,7 @@ func newHistoryLearner(t *testing.T, history historyReader, metrics *stubMetrics
 	c := fakeClientBuilder(testScheme(t)).WithStatusSubresource(&v1alpha1.ManagedWorkload{}).
 		WithObjects(append([]client.Object{workload}, objs...)...).Build()
 	return &historyLearner{client: c, history: history, metrics: metrics, engines: realEngineRegistry(),
-		timezone: time.UTC, clock: func() time.Time { return fixedTime.Add(20 * time.Minute) }}, workload
+		timezone: time.UTC, clock: func() time.Time { return monotonic(fixedTime.Add(20 * time.Minute)) }}, workload
 }
 
 func learnHistory(t *testing.T, l *historyLearner, workload *v1alpha1.ManagedWorkload) ctrl.Result {
@@ -111,7 +111,7 @@ func TestHistoryLearner_LearnsFourWeeks(t *testing.T) {
 	require.Len(t, history.asked, 1)
 	assert.Equal(t, discovery.WorkloadCPU{Namespace: "default", Kind: v1alpha1.TargetKindDeployment, Name: "api",
 		Containers: []string{"app", "proxy"}}, history.asked[0])
-	assert.Equal(t, [2]time.Time{end.Add(-historyWindow), end}, history.ranges[0])
+	assert.Equal(t, []time.Time{end.Add(-historyWindow), end}, inUTC(history.ranges[0][:]...))
 	seed, first, ok := l.engines.adoptSeed(workload.UID, forecast.Settings{Threshold: 75})
 	require.True(t, ok)
 	assert.True(t, first)
@@ -162,20 +162,20 @@ func TestHistoryLearner_RetriesAFailingPrometheus(t *testing.T) {
 	history := &stubHistory{err: errors.New("connection refused")}
 	l, workload := newHistoryLearner(t, history, &stubMetrics{}, historyTarget())
 	now := fixedTime.Add(20 * time.Minute)
-	l.clock = func() time.Time { return now }
+	l.clock = func() time.Time { return monotonic(now) }
 
 	for attempt := 1; attempt < historyAttempts; attempt++ {
-		assert.Equal(t, historyRetry, learnHistory(t, l, workload).RequeueAfter)
+		assert.Equal(t, historyRetry, toTheMillisecond(learnHistory(t, l, workload).RequeueAfter))
 		require.Len(t, history.asked, attempt)
 		assert.False(t, l.engines.seeded(workload.UID))
 
 		now = now.Add(30 * time.Second)
-		assert.Equal(t, historyRetry-30*time.Second, learnHistory(t, l, workload).RequeueAfter,
+		assert.Equal(t, historyRetry-30*time.Second, toTheMillisecond(learnHistory(t, l, workload).RequeueAfter),
 			"an update half a minute later waits out the rest")
 		now = now.Add(historyRetry - 30*time.Second - time.Second)
-		assert.Equal(t, time.Second, learnHistory(t, l, workload).RequeueAfter)
+		assert.Equal(t, time.Second, toTheMillisecond(learnHistory(t, l, workload).RequeueAfter))
 		assert.Len(t, history.asked, attempt, "not asked again early")
-		now = now.Add(time.Second)
+		now = now.Add(time.Second + requeueLag)
 	}
 	assert.Zero(t, learnHistory(t, l, workload).RequeueAfter)
 	seed, _, ok := l.engines.adoptSeed(workload.UID, forecast.Settings{})
@@ -365,7 +365,7 @@ func TestWarmStart_FromAPrometheusAPI(t *testing.T) {
 	fr.history = prom
 	fr.metrics = &stubMetrics{cpuPerReplica: 100, cpuMillis: 2}
 	l := &historyLearner{client: c, history: prom, metrics: fr.metrics, engines: fr.engines, timezone: time.UTC,
-		clock: func() time.Time { return fr.now }}
+		clock: func() time.Time { return monotonic(fr.now) }}
 
 	learnHistory(t, l, workload)
 	fr.reconcile(t, workload)

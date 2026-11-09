@@ -53,6 +53,7 @@ spec:
 | Everything wakes at once | By default, so a chain doesn't add up to cold starts in a row |
 | Waking a dependency never holds up its dependent | The dependent wakes, or is handed back or deleted, regardless |
 | A dependency can't be woken | As when a policy engine won't let Napwake annotate its ManagedWorkload. The dependent gets a `DependencyWakeFailed` warning event |
+| A dependency's [forecast](/concepts/forecasting/#what-an-hour-records) learns its dependents' use | An hour a dependent holding it is in use is an hour the dependency is in use, whatever its own CPU. A dependent's wake, which stamps it, isn't. So woken ahead by the forecast or by the morning's first request, a dependency learns the same hours |
 
 A dependency held awake says why:
 

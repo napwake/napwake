@@ -203,6 +203,7 @@ For `costTracking.rates` and `cost.listRates`.
 | <Ref id="status-prediction-startsacting">prediction.startsActing</Ref> | time | When it should start acting, if the coming days repeat the last week. Unset while acting, or if not within four weeks |
 | <Ref id="status-prediction-reason">prediction.reason</Ref> <Ref id="status-prediction-message">prediction.message</Ref> | string | Why it is or isn't acting, as `Acting`, `Observing`, `EarningConfidence`, `Relearning` or `NotLearning`, and a sentence. See [When it acts](/concepts/forecasting/#when-it-acts) |
 | <Ref id="status-prediction-history">prediction.history</Ref> | `PredictionHistory` | What it learned from Prometheus history when management began, or once a URL was set, within a week of that. Fields `reason` (`Learned`, `NoPrometheusURL`, `NoHistory`, `NoCPURequests`, `QueryFailed`), `hours`, `from`, `to`, `message`. See [Learning from history](/concepts/forecasting/#learning-from-history) |
+| <Ref id="status-prediction-hour">prediction.hour</Ref> | `PredictionHour` | What it has seen of the hour under way, as last written, for a restarted operator to go on with. Fields `start`, `peak` (the busiest look, as a % of requests), `from` and `to` (its first look and the latest written), and `blind` (a look couldn't see demand). See [Persistence](/concepts/forecasting/#persistence) |
 | <Ref id="status-prediction-state">prediction.state</Ref> | string | Learned state, gzipped and base64-encoded |
 
 ### `cost`

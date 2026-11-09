@@ -6,16 +6,27 @@
 # left out: GitHub's Update branch button writes one with no sign-off, and
 # the commits it brings in are already on the base branch.
 #
+# Dependabot authors its commits under its noreply address but signs them
+# off as dependabot[bot] <support@github.com>. That sign-off is accepted on
+# a commit Dependabot authored, and on no other.
+#
 #   hack/dco/check.sh <base> <head>
 set -euo pipefail
 
 base=${1:?usage: check.sh <base> <head>}
 head=${2:?usage: check.sh <base> <head>}
 
+dependabot='dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>'
+dependabot_signoff='dependabot[bot] <support@github.com>'
+
 unsigned=()
 while read -r commit; do
   author=$(git log -1 --format='%an <%ae>' "$commit")
-  if ! git log -1 --format=%B "$commit" | grep -qixF -- "Signed-off-by: $author"; then
+  signoff=$author
+  if [ "$author" = "$dependabot" ]; then
+    signoff=$dependabot_signoff
+  fi
+  if ! git log -1 --format=%B "$commit" | grep -qixF -- "Signed-off-by: $signoff"; then
     unsigned+=("$commit")
   fi
 done < <(git rev-list --no-merges "$base..$head")

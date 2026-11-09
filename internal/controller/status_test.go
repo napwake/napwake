@@ -39,7 +39,7 @@ func busyWorkloadReconciler(t *testing.T) (*Reconciler, *time.Time) {
 	r := newTestReconciler(t, workload, &stubPauser{})
 	r.metrics = &stubMetrics{cpuMillis: 500, cpuPerReplica: 1000, memoryPerReplica: 1 << 30, replicas: 1}
 	now := fixedTime
-	r.clock = func() time.Time { return now }
+	r.clock = func() time.Time { return monotonic(now) }
 	return r, &now
 }
 
@@ -117,10 +117,14 @@ func TestWithoutVolatile(t *testing.T) {
 			LastEvaluatedTime: &evaluated,
 			TemplateHash:      "abc",
 		},
+		Prediction: &v1alpha1.PredictionStatus{Hour: &v1alpha1.PredictionHour{Start: metav1.NewTime(fixedTime),
+			Peak: "40", From: metav1.NewTime(fixedTime), To: metav1.NewTime(fixedTime.Add(time.Minute)), Blind: true}},
 	}
 
 	stripped := withoutVolatile(status)
 
+	assert.Equal(t, &v1alpha1.PredictionHour{Blind: true}, stripped.Prediction.Hour,
+		"the hour under way changes with every look, and only a blind one is written at once")
 	assert.Nil(t, stripped.Cost)
 	assert.Equal(t, "abc", stripped.Activity.TemplateHash, "a new template is a deploy and must be written promptly")
 	assert.Nil(t, stripped.Activity.LastEvaluatedTime)
@@ -137,7 +141,7 @@ func TestReconcile_ActivitySurvivesARestart(t *testing.T) {
 	r := newTestReconciler(t, workload, &stubPauser{pauseDone: true})
 	r.metrics = &stubMetrics{cpuMillis: 500, cpuPerReplica: 1000, replicas: 1}
 	now := fixedTime
-	r.clock = func() time.Time { return now }
+	r.clock = func() time.Time { return monotonic(now) }
 	reconcileAndVersion(t, r)
 	now = now.Add(time.Minute)
 	reconcileAndVersion(t, r)
@@ -146,7 +150,7 @@ func TestReconcile_ActivitySurvivesARestart(t *testing.T) {
 	restarted := &Reconciler{Client: r.Client, Scheme: r.Scheme, Recorder: r.Recorder, pauser: pauser,
 		metrics: &stubMetrics{cpuMillis: 5, cpuPerReplica: 1000, replicas: 1},
 		engines: newEngineRegistry(func() forecaster { return &stubForecaster{} }),
-		clock:   func() time.Time { return now }}
+		clock:   func() time.Time { return monotonic(now) }}
 	now = fixedTime.Add(5*time.Minute + 30*time.Second)
 	reconcileAndVersion(t, restarted)
 

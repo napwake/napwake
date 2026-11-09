@@ -39,7 +39,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/autoscaler"
 	"github.com/napwake/napwake/internal/forecast"
+	"github.com/napwake/napwake/internal/lifecycle"
 )
 
 // fakeClientBuilder is a fake API server with the field indexes
@@ -95,6 +97,73 @@ func realEngineRegistry() *engineRegistry {
 func monotonic(t time.Time) time.Time {
 	now := time.Now()
 	return now.Add(t.Sub(now.Round(0)))
+}
+
+// requeueLag is how long after the wait it asked for a requeued check
+// reads the clock: the real clock goes on while a requeue waits, so it's
+// never early. A test that moves a monotonic clock to the very instant the
+// operator waits for could land a microsecond or two before it, which two
+// readings of the same instant differ by.
+const requeueLag = time.Millisecond
+
+// toTheMillisecond is d, a wait or a span between two readings of a
+// monotonic clock, to the millisecond, past the microsecond or two the
+// readings differ by.
+func toTheMillisecond(d time.Duration) time.Duration {
+	return d.Round(time.Millisecond)
+}
+
+// withTheOperatorsPauser gives r the operator's pauser and autoscaler
+// finder, reading through c, on r's clock: the operator reads one clock,
+// so a test that moves r's moves theirs.
+func withTheOperatorsPauser(r *Reconciler, c client.Client) *Reconciler {
+	r.autoscalers = autoscaler.NewFinder(c).WithClock(r.now)
+	r.pauser = lifecycle.NewPauser(c, r.autoscalers).WithClock(r.now)
+	return r
+}
+
+// clockProbeT is what requirePauserOnItsClock needs of a test, which a
+// Ginkgo spec's GinkgoT() has too.
+type clockProbeT interface {
+	require.TestingT
+	Helper()
+}
+
+// requirePauserOnItsClock fails unless r's pauser stamps a pause with r's
+// clock. It moves r's clock an hour from where it reads, pauses a
+// Deployment of its own in namespace through r's client, then puts the
+// clock back and deletes the Deployment.
+func requirePauserOnItsClock(t clockProbeT, r *Reconciler, namespace string) {
+	t.Helper()
+	ctx := context.Background()
+	probe := envtestDeployment(namespace, 1)
+	probe.Name = "clock-probe"
+	require.NoError(t, r.Create(ctx, probe))
+	defer func() { require.NoError(t, client.IgnoreNotFound(r.Delete(ctx, probe))) }()
+	clock := r.clock
+	defer func() { r.clock = clock }()
+	at := monotonic(r.now().Add(-time.Hour))
+	r.clock = func() time.Time { return at }
+
+	w := &v1alpha1.ManagedWorkload{ObjectMeta: metav1.ObjectMeta{Name: probe.Name, Namespace: namespace},
+		Spec: v1alpha1.ManagedWorkloadSpec{Target: v1alpha1.WorkloadRef{Kind: v1alpha1.TargetKindDeployment,
+			Name: probe.Name}}}
+	require.NoError(t, r.pauser.Prepare(ctx, w))
+	_, err := r.pauser.Pause(ctx, w)
+	require.NoError(t, err)
+	require.NotNil(t, w.Status.Pause.PausedAt)
+	assert.WithinDuration(t, at, w.Status.Pause.PausedAt.Time, time.Second,
+		"its pauser stamps the pause with its reconciler's clock")
+}
+
+// inUTC is times in UTC, as the tests write dates. A monotonic clock, like
+// time.Now(), reads in time.Local.
+func inUTC(times ...time.Time) []time.Time {
+	utc := make([]time.Time, len(times))
+	for i, t := range times {
+		utc[i] = t.UTC()
+	}
+	return utc
 }
 
 // forecastReconciler runs automation with the real forecast engine against
@@ -208,6 +277,71 @@ func TestForecastState_SurvivesARestart(t *testing.T) {
 
 	restarted.watch(t, workload, fixedTime.Add(4*time.Hour))
 	assert.Equal(t, 3, engine.GetDataPoints())
+}
+
+// An operator restarted at the same time every day, as by a nightly job,
+// and back within two minutes, goes on with the hour under way from what
+// its status has, so the forecast sees every hour of the day whole, and
+// acts after 8 days, as without the restarts. Before, each restart lost the
+// hour under way, the same hour of the day each time, and the forecast
+// stayed Observing for good.
+func TestForecastState_DailyRestartsAtTheSameTime(t *testing.T) {
+	if testing.Short() {
+		t.Skip("reconciles ten days")
+	}
+	t.Parallel()
+	monday := time.Date(2026, 3, 16, 0, 0, 0, 0, time.UTC)
+	workload := forecastWorkload()
+	workload.Spec.IdlePolicy = &v1alpha1.IdlePolicySpec{IdleAfter: &metav1.Duration{Duration: time.Hour}}
+	workload.Status.Activity = nil
+	busy := &stubMetrics{cpuMillis: 400, cpuPerReplica: 1000, replicas: 1}
+	fr := newForecastReconciler(t, workload, nil)
+	fr.metrics = busy
+	fr.now = monday
+	end := monday.AddDate(0, 0, 10)
+	for restart := monday.Add(10*time.Hour + 30*time.Minute); fr.now.Before(end); {
+		if !fr.now.Before(restart) {
+			down := fr.now.Add(2 * time.Minute)
+			fr = newForecastReconciler(t, workload, fr.Client)
+			fr.metrics = busy
+			fr.now = down
+			restart = restart.AddDate(0, 0, 1)
+		}
+		fr.reconcile(t, workload)
+		fr.now = fr.now.Add(time.Minute)
+	}
+
+	require.NotNil(t, workload.Status.Prediction)
+	assert.True(t, workload.Status.Prediction.Acting, "the forecast acts: %s", workload.Status.Prediction.Message)
+	engine, err := fr.engines.getOrCreate(workload.UID, forecast.Settings{}, "")
+	require.NoError(t, err)
+	assert.Equal(t, int(end.Sub(monday)/time.Hour)-1, engine.GetDataPoints(),
+		"every hour that ended learned, those the restarts came in included")
+}
+
+// A restart within minutes, partway through an hour, goes on with it from
+// status: the hour is learned whole, its peak from before the restart
+// included. One whose status was last written longer ago skips the hour,
+// as TestForecastState_SurvivesARestart does.
+func TestForecastState_ARestartWithinMinutesKeepsTheHour(t *testing.T) {
+	workload := forecastWorkload()
+	fr := newForecastReconciler(t, workload, nil)
+	fr.metrics = &stubMetrics{cpuMillis: 90}
+	fr.watch(t, workload, fixedTime.Add(10*time.Minute))
+	fr.metrics = &stubMetrics{cpuMillis: 30}
+	fr.watch(t, workload, fixedTime.Add(28*time.Minute))
+	require.NotNil(t, workload.Status.Prediction.Hour, "the hour under way is written")
+
+	restarted := newForecastReconciler(t, workload, fr.Client)
+	restarted.metrics = &stubMetrics{cpuMillis: 30}
+	restarted.now = fixedTime.Add(30 * time.Minute)
+	restarted.watch(t, workload, fixedTime.Add(time.Hour))
+
+	engine, err := restarted.engines.getOrCreate(workload.UID, forecast.Settings{}, "")
+	require.NoError(t, err)
+	require.True(t, engine.Observed(fixedTime), "the hour the restart came in is learned")
+	assert.Contains(t, drainEvents(t, restarted.Reconciler), "the hour from 12:00 UTC peaked at 90%",
+		"its peak from before the restart")
 }
 
 func TestForecastState_UnreadableStateStartsAfreshWithAWarning(t *testing.T) {

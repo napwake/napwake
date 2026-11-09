@@ -26,6 +26,7 @@ import (
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -85,8 +86,17 @@ const (
 )
 
 func (r *Reconciler) emitEvent(workload *v1alpha1.ManagedWorkload, dryRun bool, eventType, reason, action, msgFmt string, args ...any) {
+	r.emitRelatedEvent(workload, nil, dryRun, eventType, reason, action, msgFmt, args...)
+}
+
+// emitRelatedEvent is emitEvent for an event about another object too. The
+// events.k8s.io recorder folds an event into an earlier one on the workload
+// with the same type, reason and action, keeping the earlier note, unless
+// they're related to different objects.
+func (r *Reconciler) emitRelatedEvent(workload *v1alpha1.ManagedWorkload, related runtime.Object, dryRun bool,
+	eventType, reason, action, msgFmt string, args ...any) {
 	note := fmt.Sprintf("%s%s: %s", dryRunPrefix(dryRun), workload.Spec.Target.Name, fmt.Sprintf(msgFmt, args...))
-	r.Recorder.Eventf(workload, nil, eventType, reason, action, "%s", truncated(note, maxEventNote))
+	r.Recorder.Eventf(workload, related, eventType, reason, action, "%s", truncated(note, maxEventNote))
 }
 
 // truncated cuts s to at most limit bytes, ending it with an ellipsis, and
@@ -176,6 +186,10 @@ func (r *Reconciler) updatePredictionStatus(ctx context.Context, workload *v1alp
 	}
 	if last := workload.Status.Prediction; last != nil {
 		status.History = last.History
+		status.Hour = last.Hour
+	}
+	if h := hourStatus(r.engines.hour(workload.UID)); h != nil {
+		status.Hour = h
 	}
 	state, err := r.engines.export(workload.UID, engine)
 	if err != nil {
