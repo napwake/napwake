@@ -191,13 +191,41 @@ func TestAccumulateCost_FullPrecisionOverADayOfFlushes(t *testing.T) {
 			}
 			assert.InEpsilon(t, wantCPU, cpu.AsApproximateFloat64(), tolerance)
 			assert.InEpsilon(t, wantMem, mem.AsApproximateFloat64(), tolerance)
-			assert.Equal(t, now.Sub(fixedTime), toTheMillisecond(c.Tracked.Duration))
+			assert.Equal(t, 24*time.Hour, c.Tracked.Duration, "to the second status keeps")
 			if tt.phase == v1alpha1.PhasePaused {
 				want := cost.ComputeHourly(float64(tt.cpuMillis)/1000, float64(tt.memBytes)/bytesPerGiB, cost.DefaultRates) * 24
 				assert.Equal(t, cost.FormatDollars(want), c.FreedThisMonth)
 			}
 		})
 	}
+}
+
+// The operator reads each workload back from the API server, which keeps
+// lastAccumulatedAt to the second. Counted from a clock half a second into
+// each second, a day of flushes, each read back as the cache gives it,
+// tracked 24h2m24s and billed the dropped half seconds as well: each flush
+// counted again what the last one had. Counted to the second status keeps,
+// a day is a day.
+func TestAccumulateCost_ReadBackAfterEachFlushTracksADay(t *testing.T) {
+	w := costWorkload(v1alpha1.PhaseRunning)
+	r := newTestReconciler(t, w, &stubPauser{})
+	r.metrics = &stubMetrics{cpuPerReplica: 1000, replicas: 1}
+	now := fixedTime.Add(500 * time.Millisecond)
+	r.clock = func() time.Time { return monotonic(now) }
+	ctx := context.Background()
+
+	r.accumulateCost(ctx, w)
+	for range 24 * time.Hour / statusFlushInterval {
+		require.NoError(t, r.Status().Update(ctx, w))
+		w = getWorkload(t, r, w.Name)
+		now = now.Add(statusFlushInterval)
+		r.accumulateCost(ctx, w)
+	}
+
+	c := w.Status.Cost
+	assert.Equal(t, 24*time.Hour, c.Tracked.Duration)
+	assert.InDelta(t, 24, c.AwakeCPUHours.AsApproximateFloat64(), 1e-6, "a vCPU for a day")
+	assert.Equal(t, cost.FormatDollars(cost.ComputeHourly(1, 0, cost.DefaultRates)*24), c.CostThisMonth)
 }
 
 // Cost and what pausing freed are on the same basis, requests, over the

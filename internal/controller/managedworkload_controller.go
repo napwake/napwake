@@ -1785,10 +1785,10 @@ func (r *Reconciler) sinceTransition(workload *v1alpha1.ManagedWorkload) time.Du
 
 func (r *Reconciler) initDefaults() {
 	if r.autoscalers == nil {
-		r.autoscalers = autoscaler.NewFinder(r.Client)
+		r.autoscalers = autoscaler.NewFinder(r.Client).WithClock(r.now)
 	}
 	if r.pauser == nil {
-		r.pauser = lifecycle.NewPauser(r.Client, r.autoscalers)
+		r.pauser = lifecycle.NewPauser(r.Client, r.autoscalers).WithClock(r.now)
 	}
 	if r.metrics == nil {
 		pods := r.PodReader

@@ -130,7 +130,12 @@ NAPWAKE_DOCS_DIST=$PWD/docs/dist go test -count=1 ./test/docs ./hack/docsite \
 - testify: `require` for what must hold to go on, `assert` for the checks. The e2e suite, and the Ginkgo suite in `internal/controller`, use Ginkgo and Gomega.
 - envtest where the API server's behaviour matters (CRD validation, admission policies, server-side apply, field managers), the fake client elsewhere.
 - A helper that can fail takes `t`, calls `t.Helper()`, and fails the test. It never swallows an error.
-- **Time is read as production reads it.** A test clock carries a monotonic reading, as `time.Now()` does: build it with `monotonic` in `internal/controller/helpers_test.go`, never with `time.Date` alone. A test that needs the real clock pins the minute it runs in. Prove "doesn't wait" or "doesn't hang" by a signal, an order or a count, never by elapsed time. Where a bound can't be avoided, make it generous and name it.
+- **Time is read as production reads it.** A test clock carries a monotonic reading, as `time.Now()` does: build it with `monotonic` in `internal/controller/helpers_test.go` (`internal/lifecycle` has its own copy), never with `time.Date` alone. Two readings of one instant differ by a microsecond or two, either way, so:
+  - move the clock `requeueLag` past an instant the operator waits for, as a requeue comes after the wait it asked for, not on it;
+  - compare a wait or a span between two readings `toTheMillisecond`;
+  - compare its times with dates written in UTC `inUTC`, since it reads in `time.Local`.
+
+  A harness gives its reconciler the operator's pauser and autoscaler finder with `withTheOperatorsPauser`, which puts them on the reconciler's clock, and calls `requirePauserOnItsClock` once to prove it. A test that needs the real clock pins the minute it runs in. Prove "doesn't wait" or "doesn't hang" by a signal, an order or a count, never by elapsed time. Where a bound can't be avoided, make it generous and name it.
 - A safety property, such as when a workload may pause, gets a property test across its whole range, then the cases it assumes away.
 - `kubectl napwake scan` and `status` open their page in a browser from a terminal. Pass `--open=false` in tests and scripts.
 
@@ -158,7 +163,7 @@ NAPWAKE_DOCS_DIST=$PWD/docs/dist go test -count=1 ./test/docs ./hack/docsite \
 
 | Rule | Checked by |
 |---|---|
-| Tests read time as production does | The `monotonic` helper in `internal/controller/helpers_test.go`, and `TestHourStart_CarriesNoMonotonicReading` in `internal/forecast`. Reviews check new tests |
+| Tests read time as production does | The `monotonic` helper in `internal/controller/helpers_test.go`, `requirePauserOnItsClock`, which each harness with the operator's pauser calls, and `TestHourStart_CarriesNoMonotonicReading` in `internal/forecast`. Reviews check new tests |
 | The docs' install and verify commands are the ones the install smoke test runs | `TestInstallSmokeRunsTheDocsCommands` in `test/docs`, against `.github/workflows/install-smoke.yml`. Change both together |
 | The Helm install the scan prints is the docs': the installation and Helm values pages', both READMEs' and the 0.2.0 notes' | `TestInstallCommands_AreTheDocs` in `cmd/kubectl-napwake`, against `installCommands` in `scan.go`. Change them together |
 | Versions change only through `make bump VERSION=x.y.z` | `make verify-version`, which the release workflow runs on the tag. `make release` stops if `bump` changed a file it doesn't commit |

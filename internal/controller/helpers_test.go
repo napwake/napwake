@@ -39,7 +39,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/autoscaler"
 	"github.com/napwake/napwake/internal/forecast"
+	"github.com/napwake/napwake/internal/lifecycle"
 )
 
 // fakeClientBuilder is a fake API server with the field indexes
@@ -109,6 +111,49 @@ const requeueLag = time.Millisecond
 // readings differ by.
 func toTheMillisecond(d time.Duration) time.Duration {
 	return d.Round(time.Millisecond)
+}
+
+// withTheOperatorsPauser gives r the operator's pauser and autoscaler
+// finder, reading through c, on r's clock: the operator reads one clock,
+// so a test that moves r's moves theirs.
+func withTheOperatorsPauser(r *Reconciler, c client.Client) *Reconciler {
+	r.autoscalers = autoscaler.NewFinder(c).WithClock(r.now)
+	r.pauser = lifecycle.NewPauser(c, r.autoscalers).WithClock(r.now)
+	return r
+}
+
+// clockProbeT is what requirePauserOnItsClock needs of a test, which a
+// Ginkgo spec's GinkgoT() has too.
+type clockProbeT interface {
+	require.TestingT
+	Helper()
+}
+
+// requirePauserOnItsClock fails unless r's pauser stamps a pause with r's
+// clock. It moves r's clock an hour from where it reads, pauses a
+// Deployment of its own in namespace through r's client, then puts the
+// clock back and deletes the Deployment.
+func requirePauserOnItsClock(t clockProbeT, r *Reconciler, namespace string) {
+	t.Helper()
+	ctx := context.Background()
+	probe := envtestDeployment(namespace, 1)
+	probe.Name = "clock-probe"
+	require.NoError(t, r.Create(ctx, probe))
+	defer func() { require.NoError(t, client.IgnoreNotFound(r.Delete(ctx, probe))) }()
+	clock := r.clock
+	defer func() { r.clock = clock }()
+	at := monotonic(r.now().Add(-time.Hour))
+	r.clock = func() time.Time { return at }
+
+	w := &v1alpha1.ManagedWorkload{ObjectMeta: metav1.ObjectMeta{Name: probe.Name, Namespace: namespace},
+		Spec: v1alpha1.ManagedWorkloadSpec{Target: v1alpha1.WorkloadRef{Kind: v1alpha1.TargetKindDeployment,
+			Name: probe.Name}}}
+	require.NoError(t, r.pauser.Prepare(ctx, w))
+	_, err := r.pauser.Pause(ctx, w)
+	require.NoError(t, err)
+	require.NotNil(t, w.Status.Pause.PausedAt)
+	assert.WithinDuration(t, at, w.Status.Pause.PausedAt.Time, time.Second,
+		"its pauser stamps the pause with its reconciler's clock")
 }
 
 // inUTC is times in UTC, as the tests write dates. A monotonic clock, like
