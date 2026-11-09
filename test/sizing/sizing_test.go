@@ -85,7 +85,7 @@ import (
 // shows in the result.
 const (
 	// The operator, for each pod bound to a node.
-	podBytes int64 = 2700
+	podBytes int64 = 2300
 	// The doorman, for each pod behind a Service, and each Service.
 	endpointBytes int64 = 320
 	serviceBytes  int64 = 1200
@@ -139,9 +139,9 @@ func TestOperatorPodCache(t *testing.T) {
 			p := list.(*corev1.PodList).Items[0]
 			assert.Empty(t, p.Labels, "a cached pod keeps no labels")
 			assert.Empty(t, p.OwnerReferences, "or owners")
-			require.Len(t, p.Spec.Containers, 1, "its requests are collapsed into one container")
-			assert.Equal(t, "750m", p.Spec.Containers[0].Resources.Requests.Cpu().String(),
-				"what the scheduler counts: the app, the log shipper and the mesh proxy, more than the init container")
+			assert.Empty(t, p.Spec.Containers, "or containers")
+			assert.Equal(t, "750m", p.Spec.Overhead.Cpu().String(), "its requests are collapsed into its overhead: "+
+				"what the scheduler counts, the app, the log shipper and the mesh proxy, more than the init container")
 		},
 	})
 	for _, n := range podCounts {

@@ -21,7 +21,9 @@ package sizing_test
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -29,6 +31,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -44,23 +47,39 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 
 	"github.com/napwake/napwake/api/v1alpha1"
 )
 
 // What the chart's values.yaml and the Helm values page say the operator's
-// default 512Mi covers, each held to the operator binary's peak resident
-// memory, which the container's limit counts: so many workloads, each a
-// Deployment with a pod, a Service and a ManagedWorkload, or so many pods,
-// behind a tenth as many Deployments and Services. Covered means the peak
-// stays under the soft limit the runtime aims at, 90% of the container's,
-// leaving the rest as headroom.
+// default memory limit covers, each held to the operator binary's peak
+// resident memory, which the container's limit counts: so many workloads,
+// each a Deployment with a pod, a Service and a ManagedWorkload, or so many
+// pods, behind a tenth as many Deployments and Services. Covered means the
+// peak leaves a fifth of the limit to spare.
 const (
-	operatorLimit     int64 = 512 << 20
-	coveredWorkloads        = 4_000
-	coveredPods             = 40_000
-	operatorWorkloads       = "the operator's 512Mi covers some 4,000 ManagedWorkloads, or 40,000 pods"
+	coveredWorkloads  = 10_000
+	coveredPods       = 100_000
+	spare             = 0.2
+	operatorWorkloads = "the operator's default limit covers some 10,000 ManagedWorkloads, or 100,000 pods behind " +
+		"10,000 Deployments, with a fifth to spare"
 )
+
+// operatorLimit is the operator's memory limit as the chart sets it by
+// default, which the binary is measured running under.
+func operatorLimit(t *testing.T) int64 {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("..", "..", "charts", "napwake", "values.yaml"))
+	require.NoError(t, err)
+	var values struct {
+		Resources corev1.ResourceRequirements `json:"resources"`
+	}
+	require.NoError(t, yaml.Unmarshal(data, &values))
+	limit, ok := values.Resources.Limits[corev1.ResourceMemory]
+	require.True(t, ok, "values.yaml sets resources.limits.memory")
+	return limit.Value()
+}
 
 // operatorCluster is a cluster the operator binary is measured holding:
 // deployments, each with its replicas' pods and a Service, the first
@@ -78,16 +97,17 @@ type operatorCluster struct {
 var operatorClusters = []operatorCluster{
 	{name: "1,000 workloads", deployments: 1_000, replicas: 1, managed: 1_000},
 	{name: "2,500 workloads", deployments: 2_500, replicas: 1, managed: 2_500},
-	{name: "4,000 workloads", deployments: coveredWorkloads, replicas: 1, managed: coveredWorkloads, covered: true},
+	{name: "4,000 workloads", deployments: 4_000, replicas: 1, managed: 4_000},
 	{name: "5,000 workloads", deployments: 5_000, replicas: 1, managed: 5_000},
 	{name: "7,500 workloads", deployments: 7_500, replicas: 1, managed: 7_500},
-	{name: "40,000 pods, 1,000 managed", deployments: coveredPods / replicas, replicas: replicas, managed: 1_000,
+	{name: "10,000 workloads", deployments: coveredWorkloads, replicas: 1, managed: coveredWorkloads, covered: true},
+	{name: "40,000 pods, 1,000 managed", deployments: 4_000, replicas: replicas, managed: 1_000},
+	{name: "100,000 pods, 1,000 managed", deployments: coveredPods / replicas, replicas: replicas, managed: 1_000,
 		covered: true},
-	{name: "100,000 pods, 1,000 managed", deployments: 10_000, replicas: replicas, managed: 1_000},
 }
 
 // The operator binary, as the chart runs it, with MEMORY_LIMIT at its
-// default 512Mi, holding each cluster, as it starts, takes on every
+// default, holding each cluster, as it starts, takes on every
 // ManagedWorkload and rechecks each every minute: its peak resident
 // memory, which the container's limit kills at, from the kernel's account
 // once it exits, and as /metrics reports it; and beside it, the heap in
@@ -107,15 +127,20 @@ func TestOperatorBinary(t *testing.T) {
 			t.Logf("%s: peak resident memory %s (%s at most in /metrics, %s at the end; soft limit %s); "+
 				"heap in use %s at most, %s at the end; live heap %s at most, %s at the end; the runtime held %s at "+
 				"most, and took at most %s from the OS", c.name, mib(r.maxRSS), mib(r.peak.rss), mib(r.end.rss),
-				mib(operatorLimit/10*9), mib(r.peakHeapInUse), mib(r.end.heapInUse), mib(r.peakLive), mib(r.live),
+				mib(operatorLimit(t)/10*9), mib(r.peakHeapInUse), mib(r.end.heapInUse), mib(r.peakLive), mib(r.live),
 				mib(r.peakHeld), mib(r.end.obtained))
 			t.Logf("%s: over the last two minutes, %.0f reconciles a second, %.0f queued at the end, where "+
 				"rechecking each ManagedWorkload every minute takes %.0f a second", c.name, r.rate, r.depth,
 				float64(c.managed)/60)
+			if r.squeezed > 0 {
+				t.Logf("%s: in %d samples the resident memory was less than the heap in use: the OS compressed or "+
+					"swapped the operator's memory, so these figures read low", c.name, r.squeezed)
+			}
 			if c.covered {
-				assert.Less(t, r.maxRSS, operatorLimit/10*9,
-					"%s, as values.yaml says, but at %s its peak resident memory reached the soft limit",
-					operatorWorkloads, c.name)
+				assert.Zero(t, r.squeezed, "%s: measure what the chart quotes with the machine's memory to spare", c.name)
+				assert.LessOrEqual(t, float64(r.maxRSS), float64(operatorLimit(t))*(1-spare),
+					"%s, as values.yaml says, but at %s its peak resident memory was %s of %s", operatorWorkloads,
+					c.name, mib(r.maxRSS), mib(operatorLimit(t)))
 			}
 		})
 	}
@@ -258,6 +283,10 @@ type operatorRun struct {
 	peakHeapInUse, peakHeld int64
 	peakLive, live          int64
 	rate, depth             float64
+	// squeezed counts the samples whose resident memory was less than the
+	// heap in use, which only the OS compressing or swapping the
+	// operator's memory explains: its resident figures then read low.
+	squeezed int
 }
 
 // gcTrace is a GODEBUG=gctrace=1 line's heap sizes: at the cycle's start,
@@ -281,7 +310,7 @@ func runOperator(t *testing.T, bin string, api *apiServer, c operatorCluster) op
 	cmd := exec.CommandContext(ctx, bin, "--metrics-bind-address="+metricsAddr, "--metrics-secure=false",
 		"--health-probe-bind-address="+probeAddr, "--zap-log-level=error")
 	cmd.Env = append(os.Environ(), "KUBECONFIG="+kubeconfig, "POD_NAMESPACE=napwake-system",
-		fmt.Sprintf("MEMORY_LIMIT=%d", operatorLimit), "GODEBUG=gctrace=1")
+		fmt.Sprintf("MEMORY_LIMIT=%d", operatorLimit(t)), "GODEBUG=gctrace=1")
 	cmd.Stdout, cmd.Stderr = logs, logs
 	require.NoError(t, cmd.Start())
 	stopped := make(chan struct{})
@@ -316,6 +345,9 @@ func runOperator(t *testing.T, bin string, api *apiServer, c operatorCluster) op
 			r.peak = mem
 		}
 		r.peakHeapInUse, r.peakHeld = max(r.peakHeapInUse, mem.heapInUse), max(r.peakHeld, mem.held)
+		if mem.rss > 0 && mem.rss < mem.heapInUse {
+			r.squeezed++
+		}
 		r.end = mem
 		reconciled, depth := m.sum("controller_runtime_reconcile_total", `controller="managedworkload"`),
 			m.sum("workqueue_depth", `name="managedworkload"`)
@@ -365,7 +397,7 @@ func readLog(t *testing.T, name, file string) (peakLive, live int64) {
 	t.Helper()
 	data, err := os.ReadFile(file)
 	require.NoError(t, err)
-	var errors []string
+	logged := map[string]int{}
 	for line := range strings.Lines(string(data)) {
 		line = strings.TrimSpace(line)
 		if m := gcTrace.FindStringSubmatch(line); m != nil {
@@ -375,16 +407,26 @@ func readLog(t *testing.T, name, file string) (peakLive, live int64) {
 			peakLive = max(peakLive, live)
 			continue
 		}
-		if line != "" {
-			errors = append(errors, line)
+		if line == "" {
+			continue
 		}
+		var entry struct {
+			Msg   string `json:"msg"`
+			Error string `json:"error"`
+		}
+		if json.Unmarshal([]byte(line), &entry) != nil {
+			entry.Msg = line
+		}
+		logged[fmt.Sprintf("%.200s: %.200s", entry.Msg, entry.Error)]++
 	}
 	require.NotZero(t, peakLive, "the operator traced its garbage collection")
-	if len(errors) == 0 {
+	if len(logged) == 0 {
 		t.Logf("%s: the operator logged no errors", name)
 		return peakLive, live
 	}
-	t.Logf("%s: the operator logged %d lines at error level, first %.300s", name, len(errors), errors[0])
+	for _, what := range slices.Sorted(maps.Keys(logged)) {
+		t.Logf("%s: the operator logged %d times at error level %s", name, logged[what], what)
+	}
 	return peakLive, live
 }
 

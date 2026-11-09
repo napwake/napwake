@@ -45,6 +45,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
+	toolscache "k8s.io/client-go/tools/cache"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -407,6 +408,65 @@ func TestTrimForCacheKeepsManagedWorkloadsLastApplied(t *testing.T) {
 		"the operator updates ManagedWorkloads whole, which would delete kubectl's record")
 }
 
+// The operator's cache holds a Deployment's or StatefulSet's pod template
+// cut down to what the operator reads, with the hash of the whole, and
+// who set its replicas, but a NEG forwarder's Deployment whole, since the
+// operator patches those from its cache.
+func TestTrimTarget(t *testing.T) {
+	template := corev1.PodTemplateSpec{
+		ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "api"},
+			Annotations: map[string]string{"sidecar.istio.io/status": "{}"}},
+		Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "app", Image: "api:v1",
+			Resources: requests("500m", "1Gi"), VolumeMounts: []corev1.VolumeMount{{Name: "config", MountPath: "/etc"}}}}},
+	}
+	trimmedTemplate := *template.DeepCopy()
+	controller.TrimPodTemplate(&trimmedTemplate)
+	fields := managedFields(t)
+	wantWriter, wantFound := gitops.ReplicasWriter(fields)
+	require.True(t, wantFound)
+
+	target := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "api", ManagedFields: managedFields(t),
+		Annotations: map[string]string{corev1.LastAppliedConfigAnnotation: "{}", "team": "payments"}},
+		Spec: appsv1.DeploymentSpec{Replicas: ptr.To[int32](2), Template: *template.DeepCopy()}}
+	sts := &appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Name: "db"},
+		Spec: appsv1.StatefulSetSpec{Template: *template.DeepCopy(),
+			VolumeClaimTemplates: []corev1.PersistentVolumeClaim{{ObjectMeta: metav1.ObjectMeta{Name: "data"}}}}}
+	neg := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "api-napwake-forwarder",
+		OwnerReferences: []metav1.OwnerReference{{APIVersion: v1alpha1.GroupVersion.String(), Kind: "ManagedWorkload",
+			Name: "api", Controller: ptr.To(true)}}},
+		Spec: appsv1.DeploymentSpec{Template: *template.DeepCopy()}}
+
+	out, err := trimTarget(target)
+	require.NoError(t, err)
+	got := out.(*appsv1.Deployment)
+	assert.Equal(t, trimmedTemplate, got.Spec.Template)
+	assert.Equal(t, ptr.To[int32](2), got.Spec.Replicas, "the rest of its spec is kept")
+	assert.Equal(t, map[string]string{"team": "payments"}, got.Annotations)
+	writer, found := gitops.ReplicasWriter(got.ManagedFields)
+	assert.True(t, found)
+	assert.Equal(t, wantWriter, writer)
+
+	out, err = trimTarget(sts)
+	require.NoError(t, err)
+	assert.Equal(t, trimmedTemplate, out.(*appsv1.StatefulSet).Spec.Template)
+	assert.Len(t, out.(*appsv1.StatefulSet).Spec.VolumeClaimTemplates, 1)
+
+	out, err = trimTarget(neg)
+	require.NoError(t, err)
+	assert.Equal(t, template, out.(*appsv1.Deployment).Spec.Template, "a forwarder keeps its whole template")
+
+	transforms := map[string]toolscache.TransformFunc{}
+	for obj, byObject := range operatorCacheOptions(nil, "napwake-system").ByObject {
+		transforms[fmt.Sprintf("%T", obj)] = byObject.Transform
+	}
+	for _, kind := range []string{"*v1.Deployment", "*v1.StatefulSet"} {
+		require.NotNil(t, transforms[kind], "the operator's cache trims each %s", kind)
+		out, err := transforms[kind](&appsv1.Deployment{Spec: appsv1.DeploymentSpec{Template: *template.DeepCopy()}})
+		require.NoError(t, err)
+		assert.Equal(t, trimmedTemplate, out.(*appsv1.Deployment).Spec.Template)
+	}
+}
+
 // A stopping leader hands over its lease, so the next operator leads at
 // once rather than after the lease expires.
 func TestLeaderElectionHandsOverOnStop(t *testing.T) {
@@ -688,11 +748,10 @@ func TestOperatorCacheHoldsPodsAsWhatTheyRequest(t *testing.T) {
 	assert.Equal(t, "running", got.Name)
 	assert.Equal(t, "node-a", got.Spec.NodeName)
 	assert.Empty(t, got.Labels)
-	require.Len(t, got.Spec.Containers, 1, "collapsed into one container")
-	assert.Empty(t, got.Spec.Containers[0].Image)
+	assert.Empty(t, got.Spec.Containers, "collapsed into its overhead")
 	assert.Empty(t, got.Spec.InitContainers)
-	assert.Equal(t, "600m", got.Spec.Containers[0].Resources.Requests.Cpu().String(), "the app and its sidecar")
-	assert.Equal(t, "1088Mi", got.Spec.Containers[0].Resources.Requests.Memory().String())
+	assert.Equal(t, "600m", got.Spec.Overhead.Cpu().String(), "the app and its sidecar")
+	assert.Equal(t, "1088Mi", got.Spec.Overhead.Memory().String())
 
 	running.Status.Phase = corev1.PodFailed
 	require.NoError(t, direct.Status().Update(ctx, running))
