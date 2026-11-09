@@ -194,7 +194,9 @@ doorman:
   # 50,000 of each. The running doorman takes two to three times what its
   # caches hold, for the copies it makes as it works and what the garbage
   # collector hasn't freed yet. Held connections take up to 72Mi more under
-  # a flood. 256Mi covers some 10,000 ManagedWorkloads with a pod and a
+  # a flood. Connections passed through to a woken workload, which it keeps
+  # until an end closes them, take about 36 KB each, up to 36Mi at its cap
+  # of 1024. 256Mi covers some 10,000 ManagedWorkloads with a pod and a
   # Service each, or 50,000 pods each behind a Service of its own. Raise the
   # limit beyond.
   resources:
