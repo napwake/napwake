@@ -164,7 +164,7 @@ To a newer version, Helm then renders with the installed version's defaults, whi
 
 `helm upgrade` stops with `UPGRADE FAILED: execution error at (napwake/templates/guard.yaml...): Napwake refuses this upgrade: ...`, naming the ManagedWorkloads it would leave. Helm records no revision, so the release stays `deployed`.
 
-The upgrade leaves a namespace with ManagedWorkloads out of `watchNamespaces`, by dropping it or by setting `watchNamespaces` where it was empty. That ends the operator's and the doorman's access there, so they'd stop watching it. Paused workloads there would stay at zero, with Services routed to doorman ports nothing serves and finalizers that never run.
+The upgrade leaves a namespace with ManagedWorkloads out of `watchNamespaces` when it drops it, or sets `watchNamespaces` where it was empty. That ends the operator's and the doorman's access there, so they'd stop watching it. Paused workloads there would stay at zero, with Services routed to doorman ports nothing serves and finalizers that never run.
 
 So the chart's upgrade guard refuses. Stop managing them first, while the operator still watches them and can scale each one back up:
 
