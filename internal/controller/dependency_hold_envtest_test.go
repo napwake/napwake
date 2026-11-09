@@ -433,6 +433,27 @@ func (e *dependentWakeEnv) waitFor(t *testing.T, what string, done func() bool) 
 	}
 }
 
+// waitForWorkload waits until the API server's copy of the workload name
+// is as done wants it, and says what that copy held if it never is: the
+// operator records what another workload's reconcile wrote on it only in
+// its own reconcile, which may not have run yet.
+func (e *dependentWakeEnv) waitForWorkload(t *testing.T, name, what string, done func(*v1alpha1.ManagedWorkload) bool) {
+	t.Helper()
+	get := func() (*v1alpha1.ManagedWorkload, error) {
+		var w v1alpha1.ManagedWorkload
+		err := e.c.Get(e.ctx, client.ObjectKey{Namespace: e.ns, Name: name}, &w)
+		return &w, err
+	}
+	if !assert.Eventually(t, func() bool {
+		w, err := get()
+		return err == nil && done(w)
+	}, 30*time.Second, 5*time.Millisecond, what) {
+		w, err := get()
+		t.Fatalf("%s: %s has annotations %v and activity %+v (%v); %s", what, name, w.Annotations,
+			w.Status.Activity, err, e.state())
+	}
+}
+
 // requestForAPI stamps a request on api as the doorman does for one it
 // holds: under Napwake's field manager, with the address it came from,
 // which is no pod's.
@@ -523,10 +544,11 @@ func TestDependencies_HeldWhileItsDependentWakes(t *testing.T) {
 		assert.NotContains(t, e.history, "api Paused (api Paused, a request waiting true)",
 			"api is turned back before it's paused")
 		e.mu.Unlock()
-		postgres := e.workload(t, theDependency)
-		assert.NotEmpty(t, postgres.Annotations[v1alpha1.AnnotationLastActivity], "api's wake stamps postgres")
-		assert.False(t, postgres.Status.Activity.LastActivityTime.Time.Before(requested.Truncate(time.Second)),
-			"which restarts postgres's clock: %s", postgres.Status.Activity.LastActivityTime)
+		e.waitForWorkload(t, theDependency, "api's wake stamps postgres, which restarts postgres's clock",
+			func(postgres *v1alpha1.ManagedWorkload) bool {
+				return postgres.Annotations[v1alpha1.AnnotationLastActivity] != "" && postgres.Status.Activity != nil &&
+					!postgres.Status.Activity.LastActivityTime.Time.Before(requested.Truncate(time.Second))
+			})
 	})
 
 	t.Run("learned while it pauses, it calls the pause off before it's scaled down", func(t *testing.T) {
