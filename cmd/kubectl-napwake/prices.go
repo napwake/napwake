@@ -23,6 +23,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/napwake/napwake/internal/cost"
 	"github.com/napwake/napwake/internal/discovery"
 )
 
@@ -41,12 +42,28 @@ func ownPrices(cmd *cobra.Command) (cpu, memory bool) {
 }
 
 func pricesFor(opts scanOptions) prices {
+	rates := opts.rates()
 	return prices{
-		CPUPerHour:    opts.cpuPrice,
-		MemoryPerHour: opts.memoryPrice,
+		CPUPerHour:    rates.CPUPerHour,
+		MemoryPerHour: rates.MemoryPerHour,
 		CPUAssumed:    !opts.ownCPUPrice,
 		MemoryAssumed: !opts.ownMemoryPrice,
 	}
+}
+
+// rates price a pod whose node has no list price: at the user's own
+// prices, and at cost.DefaultRates for any not given. The flags start at
+// zero, so --help shows no default, since unset, each node is priced at
+// its own list price.
+func (o scanOptions) rates() cost.Rates {
+	rates := cost.DefaultRates
+	if o.ownCPUPrice {
+		rates.CPUPerHour = o.cpuPrice
+	}
+	if o.ownMemoryPrice {
+		rates.MemoryPerHour = o.memoryPrice
+	}
+	return rates
 }
 
 func (p prices) cpu() string    { return fmt.Sprintf("$%.3f per vCPU-hour", p.CPUPerHour) }

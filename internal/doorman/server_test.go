@@ -24,6 +24,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -37,9 +38,11 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
+	eventsv1 "k8s.io/api/events/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/cache/informertest"
@@ -72,16 +75,6 @@ func apiPod(addrs ...string) *corev1.Pod {
 		pod.Status.PodIPs = append(pod.Status.PodIPs, corev1.PodIP{IP: addr})
 	}
 	return pod
-}
-
-// freePort returns a port nothing is listening on, for the doorman to claim.
-func freePort(t *testing.T) int32 {
-	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	port := l.Addr().(*net.TCPAddr).Port
-	require.NoError(t, l.Close())
-	return int32(port)
 }
 
 // echoServer is the woken workload: it echoes what it's sent, and counts
@@ -177,10 +170,46 @@ func newTestServer(t *testing.T, wrap func(client.WithWatch) client.WithWatch, o
 	if wrap != nil {
 		c = wrap(c)
 	}
-	s := NewServer(c, nil, Options{Host: "127.0.0.1"})
+	s := NewServer(cachedReads(t, c), nil, Options{Host: "127.0.0.1"})
+	s.listen = reserved.listen
 	s.backends.allowed = func(netip.Addr) bool { return true }
 	s.acceptFor, s.grace = 0, 100*time.Millisecond
 	return s, c
+}
+
+// cachedReads is c as the doorman reads it through its cache: each
+// ManagedWorkload cut down as TrimManagedWorkload holds it. Every test of a
+// doorman newTestServer starts shows it works from what it caches.
+func cachedReads(t *testing.T, c client.WithWatch) client.WithWatch {
+	t.Helper()
+	trim := func(w *v1alpha1.ManagedWorkload) {
+		trimmed, err := TrimManagedWorkload(w)
+		require.NoError(t, err)
+		*w = *trimmed.(*v1alpha1.ManagedWorkload)
+	}
+	return interceptor.NewClient(c, interceptor.Funcs{
+		Get: func(ctx context.Context, cl client.WithWatch, key client.ObjectKey, obj client.Object,
+			opts ...client.GetOption) error {
+			if err := cl.Get(ctx, key, obj, opts...); err != nil {
+				return err
+			}
+			if w, ok := obj.(*v1alpha1.ManagedWorkload); ok {
+				trim(w)
+			}
+			return nil
+		},
+		List: func(ctx context.Context, cl client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+			if err := cl.List(ctx, list, opts...); err != nil {
+				return err
+			}
+			if ws, ok := list.(*v1alpha1.ManagedWorkloadList); ok {
+				for i := range ws.Items {
+					trim(&ws.Items[i])
+				}
+			}
+			return nil
+		},
+	})
 }
 
 // run starts s and returns a function that stops it and waits for it.
@@ -406,6 +435,198 @@ func TestTrimEndpointSlice_KeepsWhatBackendsRead(t *testing.T) {
 		ReadyPodEndpoints([]discoveryv1.EndpointSlice{*trimmed.(*discoveryv1.EndpointSlice)}))
 }
 
+// The doorman's cache keeps only what it reads of each ManagedWorkload:
+// not the forecast's state, the costs or the conditions, which are most of
+// its size. Every test of a running doorman reads what this keeps.
+func TestTrimManagedWorkload_KeepsWhatTheDoormanReads(t *testing.T) {
+	full := pausedWorkload("api", 20417, 30*time.Second)
+	began := metav1.NewTime(time.Now().Add(-61 * time.Minute))
+	moved := metav1.NewTime(time.Now().Add(-time.Hour))
+	full.UID, full.ResourceVersion, full.Generation = "4f1c9a52", "1234", 3
+	full.Labels = map[string]string{v1alpha1.LabelManaged: "true"}
+	full.Finalizers = []string{"napwake.dev/cleanup"}
+	full.OwnerReferences = []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "Deployment", Name: "api"}}
+	full.ManagedFields = []metav1.ManagedFieldsEntry{{Manager: "napwake"}}
+	full.Annotations = map[string]string{
+		v1alpha1.AnnotationLastRequest:     "2026-11-08T09:00:00Z",
+		v1alpha1.AnnotationLastRequestFrom: "10.244.0.17",
+		v1alpha1.AnnotationTurnedAway:      `{"pausedAt":"2026-11-08T08:00:00Z","requests":3}`,
+		v1alpha1.AnnotationLastActivity:    "2026-11-08T07:00:00Z",
+	}
+	full.Spec.Wake.Mode = v1alpha1.WakeOnAsk
+	full.Spec.Wake.Page = ptr.To(false)
+	full.Spec.IdlePolicy = &v1alpha1.IdlePolicySpec{AutoResume: true}
+	full.Status.LastTransitionTime = &moved
+	full.Status.Pause.StartedAt = &began
+	full.Status.Pause.RoutedAt = &began
+	full.Status.Pause.WakeAnnotations = &v1alpha1.WakeAnnotations{
+		Workload: map[string]string{
+			v1alpha1.AnnotationLastRequest:  "2026-11-08T07:30:00Z",
+			v1alpha1.AnnotationLastActivity: "2026-11-08T07:00:00Z",
+		},
+		Target: map[string]string{v1alpha1.AnnotationLastActivity: "2026-11-08T07:00:00Z"},
+	}
+	full.Status.Conditions = []metav1.Condition{{Type: "WakeOnRequest", Status: metav1.ConditionTrue, Reason: "DoormanRouted"}}
+	full.Status.Prediction = &v1alpha1.PredictionStatus{DailyPhase: "Active", State: strings.Repeat("x", 3600)}
+	full.Status.Activity = &v1alpha1.ActivityStatus{LastActivitySource: v1alpha1.ActivitySourceRequest}
+
+	trimmed, err := TrimManagedWorkload(full.DeepCopy())
+	require.NoError(t, err)
+
+	assert.Equal(t, &v1alpha1.ManagedWorkload{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "api", Namespace: "dev", UID: "4f1c9a52", ResourceVersion: "1234",
+			Annotations: map[string]string{
+				v1alpha1.AnnotationLastRequest: "2026-11-08T09:00:00Z",
+				v1alpha1.AnnotationTurnedAway:  `{"pausedAt":"2026-11-08T08:00:00Z","requests":3}`,
+			},
+		},
+		Spec: v1alpha1.ManagedWorkloadSpec{Wake: full.Spec.Wake},
+		Status: v1alpha1.ManagedWorkloadStatus{
+			Phase:              v1alpha1.PhasePaused,
+			LastTransitionTime: &moved,
+			Doorman:            full.Status.Doorman,
+			Pause: &v1alpha1.PauseStatus{
+				StartedAt: &began,
+				PausedAt:  full.Status.Pause.PausedAt,
+				WakeAnnotations: &v1alpha1.WakeAnnotations{
+					Workload: map[string]string{v1alpha1.AnnotationLastRequest: "2026-11-08T07:30:00Z"},
+				},
+			},
+		},
+	}, trimmed)
+
+	again, err := TrimManagedWorkload(trimmed)
+	require.NoError(t, err)
+	assert.Equal(t, trimmed, again, "trimming what's trimmed changes nothing")
+
+	bare := pausedWorkload("api", 20417, time.Minute)
+	bare.Status.Pause.WakeAnnotations = &v1alpha1.WakeAnnotations{}
+	trimmed, err = TrimManagedWorkload(bare)
+	require.NoError(t, err)
+	assert.NotNil(t, trimmed.(*v1alpha1.ManagedWorkload).Status.Pause.WakeAnnotations,
+		"a pause that recorded no stamp still says it recorded the annotations")
+}
+
+// Each sync reads the cache's own ManagedWorkloads, not copies, which would
+// allocate the cache's size every RouteSyncInterval. So it must change none
+// of them.
+func TestServer_SyncsRoutesFromTheCachesOwnWorkloads(t *testing.T) {
+	var listed []*v1alpha1.ManagedWorkloadList
+	var copied []bool
+	var mu sync.Mutex
+	wrap := func(c client.WithWatch) client.WithWatch {
+		return interceptor.NewClient(c, interceptor.Funcs{List: func(ctx context.Context, cl client.WithWatch,
+			list client.ObjectList, opts ...client.ListOption) error {
+			err := cl.List(ctx, list, opts...)
+			if ws, ok := list.(*v1alpha1.ManagedWorkloadList); ok {
+				o := (&client.ListOptions{}).ApplyOptions(opts)
+				mu.Lock()
+				listed = append(listed, ws)
+				copied = append(copied, o.UnsafeDisableDeepCopy == nil || !*o.UnsafeDisableDeepCopy)
+				mu.Unlock()
+			}
+			return err
+		}})
+	}
+	pausing := pausingWorkload(freePort(t))
+	pausing.Name = "billing"
+	s, _ := newTestServer(t, wrap, pausedWorkload("api", freePort(t), time.Minute), pausing)
+	ctx := context.Background()
+	t.Cleanup(func() {
+		for _, l := range s.listeners {
+			_ = l.Close()
+		}
+	})
+
+	require.NoError(t, s.syncRoutes(ctx, ctx))
+
+	mu.Lock()
+	require.Len(t, listed, 1)
+	read, wasCopied := listed[0], copied[0]
+	mu.Unlock()
+	assert.False(t, wasCopied, "listed with client.UnsafeDisableDeepCopy")
+	var want v1alpha1.ManagedWorkloadList
+	require.NoError(t, s.client.List(ctx, &want))
+	assert.Equal(t, want.Items, read.Items, "the sync changes nothing it read")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	assert.Len(t, s.routes, 2)
+}
+
+// With an informer, the doorman keeps each ManagedWorkload's routes from
+// its events, and never lists them: a List copies each into the list it
+// fills, every RouteSyncInterval (P81). A route that leaves drains, and a
+// ManagedWorkload deleted is forgotten, as when they're listed.
+func TestServer_SyncsRoutesFromTheInformersEvents(t *testing.T) {
+	ctx := context.Background()
+	var listed atomic.Int32
+	wrap := func(c client.WithWatch) client.WithWatch {
+		return interceptor.NewClient(c, interceptor.Funcs{List: func(ctx context.Context, cl client.WithWatch,
+			list client.ObjectList, opts ...client.ListOption) error {
+			if _, ok := list.(*v1alpha1.ManagedWorkloadList); ok {
+				listed.Add(1)
+			}
+			return cl.List(ctx, list, opts...)
+		}})
+	}
+	informers := &informertest.FakeInformers{Scheme: testScheme(t)}
+	workloads, err := informers.FakeInformerFor(ctx, &v1alpha1.ManagedWorkload{})
+	require.NoError(t, err)
+	port := freePort(t)
+	w := pausedWorkload("api", port, time.Minute)
+	s, _ := newTestServer(t, wrap, w)
+	s.informers = informers
+	run(t, s)
+
+	workloads.Add(w)
+	require.NoError(t, s.syncRoutes(ctx, ctx))
+	heldListener(t, s, port)
+	s.mu.Lock()
+	s.metered[apiKey] = true
+	s.mu.Unlock()
+
+	woken := w.DeepCopy()
+	woken.Status.Phase, woken.Status.Doorman = v1alpha1.PhaseRunning, nil
+	workloads.Update(w, woken)
+	require.NoError(t, s.syncRoutes(ctx, ctx))
+	s.mu.Lock()
+	assert.True(t, s.routes[port].draining(), "the route that left drains")
+	assert.True(t, s.metered[apiKey], "and its series are kept")
+	s.mu.Unlock()
+
+	workloads.Delete(woken)
+	require.NoError(t, s.syncRoutes(ctx, ctx))
+	s.mu.Lock()
+	assert.False(t, s.metered[apiKey], "a ManagedWorkload deleted is forgotten")
+	s.mu.Unlock()
+	assert.Zero(t, listed.Load(), "no ManagedWorkload is listed")
+}
+
+// Most of a ManagedWorkload's events are the operator's status writes,
+// which change no route, and the claims a sync reads are built again only
+// for one that does.
+func TestWatchedRoutes_BuildsTheClaimsAgainOnlyWhenARouteChanges(t *testing.T) {
+	w := &watchedRoutes{byKey: map[types.NamespacedName][]portRoute{}}
+	paused := pausedWorkload("api", 20417, time.Minute)
+	w.set(paused)
+	first := w.routeClaims()
+	require.Len(t, first[20417], 1)
+
+	written := paused.DeepCopy()
+	written.Status.Conditions = []metav1.Condition{{Type: "WakeOnRequest", Status: metav1.ConditionTrue}}
+	w.set(written)
+	assert.Equal(t, reflect.ValueOf(first).Pointer(), reflect.ValueOf(w.routeClaims()).Pointer(),
+		"a status write that changes no route reuses the claims")
+
+	moved := paused.DeepCopy()
+	moved.Status.Doorman[0].DoormanPort = 20418
+	w.set(moved)
+	claims := w.routeClaims()
+	assert.Empty(t, claims[20417])
+	assert.Len(t, claims[20418], 1, "a route that moves is claimed where it went")
+}
+
 // Pod networks are allocated from private, unique-local and shared address
 // space, so those stay routable around the metadata services refused.
 func TestRoutable(t *testing.T) {
@@ -510,6 +731,154 @@ func TestServer_WarnsOnceWhenRequestsAreNotServed(t *testing.T) {
 	assert.Contains(t, warnings[0], "maxWait")
 }
 
+// recordedEvents is the recorder the doorman runs with, the events.k8s.io
+// one, and what it wrote to the API server. It folds an event into an
+// earlier one of the same type, reason and action, keeping the earlier
+// one's message, which is what kubectl describe then shows.
+func recordedEvents(t *testing.T) (events.EventRecorder, func() []eventsv1.Event) {
+	t.Helper()
+	clientset := kubefake.NewClientset()
+	broadcaster := events.NewBroadcaster(&events.EventSinkImpl{Interface: clientset.EventsV1()})
+	ctx, cancel := context.WithCancel(context.Background())
+	require.NoError(t, broadcaster.StartRecordingToSinkWithContext(ctx))
+	t.Cleanup(func() {
+		cancel()
+		broadcaster.Shutdown()
+	})
+	written := func() []eventsv1.Event {
+		list, err := clientset.EventsV1().Events("dev").List(context.Background(), metav1.ListOptions{})
+		require.NoError(t, err)
+		return list.Items
+	}
+	return broadcaster.NewRecorder(testScheme(t), "napwake-doorman"), written
+}
+
+// notServed is the notes of the RequestNotServed warnings in evs.
+func notServed(evs []eventsv1.Event) []string {
+	var notes []string
+	for _, e := range evs {
+		if e.Reason == "RequestNotServed" && e.Type == "Warning" {
+			notes = append(notes, e.Note)
+		}
+	}
+	return notes
+}
+
+// backAtZero is the operator's part as the wake of a workload ends back at
+// zero, as an HPA with minReplicas 0 takes it there before its pod is Ready
+// (P77): it's Resuming and its pod starts, then the pod is gone and it's
+// Running at zero, so it's no longer routed through the doorman.
+func backAtZero(t *testing.T, s *Server, c client.Client) {
+	t.Helper()
+	ctx := context.Background()
+	var w v1alpha1.ManagedWorkload
+	require.NoError(t, c.Get(ctx, apiKey, &w))
+	w.Status.Phase = v1alpha1.PhaseResuming
+	require.NoError(t, c.Update(ctx, &w))
+	starting := readySlice(echoPort(t))
+	starting.Endpoints[0].Conditions.Ready = ptr.To(false)
+	require.NoError(t, c.Create(ctx, starting))
+	require.NoError(t, s.syncRoutes(ctx, ctx))
+
+	starting.Endpoints = nil
+	require.NoError(t, c.Update(ctx, starting))
+	require.NoError(t, c.Get(ctx, apiKey, &w))
+	w.Status.Phase = v1alpha1.PhaseRunning
+	w.Status.Doorman = nil
+	require.NoError(t, c.Update(ctx, &w))
+	require.NoError(t, s.syncRoutes(ctx, ctx))
+}
+
+// A request held for a wake that ends back at zero, before any pod is
+// Ready, is closed with nothing to serve it, and the workload's events and
+// the doorman's metrics say so, as for one held past maxWait.
+func TestServer_WarnsWhenAWakeEndsBackAtZero(t *testing.T) {
+	port := freePort(t)
+	recorder, written := recordedEvents(t)
+	s, c := startServerWith(t, func(s *Server) { s.recorder = recorder }, pausedWorkload("api", port, time.Minute))
+	before := wakes(resultDrained)
+
+	conn := dial(t, port)
+	send(t, conn, "hello\n")
+	require.Eventually(t, func() bool { return lastRequest(t, c) != "" }, 5*time.Second, 20*time.Millisecond,
+		"the held connection wakes the workload")
+	backAtZero(t, s, c)
+
+	closedWithin(t, conn)
+	assert.Eventually(t, func() bool { return wakes(resultDrained) == before+1 },
+		5*time.Second, 10*time.Millisecond, "counted as resultDrained")
+	if !assert.Eventually(t, func() bool { return len(notServed(written())) == 1 }, 5*time.Second, 10*time.Millisecond) {
+		t.Fatalf("want one RequestNotServed warning, have %q", notServed(written()))
+	}
+	assert.Equal(t, "a request on Service api was closed after under a second: the workload stopped being routed "+
+		"through the doorman before any of its pods was Ready, as when something else, such as an HPA with "+
+		"minReplicas 0, takes it back to zero as it wakes", notServed(written())[0])
+}
+
+// Each cause of a request not served is warned of apart, though they come
+// within a minute, about the same version of the workload. The doorman
+// warns once a minute for each, and the recorder would fold a warning into
+// an earlier one of the same action, keeping the earlier one's message.
+func TestServer_WarnsOfEachUnservedCauseApart(t *testing.T) {
+	recorder, written := recordedEvents(t)
+	s, _ := newTestServer(t, nil, pausedWorkload("api", freePort(t), time.Minute))
+	s.recorder = recorder
+	ctx := context.Background()
+	rt := route{workload: apiKey, service: "api"}
+
+	s.warnUnserved(ctx, rt, unservedSlow, time.Minute)
+	s.warnUnserved(ctx, rt, unservedUnreachable, 2*time.Minute)
+	s.warnUnserved(ctx, rt, unservedUnstamped, 3*time.Minute)
+	s.warnUnserved(ctx, rt, unservedDrained, 3*time.Second)
+
+	if !assert.Eventually(t, func() bool { return len(notServed(written())) == 4 }, 5*time.Second, 10*time.Millisecond) {
+		t.Fatalf("want four RequestNotServed warnings, have %q", notServed(written()))
+	}
+	notes := strings.Join(notServed(written()), "\n")
+	assert.Contains(t, notes, "closed after 1 minute: the workload wasn't Ready within maxWait")
+	assert.Contains(t, notes, "closed after 2 minutes: the workload's Ready pods couldn't be reached")
+	assert.Contains(t, notes, "closed after 3 minutes: the doorman couldn't record the wake")
+	assert.Contains(t, notes, "closed after 3 seconds: the workload stopped being routed through the doorman")
+}
+
+// A held request whose wake couldn't be recorded, or whose woken pods
+// couldn't be reached, is warned of with what happened.
+func TestServer_SaysWhyAHeldRequestWasntServed(t *testing.T) {
+	tests := []struct {
+		name string
+		wrap func(client.WithWatch) client.WithWatch
+		objs []client.Object
+		says string
+	}{
+		{name: "the stamp failed", wrap: failPatches(1000, nil),
+			says: "the doorman couldn't record the wake on the ManagedWorkload, so it may still be asleep"},
+		{name: "the pods couldn't be reached", objs: []client.Object{readySlice(refusingPort(t))},
+			says: "the workload's Ready pods couldn't be reached"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			port := freePort(t)
+			recorder, written := recordedEvents(t)
+			s, _ := newTestServer(t, tt.wrap, append(tt.objs, pausedWorkload("api", port, 300*time.Millisecond))...)
+			s.recorder = recorder
+			run(t, s)
+			before := wakes(resultError)
+
+			conn := dial(t, port)
+			send(t, conn, "hello\n")
+			closedWithin(t, conn)
+
+			assert.Eventually(t, func() bool { return wakes(resultError) == before+1 },
+				5*time.Second, 10*time.Millisecond, "counted as resultError")
+			if !assert.Eventually(t, func() bool { return len(notServed(written())) == 1 }, 5*time.Second,
+				10*time.Millisecond) {
+				t.Fatalf("want one RequestNotServed warning, have %q", notServed(written()))
+			}
+			assert.Contains(t, notServed(written())[0], tt.says)
+		})
+	}
+}
+
 const browserGET = "GET /orders HTTP/1.1\r\nHost: shop.example.dev\r\nAccept: text/html\r\nSec-Fetch-Mode: navigate\r\n\r\n"
 
 func readResponse(t *testing.T, conn net.Conn) (*http.Response, string) {
@@ -542,6 +911,23 @@ func TestServer_ServesThePageToABrowser(t *testing.T) {
 	// the caller has its answer.
 	assert.Eventually(t, func() bool { return wakes(resultPage) == before+1 },
 		5*time.Second, 10*time.Millisecond, "counted as resultPage")
+}
+
+// The waking-up page says how long the workload has been starting, from
+// when it went Resuming.
+func TestServer_ThePageSaysHowLongItHasBeenStarting(t *testing.T) {
+	port := freePort(t)
+	clock := &testClock{now: time.Now()}
+	w := pausedWorkload("api", port, time.Minute)
+	w.Status.Phase = v1alpha1.PhaseResuming
+	w.Status.LastTransitionTime = &metav1.Time{Time: clock.Now().Add(-75 * time.Second)}
+	startServerWith(t, func(s *Server) { s.now = clock.Now }, w)
+
+	conn := dial(t, port)
+	send(t, conn, browserGET)
+	_, body := readResponse(t, conn)
+
+	assert.Contains(t, body, `Starting<span class="t">1m 15s</span>`)
 }
 
 // Single sign-on cookies can take a browser's headers past what the doorman
@@ -865,7 +1251,7 @@ func TestServer_RetriesAFailedWake(t *testing.T) {
 // publishNotReadyAddresses. A refused dial is retried until maxWait.
 func TestServer_RetriesAFailedDial(t *testing.T) {
 	port := freePort(t)
-	_, c := startServer(t, pausedWorkload("api", port, time.Minute), readySlice(freePort(t)))
+	_, c := startServer(t, pausedWorkload("api", port, time.Minute), readySlice(refusingPort(t)))
 
 	conn := dial(t, port)
 	send(t, conn, "hello\n")
@@ -876,7 +1262,13 @@ func TestServer_RetriesAFailedDial(t *testing.T) {
 	slice.Ports[0].Port = ptr.To(echoPort(t))
 	require.NoError(t, c.Update(context.Background(), &slice))
 
-	echoed(t, conn, "hello\n")
+	// A dial to the refusing port fails at once on Linux, and only at
+	// dialTimeout on macOS, which drops the connection instead.
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(dialTimeout+closeBound)))
+	got := make([]byte, len("hello\n"))
+	_, err := io.ReadFull(conn, got)
+	require.NoError(t, err)
+	assert.Equal(t, "hello\n", string(got))
 }
 
 func TestDialAny_SpreadsConnectionsOverPods(t *testing.T) {
@@ -1229,8 +1621,7 @@ func TestServer_RefusesAPortClaimedTwice(t *testing.T) {
 	b.Namespace = "other-team"
 	s, _ := startServer(t, a, b)
 
-	_, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(int(port))), time.Second)
-	assert.Error(t, err)
+	assert.Nil(t, listenerOn(s, port), "the doorman doesn't listen on a port claimed twice")
 	assert.Equal(t, float64(1), testutil.ToFloat64(opmetrics.DoormanPortConflicts))
 
 	b.Status.Doorman[0].DoormanPort = freePort(t)
@@ -1277,6 +1668,7 @@ func TestServer_DrainsARemovedRouteThenReleasesIt(t *testing.T) {
 	s, c := startServerWith(t, func(s *Server) { s.now = clock.Now }, pausedWorkload("api", port, time.Minute))
 	require.NoError(t, c.Create(context.Background(), readySlice(echoPort(t))))
 	removeRoute(t, s, c)
+	held := heldListener(t, s, port)
 
 	conn := dial(t, port)
 	send(t, conn, browserGET)
@@ -1284,18 +1676,43 @@ func TestServer_DrainsARemovedRouteThenReleasesIt(t *testing.T) {
 
 	clock.Advance(RouteDrain)
 	require.NoError(t, s.syncRoutes(context.Background(), context.Background()))
-	_, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(int(port))), time.Second)
-	assert.Error(t, err, "the port is released once it has drained")
+	released(t, s, port, held)
+}
+
+// listenerOn is the listener the doorman holds on port, if any.
+func listenerOn(s *Server, port int32) net.Listener {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.listeners[port]
+}
+
+// heldListener is the listener the doorman holds on port, which it must.
+func heldListener(t *testing.T, s *Server, port int32) net.Listener {
+	t.Helper()
+	l := listenerOn(s, port)
+	require.NotNil(t, l, "the doorman listens on port %d", port)
+	return l
+}
+
+// released asserts the doorman has let go of port: it holds no listener
+// there, and the one it held is closed. It never dials the port. Once the
+// doorman lets go, any listener on :0, in this package or another that go
+// test runs alongside, may take the port, and answer.
+func released(t *testing.T, s *Server, port int32, held net.Listener) {
+	t.Helper()
+	assert.Nil(t, listenerOn(s, port), "the doorman holds no listener on port %d", port)
+	assert.ErrorIs(t, held.Close(), net.ErrClosed, "the listener it held on port %d is closed", port)
 }
 
 // A route that leaves status while its workload is still at zero, because
 // it opted out of waking on request or stopped being managed, has nothing
-// to pass connections to. They're refused at once rather than held without
-// a wake.
+// to pass connections to. They're closed at once rather than held without
+// a wake: one held for the wake as drained, one that arrives after as
+// refused, as it would be without the doorman.
 func TestServer_RefusesPromptlyWhenADrainingRouteHasNothingReady(t *testing.T) {
 	port := freePort(t)
 	s, c := startServer(t, pausedWorkload("api", port, time.Minute))
-	before := wakes(resultRefused)
+	refusedBefore, drainedBefore := wakes(resultRefused), wakes(resultDrained)
 	held := dial(t, port)
 	send(t, held, "hello\n")
 	require.Eventually(t, func() bool { return lastRequest(t, c) != "" }, 5*time.Second, 20*time.Millisecond)
@@ -1306,8 +1723,9 @@ func TestServer_RefusesPromptlyWhenADrainingRouteHasNothingReady(t *testing.T) {
 	closedWithin(t, dial(t, port))
 	// The result is counted once the connection is done with, just after
 	// the caller has its answer.
-	assert.Eventually(t, func() bool { return wakes(resultRefused) == before+2 },
-		5*time.Second, 10*time.Millisecond, "counted as resultRefused")
+	assert.Eventually(t, func() bool {
+		return wakes(resultDrained) == drainedBefore+1 && wakes(resultRefused) == refusedBefore+1
+	}, 5*time.Second, 10*time.Millisecond, "counted as resultDrained, then resultRefused")
 }
 
 // A stopping doorman leaves its Service at once, but goes on holding and
@@ -1320,6 +1738,7 @@ func TestServer_ShutdownDrainsConnections(t *testing.T) {
 	s.acceptFor = 500 * time.Millisecond
 	s.grace = time.Second
 	stop := run(t, s)
+	held := heldListener(t, s, port)
 
 	before := dial(t, port)
 	send(t, before, "before\n")
@@ -1341,13 +1760,9 @@ func TestServer_ShutdownDrainsConnections(t *testing.T) {
 	echoed(t, before, "before\n")
 	echoed(t, during, "during\n")
 
-	require.Eventually(t, func() bool {
-		conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(int(port))), time.Second)
-		if err == nil {
-			_ = conn.Close()
-		}
-		return err != nil
-	}, 2*time.Second, 10*time.Millisecond, "no new connections once the accepting part of the drain is over")
+	require.Eventually(t, func() bool { return listenerOn(s, port) == nil }, 2*time.Second, 10*time.Millisecond,
+		"no new connections once the accepting part of the drain is over")
+	released(t, s, port, held)
 	send(t, during, "still\n")
 	echoed(t, during, "still\n")
 
@@ -1401,13 +1816,19 @@ func TestServer_InformerWakesHeldConnections(t *testing.T) {
 	informers := &informertest.FakeInformers{Scheme: scheme}
 	informer, err := informers.FakeInformerFor(context.Background(), &discoveryv1.EndpointSlice{})
 	require.NoError(t, err)
-	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(pausedWorkload("api", port, time.Minute), apiPod("127.0.0.1")).Build()
+	workloads, err := informers.FakeInformerFor(context.Background(), &v1alpha1.ManagedWorkload{})
+	require.NoError(t, err)
+	w := pausedWorkload("api", port, time.Minute)
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(w, apiPod("127.0.0.1")).Build()
 	s := NewServer(c, nil, Options{Host: "127.0.0.1", Informers: informers})
+	s.listen = reserved.listen
 	s.backends.allowed = func(netip.Addr) bool { return true }
 	s.acceptFor, s.grace = 0, 100*time.Millisecond
 	// No resync comes within the test, so only the change can pass it on.
 	s.resyncEvery = time.Hour
 	run(t, s)
+	workloads.Add(w)
+	require.NoError(t, s.syncRoutes(context.Background(), context.Background()))
 
 	conn := dial(t, port)
 	send(t, conn, "hello\n")
@@ -1501,7 +1922,7 @@ func TestServer_StampsAgainAfterAStampThePauseRecorded(t *testing.T) {
 	s, c := newTestServer(t, nil, w)
 	s.now = func() time.Time { return now }
 
-	require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller))
+	require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller, forHeld))
 
 	assert.Equal(t, now.Format(time.RFC3339), lastRequest(t, c))
 }
@@ -1518,7 +1939,7 @@ func TestServer_StampsANewValueInTheSameSecond(t *testing.T) {
 	s, c := newTestServer(t, nil, w)
 	s.now = func() time.Time { return now }
 
-	require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller))
+	require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller, forHeld))
 
 	stamped := lastRequest(t, c)
 	assert.NotEqual(t, same, stamped)
@@ -1547,7 +1968,7 @@ func TestServer_WakesAfterTheRecordedStampWasRemoved(t *testing.T) {
 			s, c := newTestServer(t, nil, w)
 			s.now = func() time.Time { return now }
 
-			require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller))
+			require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller, forHeld))
 
 			stamped := lastRequest(t, c)
 			assert.NotEmpty(t, stamped)
@@ -1567,7 +1988,7 @@ func TestServer_LeavesAPendingWakeAlone(t *testing.T) {
 	s.recorder = recorder
 	s.now = func() time.Time { return now }
 
-	require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller))
+	require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller, forHeld))
 
 	assert.Equal(t, pending, lastRequest(t, c))
 	assert.Equal(t, 0, wokenEvents(recorder))
@@ -1630,14 +2051,48 @@ func staleReads(t *testing.T, c client.Client) interceptor.Funcs {
 	}}
 }
 
+// wokenEvents is how many wakes the doorman announced to r.
 func wokenEvents(r *events.FakeRecorder) int {
-	var n int
+	return len(announced(r))
+}
+
+// announced is the stamps the doorman announced to r.
+func announced(r *events.FakeRecorder) []string {
+	var stamps []string
 	for len(r.Events) > 0 {
-		if strings.Contains(<-r.Events, "WokenByRequest") {
-			n++
+		if e := <-r.Events; strings.Contains(e, " "+reasonRequestHeld+" ") || strings.Contains(e, " "+reasonWakeAsked+" ") {
+			stamps = append(stamps, e)
 		}
 	}
-	return n
+	return stamps
+}
+
+// The doorman's event for a stamp says what it did with the request,
+// naming the Service, not what woke the workload, which is the operator's
+// one event for each wake to say (P38).
+func TestServer_AnnouncesWhatItDidWithTheRequest(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		how  wakeFor
+		want string
+	}{
+		{name: "held", how: forHeld, want: "Normal RequestHeld a request on Service api is held while it wakes"},
+		{name: "a browser shown the page", how: forPage,
+			want: "Normal RequestHeld a browser on Service api is shown the waking-up page while it wakes"},
+		{name: "passed on as it paused", how: forPassedOn,
+			want: "Normal RequestHeld a request on Service api came as it paused, and wakes it"},
+		{name: "a person's click", how: forClick, want: "Normal WakeAsked a person asked on Service api, waking"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := events.NewFakeRecorder(10)
+			s, _ := newTestServer(t, nil, pausedWorkload("api", freePort(t), time.Minute))
+			s.recorder = recorder
+
+			require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller, tt.how))
+
+			assert.Equal(t, []string{tt.want}, announced(recorder))
+		})
+	}
 }
 
 // Two doorman replicas can each get a connection from the same burst, the
@@ -1656,7 +2111,7 @@ func TestServer_ReplicasReportOneWake(t *testing.T) {
 	}{{c, first}, {stale, second}} {
 		s := NewServer(replica.c, replica.r, Options{})
 		s.now = func() time.Time { return now }
-		require.NoError(t, s.stamp(context.Background(), rt, caller))
+		require.NoError(t, s.stamp(context.Background(), rt, caller, forHeld))
 	}
 
 	assert.Equal(t, 1, wokenEvents(first))
@@ -1674,7 +2129,7 @@ func TestServer_StampsDespiteAConflict(t *testing.T) {
 	require.NoError(t, c.Update(context.Background(), &w))
 
 	s := NewServer(stale, nil, Options{})
-	require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller))
+	require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller, forHeld))
 
 	require.NoError(t, c.Get(context.Background(), apiKey, &w))
 	assert.NotEmpty(t, w.Annotations[v1alpha1.AnnotationLastRequest], "the workload is still woken")
@@ -1785,15 +2240,6 @@ func TestServer_ClosesProxiedConnectionsOnceTheRouteDrains(t *testing.T) {
 	closedWithin(t, conn)
 }
 
-func refused(t *testing.T, port int32) bool {
-	t.Helper()
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(int(port))), time.Second)
-	if err == nil {
-		_ = conn.Close()
-	}
-	return err != nil
-}
-
 // A port given to another workload while its old route drains is served
 // for neither until the drain is over, however many syncs that takes:
 // traffic still sent to it for the old workload must not reach the new
@@ -1804,6 +2250,7 @@ func TestServer_APortReassignedWhileDrainingWaitsForTheDrain(t *testing.T) {
 	s, c := startServerWith(t, func(s *Server) { s.now = clock.Now }, pausedWorkload("api", port, time.Minute))
 	ctx := context.Background()
 	removeRoute(t, s, c)
+	held := heldListener(t, s, port)
 
 	other := pausedWorkload("billing", port, time.Minute)
 	other.Namespace = "other-team"
@@ -1811,7 +2258,7 @@ func TestServer_APortReassignedWhileDrainingWaitsForTheDrain(t *testing.T) {
 	for range 3 {
 		clock.Advance(RouteSyncInterval)
 		require.NoError(t, s.syncRoutes(ctx, ctx))
-		assert.True(t, refused(t, port), "the port is served for neither while the old route drains")
+		released(t, s, port, held)
 		assert.Equal(t, float64(1), testutil.ToFloat64(opmetrics.DoormanPortConflicts))
 	}
 
@@ -1829,13 +2276,14 @@ func TestServer_APortMovedToAnotherServiceDrains(t *testing.T) {
 	clock := &testClock{now: time.Now()}
 	s, c := startServerWith(t, func(s *Server) { s.now = clock.Now }, pausedWorkload("api", port, time.Minute))
 	ctx := context.Background()
+	held := heldListener(t, s, port)
 
 	var w v1alpha1.ManagedWorkload
 	require.NoError(t, c.Get(ctx, apiKey, &w))
 	w.Status.Doorman[0].Service = "api-v2"
 	require.NoError(t, c.Update(ctx, &w))
 	require.NoError(t, s.syncRoutes(ctx, ctx))
-	assert.True(t, refused(t, port), "the port is served for neither while the old route drains")
+	released(t, s, port, held)
 
 	clock.Advance(RouteDrain)
 	require.NoError(t, s.syncRoutes(ctx, ctx))
@@ -2098,7 +2546,7 @@ func TestServer_AnnouncesAWakeDespiteAConflictFromAnotherWriter(t *testing.T) {
 
 	recorder := events.NewFakeRecorder(10)
 	s := NewServer(stale, recorder, Options{})
-	require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller))
+	require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller, forHeld))
 
 	assert.Equal(t, 1, wokenEvents(recorder))
 	assert.NotEmpty(t, lastRequest(t, c))
@@ -2113,13 +2561,13 @@ func TestServer_LeavesAnotherReplicasStamp(t *testing.T) {
 
 	first := NewServer(c, nil, Options{})
 	first.now = func() time.Time { return time.Date(2026, 10, 3, 9, 0, 0, 0, time.UTC) }
-	require.NoError(t, first.stamp(context.Background(), rt, caller))
+	require.NoError(t, first.stamp(context.Background(), rt, caller, forHeld))
 	stamped := lastRequest(t, c)
 
 	recorder := events.NewFakeRecorder(10)
 	second := NewServer(stale, recorder, Options{})
 	second.now = func() time.Time { return time.Date(2026, 10, 3, 9, 0, 1, 0, time.UTC) }
-	require.NoError(t, second.stamp(context.Background(), rt, netip.MustParseAddr("10.244.0.18")))
+	require.NoError(t, second.stamp(context.Background(), rt, netip.MustParseAddr("10.244.0.18"), forHeld))
 
 	assert.Equal(t, stamped, lastRequest(t, c))
 	assert.Zero(t, wokenEvents(recorder))
@@ -2172,7 +2620,7 @@ func TestServer_LeavesAPauseItCallsOffToTheOperatorToAnnounce(t *testing.T) {
 	s, c := newTestServer(t, nil, w)
 	s.recorder = recorder
 
-	require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller))
+	require.NoError(t, s.stamp(context.Background(), route{workload: apiKey, service: "api"}, caller, forHeld))
 
 	assert.NotEmpty(t, lastRequest(t, c))
 	assert.Equal(t, 0, wokenEvents(recorder))
@@ -2355,7 +2803,7 @@ func TestServer_AStampInOnePauseDoesntStandForTheNext(t *testing.T) {
 	rt := route{workload: apiKey, service: "api"}
 	for _, scaledDown := range []bool{false, true} {
 		s, c := newTestServer(t, nil, pausingWorkload(freePort(t)))
-		require.NoError(t, s.stamp(context.Background(), rt, caller))
+		require.NoError(t, s.stamp(context.Background(), rt, caller, forHeld))
 		first := lastRequest(t, c)
 		require.NotEmpty(t, first)
 
@@ -2366,7 +2814,7 @@ func TestServer_AStampInOnePauseDoesntStandForTheNext(t *testing.T) {
 			live.Status.Phase, live.Status.Pause.PausedAt = v1alpha1.PhasePaused, ptr.To(metav1.Now())
 			require.NoError(t, c.Update(context.Background(), &live))
 		}
-		require.NoError(t, s.stamp(context.Background(), rt, caller))
+		require.NoError(t, s.stamp(context.Background(), rt, caller, forHeld))
 
 		assert.NotEqual(t, first, lastRequest(t, c), "scaled down: %v", scaledDown)
 	}

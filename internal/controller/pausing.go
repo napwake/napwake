@@ -284,17 +284,18 @@ func (r *Reconciler) pauseCancelled(ctx context.Context, workload *v1alpha1.Mana
 }
 
 // seeTurnedBack is a look at the demand of a workload whose pause why calls
-// off. A request through the doorman shows forecast.RequestDemand, in the
-// hour of the look, as one that wakes it from zero does in
-// seePausedDemand. No look is made while a workload pauses, and the wake's
-// warm-up hides the request from the looks at its CPU after, so without
-// this a workload whose use shows only in requests, its CPU under the
-// threshold, would learn the hours its pauses are turned back in from its
-// CPU, and the forecast wouldn't hold its pauses there. Anything else that
-// calls a pause off, a click for a workload that asks first included, is
-// learned from what the workload does once awake, as before.
+// off. Whatever calls it off is demand in the hour of the look as the same
+// cause waking it from zero is in seePausedDemand, by wakeIsDemand: a
+// request through the doorman, a person's click, a wake request or an
+// activity annotation, but not its dependents' wake, whose use it learns
+// once it's awake. No look is made while a workload pauses, and the wake's
+// warm-up hides the cause from the looks at its CPU after, so without this
+// a workload whose use shows only in what turns its pauses back, its CPU
+// under the threshold, would learn those hours from its CPU, and the
+// forecast wouldn't hold its pauses there. Awake dependents that call a
+// pause off as it would scale the workload to zero give no cause.
 func (r *Reconciler) seeTurnedBack(ctx context.Context, workload *v1alpha1.ManagedWorkload, why *phaseEvent) {
-	if why.cause != v1alpha1.WokenByRequest {
+	if why.cause == "" || !r.wakeIsDemand(ctx, workload, why.cause) {
 		return
 	}
 	r.seeDemand(ctx, workload, r.forecastEngine(workload), forecast.RequestDemand(cpuThresholdFor(workload)), true)

@@ -215,16 +215,37 @@ func (g *dependencyGraph) holdsOf(self *workloadNode) dependencyHolds {
 		return dependencyHolds{cycle: true}
 	}
 	var h dependencyHolds
+	for _, d := range g.holding(self) {
+		h.holders = append(h.holders, d.key.String())
+	}
+	slices.Sort(h.holders)
+	return h
+}
+
+// holdersOf is the dependents holding the workload self is awake, by
+// holdsOf's rules: none in a dependsOn cycle through it.
+func (g *dependencyGraph) holdersOf(self *workloadNode) []*workloadNode {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	if g.reaches(self, self.target, declaredEdges) {
+		return nil
+	}
+	return g.holding(self)
+}
+
+// holding is the awake dependents that hold self, outside a cycle. The
+// caller holds the lock.
+func (g *dependencyGraph) holding(self *workloadNode) []*workloadNode {
+	var holders []*workloadNode
 	for _, d := range g.dependents[self.target] {
 		if d.uid == self.uid || !g.allows(d.key.Namespace, self.target) {
 			continue
 		}
 		if d.acts && awakeFor(d, self) && g.holds(d, self) {
-			h.holders = append(h.holders, d.key.String())
+			holders = append(holders, d)
 		}
 	}
-	slices.Sort(h.holders)
-	return h
+	return holders
 }
 
 // dependentsElsewhere lists the workloads in other namespaces the graph has

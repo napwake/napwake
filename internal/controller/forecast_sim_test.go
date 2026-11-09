@@ -40,6 +40,8 @@ func TestSimulatorMatchesTheReconciler(t *testing.T) {
 	}
 	t.Parallel()
 	require.Equal(t, unobservedGap, sim.LookGap, "an hour is seen whole on the same terms")
+	require.Equal(t, historyLateFor, sim.HistoryLateFor, "a Prometheus URL set later is used as long")
+	require.Equal(t, statusFlushInterval, sim.StatusFlush, "the hour under way is written as often")
 
 	monday := time.Date(2026, 3, 16, 0, 0, 0, 0, time.UTC)
 	const days = 42
@@ -73,7 +75,7 @@ func TestSimulatorMatchesTheReconciler(t *testing.T) {
 			require.NoError(t, err)
 			simulated := make([]lifecycleEvent, 0, len(r.Wakes)+len(r.EarlyPauses)+len(r.Pauses))
 			for _, w := range r.Wakes {
-				reason := ReasonWokeByActivity
+				reason := ReasonWokenByRequest
 				if w.Cause == sim.WokenByForecast {
 					reason = ReasonAutoResume
 				}

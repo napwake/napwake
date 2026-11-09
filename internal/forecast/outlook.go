@@ -19,6 +19,7 @@ package forecast
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 )
 
@@ -149,6 +150,83 @@ func (e *Engine) clone() *Engine {
 	model, scorer, anomaly := *e.Model, *e.Scorer, *e.Anomaly
 	c.Model, c.Scorer, c.Anomaly = &model, &scorer, &anomaly
 	return &c
+}
+
+// ErrLearnedLiveTooLong is returned by Rebuild for a forecast that has
+// observed for a week or more: by then what it keeps of each hour of the
+// week no longer holds every hour it learned.
+var ErrLearnedLiveTooLong = errors.New("the forecast has learned live for a week or more")
+
+// Rebuild is the forecast live would be had it started from history: a new
+// engine, with live's parameters and settings, that learns history first,
+// as Learn does with cpuThreshold, and then the hours live has observed
+// since takenOn, in their order, at the demand each showed it. It returns
+// how many hours of history it learned.
+//
+// history is a workload's hours from before Napwake took it on at takenOn,
+// oldest first. Any from the hour it was taken on in on is dropped:
+// Prometheus holds the hours Napwake paused the workload in from then,
+// which read as quiet, and learned, they would teach the forecast its own
+// pauses. That's every hour from the first live observed too: live is
+// refused if it observed one before. The hours live observed are read back
+// from the demand it last saw in each hour of the week, which holds every
+// one of them only while live has observed for less than a week since
+// takenOn, each hour of the week once: otherwise it's ErrLearnedLiveTooLong.
+func Rebuild(history []Hour, live *Engine, takenOn time.Time, cpuThreshold float64) (*Engine, int, error) {
+	seen, err := live.hoursSince(takenOn)
+	if err != nil {
+		return nil, 0, err
+	}
+	cut := HourStart(takenOn, live.settings.Location)
+	before := make([]Hour, 0, len(history))
+	for _, h := range history {
+		if h.Start.Before(cut) {
+			before = append(before, h)
+		}
+	}
+	e := NewEngine(live.Model.params, live.settings)
+	learned, err := e.Learn(before, cpuThreshold)
+	if err != nil {
+		return nil, 0, err
+	}
+	for _, h := range seen {
+		if _, err := e.Observe(h.Peak, h.Start); err != nil {
+			return nil, 0, fmt.Errorf("replaying the hour from %s learned live: %w",
+				h.Start.UTC().Format(time.RFC3339), err)
+		}
+	}
+	return e, learned, nil
+}
+
+// hoursSince is every hour the engine has observed, oldest first, with the
+// demand it showed, for an engine that has observed only since since, and
+// for less than a week, so that each hour of the week it saw, it saw once.
+// They're read back from the demand last seen in each hour of the week,
+// walking back from the last hour observed.
+func (e *Engine) hoursSince(since time.Time) ([]Hour, error) {
+	if e.lastHour == 0 {
+		return nil, nil
+	}
+	last := time.Unix(e.lastHour, 0)
+	from := HourStart(since, e.settings.Location)
+	if last.Sub(from) >= WeeklySeason*time.Hour {
+		return nil, ErrLearnedLiveTooLong
+	}
+	var hours []Hour
+	var found weekSlots
+	for t := last; !t.Before(from); t = t.Add(-time.Hour) {
+		slot := weeklyIndex(e.local(t))
+		if e.recentSeen.has(slot) && !found.has(slot) {
+			found.set(slot, true)
+			hours = append(hours, Hour{Start: t, Peak: float64(e.recent[slot])})
+		}
+	}
+	if len(hours) != e.Model.n {
+		return nil, fmt.Errorf("%w: it observed %d hours, %d of them since %s", ErrLearnedLiveTooLong,
+			e.Model.n, len(hours), from.UTC().Format(time.RFC3339))
+	}
+	slices.Reverse(hours)
+	return hours, nil
 }
 
 // Learn feeds the engine hours of a workload's history, oldest first, as

@@ -380,7 +380,7 @@ func twoPausedWorkloads(t *testing.T) (*Reconciler, *v1alpha1.ManagedWorkload, *
 func TestReconcileDoorman_DrainingPortsAreNotReused(t *testing.T) {
 	r, first, second, billing := twoPausedWorkloads(t)
 	now := fixedTime
-	r.clock = func() time.Time { return now }
+	r.clock = func() time.Time { return monotonic(now) }
 
 	require.NoError(t, doormanErr(context.Background(), r, first, appTarget()))
 	released := first.Status.Doorman[0].DoormanPort
@@ -390,7 +390,7 @@ func TestReconcileDoorman_DrainingPortsAreNotReused(t *testing.T) {
 	require.NoError(t, doormanErr(context.Background(), r, second, billing))
 	assert.NotEqual(t, released, second.Status.Doorman[0].DoormanPort)
 
-	now = now.Add(portDrain)
+	now = now.Add(portDrain + requeueLag)
 	second.Status.Phase = v1alpha1.PhaseRunning
 	require.NoError(t, doormanErr(context.Background(), r, second, billing))
 	second.Status.Phase = v1alpha1.PhasePaused
@@ -404,7 +404,7 @@ func TestReconcileDoorman_DrainingPortsAreNotReused(t *testing.T) {
 func TestReconcileDoorman_DrainingPortsSurviveALeaderChange(t *testing.T) {
 	r, first, second, billing := twoPausedWorkloads(t)
 	now := fixedTime
-	r.clock = func() time.Time { return now }
+	r.clock = func() time.Time { return monotonic(now) }
 	ctx := context.Background()
 
 	require.NoError(t, doormanErr(ctx, r, first, appTarget()))
@@ -1197,14 +1197,14 @@ func TestReconcile_OrphaningDeleteRemovesSlicesTheCacheMissed(t *testing.T) {
 func TestReconcile_DeletionWaitsForPortsToDrain(t *testing.T) {
 	r, _ := pausedRouted(t)
 	now := fixedTime
-	r.clock = func() time.Time { return now }
+	r.clock = func() time.Time { return monotonic(now) }
 	port := fetch(t, r, "api").Status.Doorman[0].DoormanPort
 	require.NoError(t, r.Delete(context.Background(), fetch(t, r, "api")))
 
 	result, err := r.Reconcile(context.Background(), reconcileFor("api"))
 	require.NoError(t, err)
 
-	assert.Equal(t, portDrain, result.RequeueAfter)
+	assert.Equal(t, portDrain, toTheMillisecond(result.RequeueAfter))
 	assert.Empty(t, doormanSlices(t, r), "routing stops at once")
 	draining := fetch(t, r, "api").Status.DoormanDraining
 	require.Len(t, draining, 1)
@@ -1225,14 +1225,14 @@ func TestReconcile_DeletionWaitsForPortsToDrain(t *testing.T) {
 // kubectl get managedworkloads and kubectl napwake status (P65).
 func TestReconcile_HandedBackWhileItsPortsDrainIsRunning(t *testing.T) {
 	r, pauser := pausedRouted(t)
-	r.clock = func() time.Time { return fixedTime }
+	r.clock = func() time.Time { return monotonic(fixedTime) }
 	require.Equal(t, v1alpha1.PhasePaused, fetch(t, r, "api").Status.Phase)
 	require.NoError(t, r.Delete(context.Background(), fetch(t, r, "api")))
 
 	result, err := r.Reconcile(context.Background(), reconcileFor("api"))
 	require.NoError(t, err)
 
-	require.Equal(t, portDrain, result.RequeueAfter, "its ports drain")
+	require.Equal(t, portDrain, toTheMillisecond(result.RequeueAfter), "its ports drain")
 	assert.Positive(t, pauser.restoreCalls, "handed back")
 	w := fetch(t, r, "api")
 	assert.Equal(t, v1alpha1.PhaseRunning, w.Status.Phase, "back at its replicas, not paused")
@@ -1245,7 +1245,7 @@ func TestReconcile_HandedBackWhileItsPortsDrainIsRunning(t *testing.T) {
 // drain it stays as it was, not Running (the review of 4e28a28c, P65).
 func TestReconcile_HandedBackAtZeroWhileItsPortsDrainStaysPaused(t *testing.T) {
 	r, pauser := pausedRouted(t)
-	r.clock = func() time.Time { return fixedTime }
+	r.clock = func() time.Time { return monotonic(fixedTime) }
 	w := fetch(t, r, "api")
 	w.Status.Pause.PreviousReplicas = 0
 	require.NoError(t, r.Status().Update(context.Background(), w))
@@ -1254,7 +1254,7 @@ func TestReconcile_HandedBackAtZeroWhileItsPortsDrainStaysPaused(t *testing.T) {
 	result, err := r.Reconcile(context.Background(), reconcileFor("api"))
 	require.NoError(t, err)
 
-	require.Equal(t, portDrain, result.RequeueAfter, "its ports drain")
+	require.Equal(t, portDrain, toTheMillisecond(result.RequeueAfter), "its ports drain")
 	assert.Positive(t, pauser.restoreCalls, "handed back")
 	assert.Equal(t, v1alpha1.PhasePaused, fetch(t, r, "api").Status.Phase, "released at zero replicas")
 	assert.Contains(t, drainEvents(t, r), "released at zero replicas")
@@ -1538,7 +1538,7 @@ func TestReconcileDoorman_KeepsTheSlicesPortsWhenStatusWasNotWritten(t *testing.
 func TestReconcileDoorman_KeepsAPortWhileItsSliceRemains(t *testing.T) {
 	r, first, second, billing := twoPausedWorkloads(t)
 	now := fixedTime
-	r.clock = func() time.Time { return now }
+	r.clock = func() time.Time { return monotonic(now) }
 	require.NoError(t, doormanErr(context.Background(), r, first, appTarget()))
 	port := first.Status.Doorman[0].DoormanPort
 

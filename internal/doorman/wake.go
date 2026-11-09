@@ -24,6 +24,7 @@ import (
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -78,7 +79,7 @@ type stampRecord struct {
 // made it, so it's bound by ctx, the doorman's connections' context, which
 // ends only when shutdown closes them all. waitCtx bounds how long this
 // caller waits for another's stamp.
-func (s *Server) requestWake(ctx, waitCtx context.Context, rt route, from netip.Addr) error {
+func (s *Server) requestWake(ctx, waitCtx context.Context, rt route, from netip.Addr, how wakeFor) error {
 	for {
 		s.mu.Lock()
 		call, inFlight := s.wakeCalls[rt.workload]
@@ -101,7 +102,7 @@ func (s *Server) requestWake(ctx, waitCtx context.Context, rt route, from netip.
 			return call.err
 		}
 
-		call.err = s.stamp(ctx, rt, from)
+		call.err = s.stamp(ctx, rt, from, how)
 		s.mu.Lock()
 		delete(s.wakeCalls, rt.workload)
 		s.mu.Unlock()
@@ -119,7 +120,7 @@ func (s *Server) requestWake(ctx, waitCtx context.Context, rt route, from netip.
 // the operator can learn what depends on the workload. The value always
 // differs from the one recorded when the pause began, which is what the
 // operator takes as a wake.
-func (s *Server) stamp(ctx context.Context, rt route, from netip.Addr) error {
+func (s *Server) stamp(ctx context.Context, rt route, from netip.Addr, how wakeFor) error {
 	ctx, cancel := context.WithTimeout(ctx, apiTimeout)
 	defer cancel()
 
@@ -159,13 +160,50 @@ func (s *Server) stamp(ctx context.Context, rt route, from netip.Addr) error {
 	// A stamp while the workload pauses calls the pause off, which the
 	// operator's PauseCancelled announces.
 	if s.recorder != nil && won && w.Status.Phase == v1alpha1.PhasePaused {
-		what := "request"
-		if rt.asks {
-			what = "a person asked"
-		}
-		s.recorder.Eventf(&w, nil, "Normal", "WokenByRequest", "Wake", "%s on Service %s, waking", what, rt.service)
+		reason, note := how.announcement(rt.service)
+		s.recorder.Eventf(&w, nil, "Normal", reason, "Wake", "%s", note)
 	}
 	return nil
+}
+
+// wakeFor is what the doorman does with the request a stamp is for, which
+// the event it announces the stamp with says. What woke the workload is the
+// operator's event to say, one for each wake; the doorman's names the
+// Service the request came on.
+type wakeFor int
+
+const (
+	// forHeld is a request held until a pod is Ready.
+	forHeld wakeFor = iota
+	// forPage is a browser shown the waking-up page.
+	forPage
+	// forPassedOn is a request passed straight on as the workload paused.
+	forPassedOn
+	// forClick is a person's click on the asleep page's Wake it.
+	forClick
+)
+
+// The reasons of the doorman's events for a stamp: a request it holds, or
+// answers with the waking-up page, and a person asking it to wake.
+const (
+	reasonRequestHeld = "RequestHeld"
+	reasonWakeAsked   = "WakeAsked"
+)
+
+// announcement is the reason and note of the event for a stamp for how, of
+// a request on service.
+func (how wakeFor) announcement(service string) (string, string) {
+	switch how {
+	case forPage:
+		return reasonRequestHeld, fmt.Sprintf("a browser on Service %s is shown the waking-up page while it wakes",
+			service)
+	case forPassedOn:
+		return reasonRequestHeld, fmt.Sprintf("a request on Service %s came as it paused, and wakes it", service)
+	case forClick:
+		return reasonWakeAsked, fmt.Sprintf("a person asked on Service %s, waking", service)
+	default:
+		return reasonRequestHeld, fmt.Sprintf("a request on Service %s is held while it wakes", service)
+	}
 }
 
 // stampAttempts is how many times patchStamp writes the stamp, the last of
@@ -280,20 +318,65 @@ func pauseBegan(w *v1alpha1.ManagedWorkload) time.Time {
 	return pausedAt(w)
 }
 
+// Why a held connection was closed without reaching its workload, which
+// its RequestNotServed warning says.
+const (
+	// unservedSlow is no pod Ready within maxWait: resultTimeout.
+	unservedSlow = "slow"
+	// unservedUnreachable is Ready pods that couldn't be reached: a
+	// resultError.
+	unservedUnreachable = "unreachable"
+	// unservedUnstamped is a wake that couldn't be recorded on the
+	// ManagedWorkload: a resultError too.
+	unservedUnstamped = "unstamped"
+	// unservedDrained is the route drained with nothing Ready:
+	// resultDrained.
+	unservedDrained = "drained"
+)
+
+// unservedWarning is what the RequestNotServed warning says for one cause,
+// and the action it's recorded with. The events.k8s.io recorder folds a
+// warning into an earlier one of the same action about the same version of
+// the workload, keeping the earlier one's message, so each cause has an
+// action of its own.
+type unservedWarning struct {
+	action, why string
+}
+
+// unservedWarnings are the warnings, by cause.
+var unservedWarnings = map[string]unservedWarning{
+	unservedSlow:        {action: "Wake", why: "the workload wasn't Ready within maxWait; the wake continues"},
+	unservedUnreachable: {action: "Connect", why: "the workload's Ready pods couldn't be reached"},
+	unservedUnstamped: {action: "Stamp", why: "the doorman couldn't record the wake on the ManagedWorkload, so it " +
+		"may still be asleep; the doorman's log says why"},
+	unservedDrained: {action: "Hold", why: "the workload stopped being routed through the doorman before any of its " +
+		"pods was Ready, as when something else, such as an HPA with minReplicas 0, takes it back to zero as it wakes"},
+}
+
+// warnKey is one series of RequestNotServed warnings: a workload's, for one
+// action.
+type warnKey struct {
+	workload types.NamespacedName
+	action   string
+}
+
 // warnUnserved emits a warning event on the workload for a held connection
-// that was closed without reaching it, at most once per unservedEventInterval.
-// The metrics count every one; the event is what shows in kubectl describe.
-func (s *Server) warnUnserved(ctx context.Context, rt route, result string, waited time.Duration) {
-	if s.recorder == nil {
+// that was closed without reaching it, for cause, at most once per
+// unservedEventInterval for each. The metrics count every one; the event is
+// what shows in kubectl describe.
+func (s *Server) warnUnserved(ctx context.Context, rt route, cause string, waited time.Duration) {
+	warning, ok := unservedWarnings[cause]
+	if s.recorder == nil || !ok {
 		return
 	}
 	now := s.now()
+	key := warnKey{workload: rt.workload, action: warning.action}
 	s.mu.Lock()
-	if last, ok := s.lastWarn[rt.workload]; ok && now.Sub(last) < unservedEventInterval {
+	if last, ok := s.lastWarn[key]; ok && now.Sub(last) < unservedEventInterval {
 		s.mu.Unlock()
 		return
 	}
-	s.lastWarn[rt.workload] = now
+	s.lastWarn[key] = now
 	s.mu.Unlock()
 
 	// ctx is the doorman's connections' context, not the connection's,
@@ -307,10 +390,6 @@ func (s *Server) warnUnserved(ctx context.Context, rt route, result string, wait
 			"workload", rt.workload.Name, "namespace", rt.workload.Namespace)
 		return
 	}
-	reason := "the workload wasn't Ready within maxWait; the wake continues"
-	if result != resultTimeout {
-		reason = "the workload couldn't be reached"
-	}
-	s.recorder.Eventf(&w, nil, "Warning", "RequestNotServed", "Wake",
-		"a request on Service %s was closed after %s: %s", rt.service, human.Duration(waited), reason)
+	s.recorder.Eventf(&w, nil, "Warning", "RequestNotServed", warning.action,
+		"a request on Service %s was closed after %s: %s", rt.service, human.Duration(waited), warning.why)
 }

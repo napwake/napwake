@@ -20,6 +20,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"strconv"
 	"sync"
 	"time"
 
@@ -80,9 +82,10 @@ type listPricer interface {
 // engineRegistry holds each workload's forecast engine between reconciles,
 // and the hour of demand it is seeing. The engine in memory is the
 // authority while the operator runs; the state it exports to the workload's
-// status is where a restarted operator, or a new leader, picks up. The hour
-// under way is in memory only. Engines are keyed by UID, so a workload
-// deleted and created again under the same name starts afresh.
+// status is where a restarted operator, or a new leader, picks up, and so
+// is the hour under way, written with status as it goes. Engines are keyed
+// by UID, so a workload deleted and created again under the same name
+// starts afresh.
 type engineRegistry struct {
 	mu        sync.Mutex
 	engines   map[types.UID]forecaster
@@ -221,6 +224,29 @@ func (reg *engineRegistry) see(uid types.UID, start, now time.Time, demand float
 	return ended, over && ended.Whole(unobservedGap)
 }
 
+// takeUp goes on with the hour written to the workload's status, as by an
+// operator before this one, at this operator's first look at the workload,
+// made at now in the hour that began at start, if forecast.TakeUp finds
+// it can.
+func (reg *engineRegistry) takeUp(uid types.UID, written forecast.Hour, start, now time.Time) {
+	reg.mu.Lock()
+	defer reg.mu.Unlock()
+
+	if _, seen := reg.hours[uid]; seen {
+		return
+	}
+	if h, ok := forecast.TakeUp(written, start, now, unobservedGap); ok {
+		reg.hours[uid] = h
+	}
+}
+
+// hour is what the workload's forecast has seen of the hour under way.
+func (reg *engineRegistry) hour(uid types.UID) forecast.Hour {
+	reg.mu.Lock()
+	defer reg.mu.Unlock()
+	return reg.hours[uid]
+}
+
 // seenBusy reports whether a look in the hour that began at start already
 // saw demand of at least busy.
 func (reg *engineRegistry) seenBusy(uid types.UID, start time.Time, busy float64) bool {
@@ -274,7 +300,7 @@ func (r *Reconciler) reconcileAutomation(ctx context.Context, workload *v1alpha1
 		if load.err == nil {
 			r.setCondition(workload, conditionMetricsAvailable, metav1.ConditionTrue, "MetricsReported", "")
 		}
-		r.seeDemand(ctx, workload, engine, r.awakeDemand(workload, load.percent), load.err == nil)
+		r.seeDemand(ctx, workload, engine, r.awakeDemand(ctx, workload, load.percent), load.err == nil)
 	}
 	r.updatePredictionStatus(ctx, workload, engine)
 
@@ -349,28 +375,22 @@ func (r *Reconciler) reconcileWake(ctx context.Context, workload *v1alpha1.Manag
 	engine := r.forecastEngine(workload)
 	woken := r.wokenByActivity(workload, target)
 	requested := r.takeWakeRequest(workload)
-	woken = woken || requested
+	var why *phaseEvent
+	switch {
+	case requested:
+		why = &phaseEvent{reason: ReasonWakeRequested, message: wakeRequestedMessage,
+			cause: v1alpha1.WokenByWakeRequest}
+	case woken:
+		why = r.annotatedWake(ctx, workload)
+	}
 	var queries pausedQueries
-	if !woken {
+	if why == nil {
 		queries = r.checkPausedQueries(ctx, workload)
 	}
-	r.seePausedDemand(ctx, workload, engine, woken, queries)
+	r.seePausedDemand(ctx, workload, engine, why, queries)
 	r.updatePredictionStatus(ctx, workload, engine)
 
-	if requested {
-		return r.handleResume(ctx, workload, &phaseEvent{reason: ReasonWakeRequested, message: wakeRequestedMessage,
-			cause: v1alpha1.WokenByWakeRequest})
-	}
-	if woken {
-		why := &phaseEvent{reason: ReasonWokeByActivity, message: "activity annotation is newer than the pause, waking",
-			cause: v1alpha1.WokenByAnnotation}
-		if wakeSource(workload) == v1alpha1.ActivitySourceRequest {
-			why.cause = requestCause(workload)
-			why.message = "a request is waiting, waking"
-			if why.cause == v1alpha1.WokenByClick {
-				why.message = "a person asked to wake it, waking"
-			}
-		}
+	if why != nil {
 		return r.handleResume(ctx, workload, why)
 	}
 	r.endBackOffIfHeld(workload)
@@ -395,6 +415,38 @@ func (r *Reconciler) reconcileWake(ctx context.Context, workload *v1alpha1.Manag
 	return r.handleResume(ctx, workload, &phaseEvent{reason: ReasonAutoResume, message: fmt.Sprintf(
 		"forecast expects %.0f%% utilization %s (threshold %s%%), waking ahead of demand", predicted, when,
 		v1alpha1.FormatCPUThreshold(threshold))})
+}
+
+// annotatedWake says what woke a paused workload whose activity annotations
+// changed, each with a reason of its own: a request the doorman held, or a
+// person's click on one that asks first, which the doorman stamps; a
+// dependent's wake, which stamps its dependencies; or anything else that
+// set an activity annotation. A dependent that woke holds it, as the API
+// server has it: the stamp can come before the cache has its wake.
+func (r *Reconciler) annotatedWake(ctx context.Context, workload *v1alpha1.ManagedWorkload) *phaseEvent {
+	if wakeSource(workload) == v1alpha1.ActivitySourceRequest {
+		if requestCause(workload) == v1alpha1.WokenByClick {
+			return &phaseEvent{reason: ReasonWokenByClick, message: "a person asked to wake it, waking",
+				cause: v1alpha1.WokenByClick}
+		}
+		return &phaseEvent{reason: ReasonWokenByRequest, message: "a request is waiting, waking",
+			cause: v1alpha1.WokenByRequest}
+	}
+	why := &phaseEvent{reason: ReasonWokeByActivity, message: "activity annotation is newer than the pause, waking",
+		cause: v1alpha1.WokenByAnnotation}
+	holders, err := r.heldByDependentsNow(ctx, workload)
+	if err != nil {
+		log.FromContext(ctx).Info("couldn't tell whether a dependent woke the workload", "workload", workload.Name,
+			"namespace", workload.Namespace, "error", err.Error())
+		return why
+	}
+	switch n := len(holders); {
+	case n == 1:
+		why.reason, why.message = ReasonWokenByDependent, "its dependent "+holders[0]+" woke, waking"
+	case n > 1:
+		why.reason, why.message = ReasonWokenByDependent, "its dependents "+listNames(holders)+" woke, waking"
+	}
+	return why
 }
 
 // requestCause is what a request the doorman stamped is: a person's click,
@@ -430,14 +482,17 @@ func (r *Reconciler) pausedRecheck(workload *v1alpha1.ManagedWorkload) time.Dura
 	return wait
 }
 
-// seePausedDemand is a look at a paused workload's demand. Behind the
-// doorman, any request would have woken it, and a Prometheus activity
-// query shows any activity it measures, so a look that finds it still
-// paused, and its queries quiet, found no demand, and one that finds a
-// request waking it, or a query showing activity, found some. The doorman's
-// watch stands while the queries can't be evaluated: a request would still
-// have woken it. Without the doorman, a query that can't be evaluated
-// leaves the look blind, and with neither, it can't see demand.
+// seePausedDemand is a look at a paused workload's demand, which why, when
+// it isn't nil, is waking. Behind the doorman, any request would have woken
+// it, and a Prometheus activity query shows any activity it measures, so a
+// look that finds it still paused, and its queries quiet, found no demand,
+// and one that finds a request waking it, or a query showing activity,
+// found some. So does one that finds a wake request, or an activity
+// annotation, waking it, unless its dependents' wake stamped that, by
+// wakeIsDemand. The doorman's watch stands while the queries can't be
+// evaluated: a request would still have woken it. Without the doorman, a
+// query that can't be evaluated leaves the look blind, and with neither, it
+// can't see demand, unless something wakes it.
 //
 // With wake.mode Ask, only people wake it, with a click on the doorman's
 // asleep page, a wake request or an activity annotation, so behind the
@@ -446,18 +501,41 @@ func (r *Reconciler) pausedRecheck(workload *v1alpha1.ManagedWorkload) time.Dura
 // so its watch doesn't stand while they can't be evaluated: an outage of
 // Prometheus mustn't teach quiet hours, any more than one of the doorman.
 func (r *Reconciler) seePausedDemand(ctx context.Context, workload *v1alpha1.ManagedWorkload, engine forecaster,
-	woken bool, queries pausedQueries) {
+	why *phaseEvent, queries pausedQueries) {
 	routed := meta.IsStatusConditionTrue(workload.Status.Conditions, conditionWakeOnRequest)
-	busy := woken || queries.active
+	woken := why != nil
+	busy := woken && r.wakeIsDemand(ctx, workload, why.cause) || queries.active
 	var demand float64
 	if busy {
 		demand = forecast.RequestDemand(cpuThresholdFor(workload))
 	}
-	visible := busy || routed || queries.watched
+	visible := woken || queries.active || routed || queries.watched
 	if workload.Spec.Wake.Asks() && queries.failed {
-		visible = busy
+		visible = woken || queries.active
 	}
 	r.seeDemand(ctx, workload, engine, demand, visible)
+}
+
+// wakeIsDemand reports whether what wakes a paused workload, or calls its
+// pause off, by cause, is demand for the hour, as the forecast learns it: a
+// request, a click, a wake request, or an activity annotation, unless the
+// annotation is one its dependents' wake stamped, which it was if they hold
+// it awake now. Their wake isn't its demand: autoResume makes one ahead of
+// people, and taught as busy, the hour before theirs would be learned busy
+// and woken for every day. Their use, once it has woken, is its demand
+// (inUseSince). Unsure whose the annotation is, it counts, as before.
+func (r *Reconciler) wakeIsDemand(ctx context.Context, workload *v1alpha1.ManagedWorkload,
+	cause v1alpha1.WakeCause) bool {
+	if cause != v1alpha1.WokenByAnnotation {
+		return true
+	}
+	holds, err := r.heldByDependenciesNow(ctx, workload)
+	if err != nil {
+		log.FromContext(ctx).Info("couldn't tell whether the workload's dependents woke it, so its wake is learned "+
+			"as demand", "workload", workload.Name, "namespace", workload.Namespace, "error", err.Error())
+		return true
+	}
+	return len(holds.holders) == 0
 }
 
 // heldBlindFor is how long, after a wrong pause a request undid, the hours
@@ -516,43 +594,140 @@ func (r *Reconciler) heldBlind(workload *v1alpha1.ManagedWorkload) bool {
 }
 
 // awakeDemand is the demand an awake workload's utilization shows, counting
-// its warm-up from its last wake.
-func (r *Reconciler) awakeDemand(workload *v1alpha1.ManagedWorkload, percent float64) float64 {
+// its warm-up from its last wake, and its use from what inUseSince finds.
+func (r *Reconciler) awakeDemand(ctx context.Context, workload *v1alpha1.ManagedWorkload, percent float64) float64 {
 	var woke time.Time
 	if w := workload.Status.LastActedAt; w != nil {
 		woke = w.Time
 	}
 	return forecast.AwakeDemand(r.now(), woke, r.Timezone, percent, cpuThresholdFor(workload),
-		func(since time.Time) bool { return r.usedSince(workload, since) })
+		func(since time.Time) bool { return r.inUseSince(ctx, workload, since) })
 }
 
-// usedSince reports whether the activity clock last saw the workload in use
-// at or after since. The clock's own restarts, on creation, a wake, a
-// rollout or a gap in watching, aren't use.
-func (r *Reconciler) usedSince(workload *v1alpha1.ManagedWorkload, since time.Time) bool {
-	clock, ok := r.activityMemo.get(workload.UID)
-	if !ok {
-		if workload.Status.Activity == nil {
-			return false
-		}
-		clock = *workload.Status.Activity
+// inUseSince reports whether the workload was in use at or after since, by
+// its own activity clock or by a dependent holding it awake. A dependent in
+// use is its dependencies' use: what it serves, they serve. Each dependent
+// is judged from the end of its own warm-up, and through its own
+// dependents, so a chain of them learns the use at its head. Woken ahead
+// with its dependent, a dependency whose own CPU stays under the threshold
+// would otherwise learn its load hours as quiet, where on the days a
+// request woke them it learned the request, and the forecast, judged
+// against both, would stop acting.
+func (r *Reconciler) inUseSince(ctx context.Context, workload *v1alpha1.ManagedWorkload, since time.Time) bool {
+	ctx, cancel := context.WithTimeout(ctx, dependencyTimeout)
+	defer cancel()
+	self := r.node(workload)
+	g, err := r.loadDependencyGraph(ctx)
+	if err != nil {
+		log.FromContext(ctx).V(1).Info("couldn't read the workload's dependents, so the forecast learns its own "+
+			"use alone this check", "workload", workload.Name, "namespace", workload.Namespace, "error", err.Error())
+		return usedSince(r.clockOf(self), since, false)
 	}
-	switch clock.LastActivitySource {
-	case v1alpha1.ActivitySourceCPU, v1alpha1.ActivitySourceAnnotation, v1alpha1.ActivitySourcePrometheus:
-		return !clock.LastActivityTime.Time.Before(since)
+	return r.usedThrough(g, self, since, since, map[types.UID]bool{})
+}
+
+// usedThrough reports whether the workload n is in use by its own clock at
+// or after from, or a dependent holding it, or one holding that in turn,
+// at or after since, each from the end of its own warm-up alone. While
+// dependents hold it, an activity annotation on it is theirs, as each
+// one's wake stamps one: their use is what counts, not their wakes, which
+// autoResume may make with nobody there.
+func (r *Reconciler) usedThrough(g *dependencyGraph, n *workloadNode, since, from time.Time,
+	seen map[types.UID]bool) bool {
+	seen[n.uid] = true
+	holders := g.holdersOf(n)
+	if usedSince(r.clockOf(n), from, len(holders) > 0) {
+		return true
+	}
+	for _, d := range holders {
+		if seen[d.uid] {
+			continue
+		}
+		warm := since
+		if !d.wokeAt.IsZero() {
+			warm = latest(since, d.wokeAt.Add(forecast.ResumeWarmup))
+		}
+		if r.usedThrough(g, d, since, warm, seen) {
+			return true
+		}
 	}
 	return false
 }
 
+// clockOf is the workload's activity clock as its latest check left it,
+// or as its status has it for one this operator hasn't checked.
+func (r *Reconciler) clockOf(n *workloadNode) *v1alpha1.ActivityStatus {
+	if clock, ok := r.activityMemo.get(n.uid); ok {
+		return &clock
+	}
+	return n.activity
+}
+
+// usedSince reports whether the activity clock last saw the workload in use
+// at or after since. The clock's own restarts, on creation, a wake, a
+// rollout or a gap in watching, aren't use, nor, for a workload its
+// dependents hold, an activity annotation.
+func usedSince(clock *v1alpha1.ActivityStatus, since time.Time, held bool) bool {
+	if clock == nil {
+		return false
+	}
+	switch clock.LastActivitySource {
+	case v1alpha1.ActivitySourceCPU, v1alpha1.ActivitySourcePrometheus:
+	case v1alpha1.ActivitySourceAnnotation:
+		if held {
+			return false
+		}
+	default:
+		return false
+	}
+	return !clock.LastActivityTime.Time.Before(since)
+}
+
+func latest(a, b time.Time) time.Time {
+	if b.After(a) {
+		return b
+	}
+	return a
+}
+
 // seeDemand adds a look at the workload's demand to the hour under way, and
-// once an hour is over, feeds the forecast the peak seen in it.
+// once an hour is over, feeds the forecast the peak seen in it. The first
+// look since the operator started goes on with the hour its status has,
+// as an operator before it wrote it.
 func (r *Reconciler) seeDemand(ctx context.Context, workload *v1alpha1.ManagedWorkload, engine forecaster, demand float64, visible bool) {
 	now := r.now()
-	hour, ended := r.engines.see(workload.UID, forecast.HourStart(now, r.Timezone), now, demand, visible)
+	start := forecast.HourStart(now, r.Timezone)
+	r.engines.takeUp(workload.UID, writtenHour(workload), start, now)
+	hour, ended := r.engines.see(workload.UID, start, now, demand, visible)
 	if !ended || engine.Observed(hour.Start) {
 		return
 	}
 	r.observeHour(ctx, workload, engine, hour)
+}
+
+// writtenHour is the hour under way as the workload's status has it, or
+// none, for a status without one or with one that can't be read.
+func writtenHour(workload *v1alpha1.ManagedWorkload) forecast.Hour {
+	p := workload.Status.Prediction
+	if p == nil || p.Hour == nil {
+		return forecast.Hour{}
+	}
+	peak, err := strconv.ParseFloat(p.Hour.Peak, 64)
+	if err != nil || peak < 0 || math.IsNaN(peak) || math.IsInf(peak, 0) {
+		return forecast.Hour{}
+	}
+	return forecast.Hour{Start: p.Hour.Start.Time, Peak: peak, First: p.Hour.From.Time, Last: p.Hour.To.Time,
+		Blind: p.Hour.Blind}
+}
+
+// hourStatus is the hour under way as status holds it, or nil before any
+// look.
+func hourStatus(h forecast.Hour) *v1alpha1.PredictionHour {
+	if h.Start.IsZero() {
+		return nil
+	}
+	return &v1alpha1.PredictionHour{Start: metav1.NewTime(h.Start.UTC()), Peak: strconv.FormatFloat(h.Peak, 'g', -1, 64),
+		From: metav1.NewTime(h.First.UTC()), To: metav1.NewTime(h.Last.UTC()), Blind: h.Blind}
 }
 
 // observeHour feeds the forecast an hour that has ended. A rejected

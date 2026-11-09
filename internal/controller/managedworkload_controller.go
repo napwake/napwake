@@ -219,12 +219,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.
 			}
 			res.Priority = requeuePriority(&workload, res)
 		}
-		// A write that lost to a newer one is retried at the priority of what
-		// brought it, such as a wake.
-		res, retErr = retryIfStale(ctx, res, retErr)
-		if retErr != nil {
-			metrics.ReconcileErrors.WithLabelValues("managedworkload").Inc()
-		}
+		res, retErr = endReconcile(ctx, req, res, retErr)
 	}()
 
 	if found, err := r.readWorkload(ctx, req.NamespacedName, &workload); err != nil || !found {
@@ -1797,10 +1792,10 @@ func (r *Reconciler) sinceTransition(workload *v1alpha1.ManagedWorkload) time.Du
 
 func (r *Reconciler) initDefaults() {
 	if r.autoscalers == nil {
-		r.autoscalers = autoscaler.NewFinder(r.Client)
+		r.autoscalers = autoscaler.NewFinder(r.Client).WithClock(r.now)
 	}
 	if r.pauser == nil {
-		r.pauser = lifecycle.NewPauser(r.Client, r.autoscalers)
+		r.pauser = lifecycle.NewPauser(r.Client, r.autoscalers).WithClock(r.now)
 	}
 	if r.metrics == nil {
 		pods := r.PodReader
@@ -1845,7 +1840,7 @@ func (r *Reconciler) setupHistoryLearner(mgr ctrl.Manager) error {
 		Named("forecasthistory").
 		For(&v1alpha1.ManagedWorkload{}, builder.WithPredicates(predicate.NewPredicateFuncs(func(o client.Object) bool {
 			workload, ok := o.(*v1alpha1.ManagedWorkload)
-			return ok && needsHistory(workload)
+			return ok && needsHistory(workload, true, r.now())
 		}))).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
 		Complete(learner)

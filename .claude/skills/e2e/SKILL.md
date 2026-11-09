@@ -23,7 +23,7 @@ make test-e2e
 
 ```bash
 cluster=$(hack/kind-cluster-name.sh e2e)
-make setup-test-e2e load-test-e2e-images
+make setup-test-e2e load-test-e2e-images check-test-e2e-images
 KIND_CLUSTER=$cluster KUBECONFIG="$PWD/bin/e2e/$cluster/kubeconfig" E2E_IMG=napwake:$cluster \
   E2E_PLUGIN="$PWD/bin/e2e/$cluster/kubectl-napwake" \
   go run github.com/onsi/ginkgo/v2/ginkgo --tags=e2e --timeout=60m -v \
@@ -31,7 +31,7 @@ KIND_CLUSTER=$cluster KUBECONFIG="$PWD/bin/e2e/$cluster/kubeconfig" E2E_IMG=napw
 make cleanup-test-e2e
 ```
 
-`--focus` is a regular expression matched against each spec's full name. Add `--dry-run` to list what it picks without a cluster. The suite still builds, deploys and removes Napwake around the spec.
+`check-test-e2e-images` runs each preloaded image by its digest, without pulling it, as `make test-e2e` does, so a spec whose manifest pins one by digest doesn't pull it. `--focus` is a regular expression matched against each spec's full name. Add `--dry-run` to list what it picks without a cluster. The suite still builds, deploys and removes Napwake around the spec.
 
 ## The Helm smoke test
 

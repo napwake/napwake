@@ -724,16 +724,56 @@ func operatorCacheOptions(watched []string, doormanNamespace string) cache.Optio
 		&discoveryv1.EndpointSlice{}: controller.EndpointSliceCache(watched, doormanNamespace),
 		&corev1.Pod{}:                capacity.PodCache(),
 		&corev1.Node{}:               capacity.NodeCache(),
+		&appsv1.Deployment{}:         {Transform: trimTarget},
+		&appsv1.StatefulSet{}:        {Transform: trimTarget},
 	}
 	return opts
 }
 
+// trimTarget is trimForCache for a Deployment or StatefulSet, with its pod
+// template cut down to what the operator reads of it
+// (controller.TrimPodTemplate), since templates are most of their size. A
+// NEG forwarder's Deployment, which the operator patches from its cache,
+// keeps its whole template.
+func trimTarget(in any) (any, error) {
+	out, err := trimForCache(in)
+	if err != nil {
+		return out, err
+	}
+	switch t := out.(type) {
+	case *appsv1.Deployment:
+		if !ownedByManagedWorkload(t) {
+			controller.TrimPodTemplate(&t.Spec.Template)
+		}
+	case *appsv1.StatefulSet:
+		controller.TrimPodTemplate(&t.Spec.Template)
+	}
+	return out, nil
+}
+
+// ownedByManagedWorkload says whether a ManagedWorkload controls obj, as it
+// does the forwarders it runs.
+func ownedByManagedWorkload(obj metav1.Object) bool {
+	owner := metav1.GetControllerOf(obj)
+	return owner != nil && owner.Kind == "ManagedWorkload" &&
+		strings.HasPrefix(owner.APIVersion, v1alpha1.GroupVersion.Group+"/")
+}
+
 // doormanCacheOptions adds to cacheOptions the doorman's view of
-// EndpointSlices (see doorman.EndpointSliceCache).
+// EndpointSlices and ManagedWorkloads (see doorman.EndpointSliceCache and
+// doorman.TrimManagedWorkload). ManagedWorkloads are trimmed by the default
+// transform, not one of their own: a cache with a ByObject entry for them
+// can't be made before their CRD is.
 func doormanCacheOptions(watched []string) cache.Options {
 	opts := cacheOptions(watched)
 	opts.ByObject = map[client.Object]cache.ByObject{
 		&discoveryv1.EndpointSlice{}: doorman.EndpointSliceCache(),
+	}
+	opts.DefaultTransform = func(in any) (any, error) {
+		if _, ok := in.(*v1alpha1.ManagedWorkload); ok {
+			return doorman.TrimManagedWorkload(in)
+		}
+		return trimForCache(in)
 	}
 	return opts
 }

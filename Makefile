@@ -60,9 +60,9 @@ fmt: ## Run go fmt against code.
 	go fmt ./...
 
 .PHONY: vet
-vet: ## Run go vet against code.
+vet: ## Run go vet against code, and the tests built only with a tag
 	go vet ./...
-	go vet -tags e2e ./test/...
+	go vet -tags e2e,sizing,soak ./...
 
 .PHONY: test
 test: manifests generate fmt vet setup-envtest ## Run tests.
@@ -103,8 +103,10 @@ setup-test-e2e: ## Set up this checkout's Kind cluster for e2e tests, with a kub
 	@echo "Its kubeconfig is $(E2E_KUBECONFIG)"
 
 # Each by tag and digest, so a retagged image can't change what the specs
-# run against. The specs name them by tag, which load-test-e2e-images gives
-# the image it pulls by digest.
+# run against. The specs name them by tag, and the manifests in
+# test/e2e/testdata some by digest, both of which load-test-e2e-images
+# gives the image it pulls by digest. hack/helm-smoke.sh preloads its own
+# from this list.
 E2E_IMAGES ?= \
 	curlimages/curl:8.7.1@sha256:25d29daeb9b14b89e2fa8cc17c70e4b188bca1466086907c2d9a4b56b59d8e21 \
 	registry.k8s.io/pause:3.10@sha256:ee6521f290b2168b6e0935a181d4cff9be1ac3f505666ef0e3c98fae8199917a \
@@ -123,21 +125,42 @@ E2E_PLATFORM ?= linux/$(shell go env GOARCH)
 # Desktop's containerd image store: a pull only fetches the host platform,
 # so the other platforms' content is missing. An image pulled by digest has
 # no tag, so it's tagged before it's saved, and the node has it by its tag.
+# The node then names it by its digest too, as the kubelet looks for one a
+# manifest pins by digest by that name, and pulls it if it's missing: the
+# full name, with docker.io/ where the reference names no registry.
 .PHONY: load-test-e2e-images
 load-test-e2e-images: ## Preload the images the e2e specs run into the Kind cluster
 	@for img in $(E2E_IMAGES); do \
 		ref=$${img%@*}; \
+		case "$$ref" in \
+			*/*) case "$${ref%%/*}" in *.*|*:*|localhost) full=$$ref ;; *) full=docker.io/$$ref ;; esac ;; \
+			*) full=docker.io/library/$$ref ;; \
+		esac; \
 		echo "Loading $$img ($(E2E_PLATFORM)) into $(KIND_CLUSTER)"; \
 		docker pull --quiet --platform $(E2E_PLATFORM) $$img >/dev/null && \
 		docker tag $$img $$ref && \
 		docker save $$ref | docker exec -i $(KIND_CLUSTER)-control-plane \
-			ctr --namespace=k8s.io images import --platform $(E2E_PLATFORM) --snapshotter=overlayfs - >/dev/null \
+			ctr --namespace=k8s.io images import --platform $(E2E_PLATFORM) --snapshotter=overlayfs - >/dev/null && \
+		docker exec $(KIND_CLUSTER)-control-plane \
+			ctr --namespace=k8s.io images tag --force $$full $${full%:*}@$${img#*@} >/dev/null \
 		|| exit 1; \
 	done
 
+# Runs each preloaded image by its digest, with imagePullPolicy Never, so an
+# image the node has only by its tag fails here, rather than being pulled
+# mid-run for a manifest that pins it by digest.
+.PHONY: check-test-e2e-images
+check-test-e2e-images: ## Check the Kind cluster runs each preloaded image by its digest, without pulling it
+	KUBECONFIG="$(E2E_KUBECONFIG)" hack/check-preloaded-images.sh $(E2E_IMAGES)
+
+# The images hack/helm-smoke.sh preloads its own from.
+.PHONY: e2e-images
+e2e-images:
+	@echo $(E2E_IMAGES)
+
 .PHONY: test-e2e
 test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
-	$(MAKE) load-test-e2e-images
+	$(MAKE) load-test-e2e-images check-test-e2e-images
 	@# The specs wait on real idle clocks, so their containers run in
 	@# parallel against the one cluster, through the Ginkgo CLI, which go
 	@# test can't do.
@@ -264,6 +287,14 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 	@! helm template napwake charts/napwake | grep -q -- '--guard=upgrade' && \
 		helm template napwake charts/napwake --set 'watchNamespaces={shop}' | grep -q -- '--guard=upgrade' || { \
 		echo "the upgrade guard doesn't run exactly when watchNamespaces is set, so narrowing it can strand paused workloads"; exit 1; }
+	@# helm upgrade refuses as the chart renders what the upgrade guard would,
+	@# so Helm records no failed revision. Argo CD renders with no cluster to
+	@# look in, and keeps the hook.
+	@HELM="$$(command -v helm)" go test -count=1 ./hack/chartguard || { \
+		echo "the chart doesn't refuse, as it renders, exactly the upgrades the upgrade guard refuses at once"; exit 1; }
+	@helm template napwake charts/napwake --is-upgrade --api-versions napwake.dev/v1alpha1 --set 'watchNamespaces={shop}' | \
+		grep -q -- '--guard=upgrade' || { \
+		echo "rendered as an upgrade with no cluster to look in, as Argo CD renders it, the chart fails or drops the upgrade guard"; exit 1; }
 	@# Helm 3 before 3.19 deletes only a failed hook, so a refused guard leaves the
 	@# RBAC hooks that ran before it. Every guard's are pre-delete hooks too, with
 	@# any values, so a clean uninstall clears whatever an earlier refusal left.
@@ -674,6 +705,13 @@ setup-envtest: envtest ## Download the binaries required for ENVTEST in the loca
 		echo "Error: Failed to set up envtest binaries for version $(ENVTEST_K8S_VERSION)."; \
 		exit 1; \
 	}
+
+# CI caches envtest's binaries by this, and its jobs then run make with
+# ENVTEST_INSTALLED_ONLY=1, which setup-envtest reads, so they use those
+# binaries without the network (.github/actions/setup-envtest).
+.PHONY: envtest-version
+envtest-version: ## Print the Kubernetes version envtest's binaries are for, and setup-envtest's release.
+	@echo "$(ENVTEST_K8S_VERSION)-$(ENVTEST_VERSION)"
 
 .PHONY: envtest
 envtest: $(ENVTEST) ## Download setup-envtest locally if necessary.

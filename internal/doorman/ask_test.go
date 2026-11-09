@@ -188,7 +188,7 @@ func TestServer_AClickWakesIt(t *testing.T) {
 	assert.Contains(t, body, `<meta http-equiv="refresh" content="3">`, "it reloads the page it's on, with a GET")
 	assert.Contains(t, body, `<meta name="referrer" content="no-referrer">`, "the waking-up page posts nothing")
 	assert.NotEmpty(t, lastRequest(t, c), "the click stamps the request annotation, as a held request does")
-	assert.Equal(t, 1, wokenEvents(recorder))
+	assert.Equal(t, []string{"Normal WakeAsked a person asked on Service api, waking"}, announced(recorder))
 }
 
 // Once it has been asked to wake, a person's browser gets the waking-up
@@ -880,7 +880,7 @@ func TestServer_CountsTheRequestsItTurnsAway(t *testing.T) {
 	assert.Equal(t, int64(3), got.Requests, "a person asked isn't turned away")
 	assert.True(t, got.PausedAt.Equal(&metav1.Time{Time: pausedAt(w)}), "counted for the pause")
 
-	another := NewServer(c, nil, Options{})
+	another := NewServer(cachedReads(t, c), nil, Options{})
 	another.turnedAway(route{workload: apiKey, pausedAt: pausedAt(w)})
 	another.flushTurnedAway(context.Background())
 	assert.Equal(t, int64(4), turnedAwayOf(t, c).Requests, "another replica's add to it")

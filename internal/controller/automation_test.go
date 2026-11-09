@@ -166,7 +166,7 @@ func newAutomationReconciler(t *testing.T, workload *v1alpha1.ManagedWorkload, e
 		Recorder: events.NewFakeRecorder(10),
 		pauser:   opts.pauser,
 		engines:  reg,
-		clock:    func() time.Time { return fixedTime },
+		clock:    func() time.Time { return monotonic(fixedTime) },
 	}
 	if opts.metrics != nil {
 		r.metrics = opts.metrics
@@ -239,7 +239,7 @@ func TestPausedRecheck(t *testing.T) {
 				workload.Spec.IdlePolicy = &v1alpha1.IdlePolicySpec{Activity: &v1alpha1.ActivitySpec{
 					Prometheus: []v1alpha1.PrometheusActivity{{PromQL: "queue_length"}}}}
 			}
-			r := &Reconciler{Timezone: tt.loc, clock: func() time.Time { return tt.at }}
+			r := &Reconciler{Timezone: tt.loc, clock: func() time.Time { return monotonic(tt.at) }}
 			assert.Equal(t, tt.want, r.pausedRecheck(workload))
 		})
 	}
@@ -256,7 +256,7 @@ func TestAutoResume_LeadIsCountedToTheLocalHour(t *testing.T) {
 	pauser := &stubPauser{resumeDone: true}
 	r := newAutomationReconciler(t, workload, engine, automationOpts{pauser: pauser})
 	r.Timezone = kolkata
-	r.clock = func() time.Time { return fixedTime.Add(20 * time.Minute) } // 17:50 in Kolkata
+	r.clock = func() time.Time { return monotonic(fixedTime.Add(20 * time.Minute)) } // 17:50 in Kolkata
 
 	_, err = r.reconcileAutomation(context.Background(), workload, nil)
 	require.NoError(t, err)
@@ -267,7 +267,7 @@ func TestAutoResume_LeadIsCountedToTheLocalHour(t *testing.T) {
 func TestAutomation_PausedIsRequeued(t *testing.T) {
 	workload := pausedForecastWorkload()
 	r := newAutomationReconciler(t, workload, &stubForecaster{phase: forecast.Observing}, automationOpts{})
-	r.clock = func() time.Time { return fixedTime.Add(10 * time.Minute) }
+	r.clock = func() time.Time { return monotonic(fixedTime.Add(10 * time.Minute)) }
 
 	result, err := r.reconcileAutomation(context.Background(), workload, nil)
 
@@ -286,7 +286,7 @@ func TestAutoResume_FiresOnTimeAlone(t *testing.T) {
 	r := newAutomationReconciler(t, workload, engine, automationOpts{pauser: pauser})
 	require.NoError(t, r.Create(context.Background(), targetDeploymentWithReplicas("api", "default", 0)))
 	now := fixedTime.Add(3 * time.Minute)
-	r.clock = func() time.Time { return now }
+	r.clock = func() time.Time { return monotonic(now) }
 
 	for range 20 {
 		result, err := r.Reconcile(context.Background(), reconcileFor("api"))
@@ -323,7 +323,7 @@ func lookEveryMinute(t *testing.T, r *Reconciler, workload *v1alpha1.ManagedWork
 	from, until time.Time, cpu func(now time.Time) float64) {
 	t.Helper()
 	for now := from; !now.After(until); now = now.Add(time.Minute) {
-		r.clock = func() time.Time { return now }
+		r.clock = func() time.Time { return monotonic(now) }
 		metrics.cpuMillis = cpu(now)
 		_, err := r.reconcileAutomation(context.Background(), workload, nil)
 		require.NoError(t, err)
@@ -350,7 +350,7 @@ func TestAutomation_FeedsEachHourItsPeak(t *testing.T) {
 
 	lookEveryMinute(t, r, workload, metrics, fixedTime.Add(time.Hour), fixedTime.Add(time.Hour), lastTen)
 	assert.Equal(t, []float64{400}, engine.observed)
-	assert.Equal(t, []time.Time{fixedTime}, engine.observedHours, "as the hour it was seen in")
+	assert.Equal(t, []time.Time{fixedTime}, inUTC(engine.observedHours...), "as the hour it was seen in")
 }
 
 // A workload's first minutes awake, starting up, aren't demand. Counted,
@@ -407,9 +407,9 @@ func TestAwakeDemand(t *testing.T) {
 			workload.Status.LastActedAt = ptr.To(metav1.NewTime(woke))
 			workload.Status.Activity = &v1alpha1.ActivityStatus{LastActivityTime: metav1.NewTime(tt.at), LastActivitySource: tt.source}
 			r := newAutomationReconciler(t, workload, &stubForecaster{}, automationOpts{})
-			r.clock = func() time.Time { return now }
+			r.clock = func() time.Time { return monotonic(now) }
 
-			assert.InDelta(t, tt.want, r.awakeDemand(workload, tt.percent), 1e-9)
+			assert.InDelta(t, tt.want, r.awakeDemand(context.Background(), workload, tt.percent), 1e-9)
 		})
 	}
 }
@@ -552,7 +552,7 @@ func TestAutomation_NoPodMetricsWaitsForNewPods(t *testing.T) {
 			{at: 0, ready: 2, wantStatus: metav1.ConditionUnknown, wantReason: "AwaitingPodMetrics", wantRequeue: time.Minute},
 			{at: 2 * time.Minute, ready: 2, wantStatus: metav1.ConditionUnknown, wantReason: "AwaitingPodMetrics", wantRequeue: time.Minute},
 			{at: 2*time.Minute + 30*time.Second, ready: 2, wantStatus: metav1.ConditionUnknown, wantReason: "AwaitingPodMetrics", wantRequeue: 30 * time.Second},
-			{at: 3 * time.Minute, ready: 2, wantStatus: metav1.ConditionFalse, wantReason: "NoPodMetrics", wantRequeue: time.Minute},
+			{at: 3*time.Minute + requeueLag, ready: 2, wantStatus: metav1.ConditionFalse, wantReason: "NoPodMetrics", wantRequeue: time.Minute},
 			{at: 4 * time.Minute, ready: 2, wantStatus: metav1.ConditionFalse, wantReason: "NoPodMetrics", wantRequeue: time.Minute},
 		}},
 		{name: "pods slow to start after a wake", looks: []look{
@@ -570,7 +570,7 @@ func TestAutomation_NoPodMetricsWaitsForNewPods(t *testing.T) {
 			})
 
 			for _, l := range tt.looks {
-				r.clock = func() time.Time { return fixedTime.Add(l.at) }
+				r.clock = func() time.Time { return monotonic(fixedTime.Add(l.at)) }
 				target := readyTarget()
 				target.Status.ReadyReplicas = l.ready
 
@@ -581,7 +581,7 @@ func TestAutomation_NoPodMetricsWaitsForNewPods(t *testing.T) {
 				require.NotNil(t, cond)
 				assert.Equal(t, l.wantStatus, cond.Status, "at %s", l.at)
 				assert.Equal(t, l.wantReason, cond.Reason, "at %s", l.at)
-				assert.Equal(t, l.wantRequeue, result.RequeueAfter, "at %s", l.at)
+				assert.Equal(t, l.wantRequeue, toTheMillisecond(result.RequeueAfter), "at %s", l.at)
 			}
 			warnings := recorded(r.Recorder.(*events.FakeRecorder), "Warning NoPodMetrics")
 			assert.Len(t, warnings, tt.wantWarnings)
@@ -664,7 +664,7 @@ func TestAutomation_ZeroReplicasFeedsZeroDemand(t *testing.T) {
 	r.metrics = &zeroReplicaMetrics{stubMetrics{err: fmt.Errorf("%w for default/api", opmetrics.ErrNoPodMetrics)}}
 
 	for now := fixedTime; !now.After(fixedTime.Add(time.Hour)); now = now.Add(time.Minute) {
-		r.clock = func() time.Time { return now }
+		r.clock = func() time.Time { return monotonic(now) }
 		_, err := r.reconcileAutomation(context.Background(), workload, nil)
 		require.NoError(t, err)
 	}
@@ -701,8 +701,8 @@ func TestAutomation_MetricsConditionRecovers(t *testing.T) {
 	metrics := &stubMetrics{err: fmt.Errorf("%w for default/api", opmetrics.ErrNoPodMetrics), replicas: 2}
 	r := newAutomationReconciler(t, workload, engine, automationOpts{metrics: metrics})
 
-	for _, at := range []time.Duration{0, podMetricsGrace} {
-		r.clock = func() time.Time { return fixedTime.Add(at) }
+	for _, at := range []time.Duration{0, podMetricsGrace + requeueLag} {
+		r.clock = func() time.Time { return monotonic(fixedTime.Add(at)) }
 		_, err := r.reconcileAutomation(context.Background(), workload, readyTarget())
 		require.NoError(t, err)
 	}
@@ -743,7 +743,7 @@ func TestPausedWorkload_IdleSecondsKeepCounting(t *testing.T) {
 	gauge := opmetrics.IdleSeconds.WithLabelValues(workload.Namespace, workload.Name)
 
 	for _, now := range []time.Time{fixedTime, fixedTime.Add(5 * time.Minute)} {
-		r.clock = func() time.Time { return now }
+		r.clock = func() time.Time { return monotonic(now) }
 		_, err := r.reconcileAutomation(context.Background(), workload, nil)
 		require.NoError(t, err)
 
@@ -776,7 +776,7 @@ func TestPausedHour_DemandBehindTheDoorman(t *testing.T) {
 				metrics: metrics, pauser: &stubPauser{resumeDone: true}})
 
 			for now := fixedTime; !now.After(fixedTime.Add(time.Hour)); now = now.Add(time.Minute) {
-				r.clock = func() time.Time { return now }
+				r.clock = func() time.Time { return monotonic(now) }
 				if tt.wakeAt > 0 && now.Equal(fixedTime.Add(tt.wakeAt)) {
 					workload.Annotations = map[string]string{v1alpha1.AnnotationLastRequest: now.Format(time.RFC3339)}
 				}
@@ -818,7 +818,7 @@ func TestAutoResume_WakesAheadOfPredictedDemand(t *testing.T) {
 			engine := &stubForecaster{phase: tt.phase, predictByHour: map[int]float64{0: tt.thisHour, 1: tt.nextHour}}
 			pauser := &stubPauser{resumeDone: true}
 			r := newAutomationReconciler(t, workload, engine, automationOpts{pauser: pauser})
-			r.clock = func() time.Time { return tt.at }
+			r.clock = func() time.Time { return monotonic(tt.at) }
 
 			_, err := r.reconcileAutomation(context.Background(), workload, nil)
 			require.NoError(t, err)
@@ -922,7 +922,8 @@ func doormanDays(t *testing.T, monday time.Time, days int, policy v1alpha1.IdleP
 		}
 		for len(recorder.Events) > 0 {
 			e := <-recorder.Events
-			for _, reason := range []string{ReasonAutoResume, ReasonWokeByActivity, ReasonPaused, ReasonPausedEarly} {
+			for _, reason := range []string{ReasonAutoResume, ReasonWokenByRequest, ReasonWokeByActivity, ReasonPaused,
+				ReasonPausedEarly} {
 				if !strings.HasPrefix(e, "Normal "+reason+" ") {
 					continue
 				}
@@ -989,7 +990,7 @@ func TestAutoResume_LearnsToWakeBeforePeopleArrive(t *testing.T) {
 	at := func(d int, clock time.Duration) time.Time { return monday.AddDate(0, 0, d).Add(clock) }
 
 	assert.Equal(t, []lifecycleEvent{
-		{at: at(1, 9*time.Hour+10*time.Minute), reason: ReasonWokeByActivity},
+		{at: at(1, 9*time.Hour+10*time.Minute), reason: ReasonWokenByRequest},
 		{at: at(1, 18*time.Hour+29*time.Minute), reason: ReasonPaused},
 	}, day(1), "the first Tuesday, people wake it as they arrive")
 

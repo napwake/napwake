@@ -239,6 +239,12 @@ func TestBlockers(t *testing.T) {
 			reason: []Reason{{Code: CodeNotAutoscaled, Detail: "no node autoscaler found"}},
 		},
 		{
+			name: "an EKS Fargate node goes with its pod", a: Autoscaler{},
+			node: corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "n1",
+				Labels: map[string]string{"eks.amazonaws.com/compute-type": "fargate"}}},
+			pods: []corev1.Pod{pod("shop", "api", "n1", volume(emptyDir("cache", "")))},
+		},
+		{
 			name: "an unknown autoscaler is judged by Cluster Autoscaler's rules", a: Autoscaler{Unread: []string{"nodes"}},
 			node: plain, pods: []corev1.Pod{pod("shop", "debug", "n1", bare)},
 			reason: []Reason{{Code: CodeNoController, Pod: "shop/debug", Detail: "no controller would recreate it"}},

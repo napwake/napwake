@@ -49,6 +49,9 @@ const (
 	ReasonActivityResumed        = "ActivityResumed"
 	ReasonUnobserved             = "Unobserved"
 	ReasonWokeByActivity         = "WokeByActivity"
+	ReasonWokenByRequest         = "WokenByRequest"
+	ReasonWokenByClick           = "WokenByClick"
+	ReasonWokenByDependent       = "WokenByDependent"
 	ReasonPaused                 = "Paused"
 	ReasonResumed                = "Resumed"
 	ReasonAutoResume             = "AutoResume"
@@ -253,6 +256,10 @@ func (r *Reconciler) updatePredictionStatus(ctx context.Context, workload *v1alp
 	}
 	if last := workload.Status.Prediction; last != nil {
 		status.History = last.History
+		status.Hour = last.Hour
+	}
+	if h := hourStatus(r.engines.hour(workload.UID)); h != nil {
+		status.Hour = h
 	}
 	state, err := r.engines.export(workload.UID, engine)
 	if err != nil {

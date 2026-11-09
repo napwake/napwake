@@ -23,6 +23,7 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      - uses: ./.github/actions/setup-envtest
       - name: Running Tests
         run: make test
 
@@ -54,10 +55,12 @@ jobs:
         with:
           version: v3.22.1
       # Lints the chart, renders it for EKS-, GKE- and AKS-style versions,
-      # and checks it grants the operator what config/rbac/role.yaml does.
-      # With Helm 3, while helm-smoke installs with Helm 4, so the chart is
-      # proven on both.
+      # checks it grants the operator what config/rbac/role.yaml does, and
+      # that it refuses as it renders the upgrades its upgrade guard would.
+      # With Helm 3, while helm-smoke installs with Helm 4 and 3.18, so the
+      # chart is proven on both.
       - run: make check-chart
+      - uses: ./.github/actions/setup-envtest
       - run: make test-doorman-policy
 
   alerts:

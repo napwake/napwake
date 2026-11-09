@@ -115,6 +115,14 @@ func NewFinder(c client.Reader) *Finder {
 	return &Finder{c: c, now: time.Now, listed: map[string]scaledObjectList{}}
 }
 
+// WithClock has the Finder read the time from clock, the one its caller
+// reads, such as a reconciler's that a test moves: what it lists is reused,
+// and KEDA's absence relied on, for as long by that clock.
+func (f *Finder) WithClock(clock func() time.Time) *Finder {
+	f.now = clock
+	return f
+}
+
 // Find is what scales the workload, and false when nothing does, relying
 // on what it last learned of whether KEDA is installed, and on the
 // namespace's ScaledObjects as it listed them up to scaledObjectsReuse ago.

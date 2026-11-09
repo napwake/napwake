@@ -18,9 +18,6 @@ package controller
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -975,19 +972,19 @@ func (h *templateHashes) forget(workload types.UID) {
 
 // podTemplateHash fingerprints the target's pod template. Scaling changes
 // spec.replicas and bumps metadata.generation, so the generation can't tell
-// a deploy from Napwake's own pause and resume; the template can.
+// a deploy from Napwake's own pause and resume; the template can. A
+// template the cache trimmed carries the hash of the whole one.
 func podTemplateHash(target client.Object) string {
 	switch target.(type) {
 	case *appsv1.Deployment, *appsv1.StatefulSet:
 	default:
 		return ""
 	}
-	data, err := json.Marshal(podTemplateOf(target))
-	if err != nil {
-		return ""
+	template := podTemplateOf(target)
+	if hash, ok := template.Annotations[cachedTemplateHash]; ok {
+		return hash
 	}
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:8])
+	return hashTemplate(template)
 }
 
 // reconcileIdleClock pauses a workload once it has been inactive for
