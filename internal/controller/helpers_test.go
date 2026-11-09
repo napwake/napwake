@@ -279,6 +279,71 @@ func TestForecastState_SurvivesARestart(t *testing.T) {
 	assert.Equal(t, 3, engine.GetDataPoints())
 }
 
+// An operator restarted at the same time every day, as by a nightly job,
+// and back within two minutes, goes on with the hour under way from what
+// its status has, so the forecast sees every hour of the day whole, and
+// acts after 8 days, as without the restarts. Before, each restart lost the
+// hour under way, the same hour of the day each time, and the forecast
+// stayed Observing for good.
+func TestForecastState_DailyRestartsAtTheSameTime(t *testing.T) {
+	if testing.Short() {
+		t.Skip("reconciles ten days")
+	}
+	t.Parallel()
+	monday := time.Date(2026, 3, 16, 0, 0, 0, 0, time.UTC)
+	workload := forecastWorkload()
+	workload.Spec.IdlePolicy = &v1alpha1.IdlePolicySpec{IdleAfter: &metav1.Duration{Duration: time.Hour}}
+	workload.Status.Activity = nil
+	busy := &stubMetrics{cpuMillis: 400, cpuPerReplica: 1000, replicas: 1}
+	fr := newForecastReconciler(t, workload, nil)
+	fr.metrics = busy
+	fr.now = monday
+	end := monday.AddDate(0, 0, 10)
+	for restart := monday.Add(10*time.Hour + 30*time.Minute); fr.now.Before(end); {
+		if !fr.now.Before(restart) {
+			down := fr.now.Add(2 * time.Minute)
+			fr = newForecastReconciler(t, workload, fr.Client)
+			fr.metrics = busy
+			fr.now = down
+			restart = restart.AddDate(0, 0, 1)
+		}
+		fr.reconcile(t, workload)
+		fr.now = fr.now.Add(time.Minute)
+	}
+
+	require.NotNil(t, workload.Status.Prediction)
+	assert.True(t, workload.Status.Prediction.Acting, "the forecast acts: %s", workload.Status.Prediction.Message)
+	engine, err := fr.engines.getOrCreate(workload.UID, forecast.Settings{}, "")
+	require.NoError(t, err)
+	assert.Equal(t, int(end.Sub(monday)/time.Hour)-1, engine.GetDataPoints(),
+		"every hour that ended learned, those the restarts came in included")
+}
+
+// A restart within minutes, partway through an hour, goes on with it from
+// status: the hour is learned whole, its peak from before the restart
+// included. One whose status was last written longer ago skips the hour,
+// as TestForecastState_SurvivesARestart does.
+func TestForecastState_ARestartWithinMinutesKeepsTheHour(t *testing.T) {
+	workload := forecastWorkload()
+	fr := newForecastReconciler(t, workload, nil)
+	fr.metrics = &stubMetrics{cpuMillis: 90}
+	fr.watch(t, workload, fixedTime.Add(10*time.Minute))
+	fr.metrics = &stubMetrics{cpuMillis: 30}
+	fr.watch(t, workload, fixedTime.Add(28*time.Minute))
+	require.NotNil(t, workload.Status.Prediction.Hour, "the hour under way is written")
+
+	restarted := newForecastReconciler(t, workload, fr.Client)
+	restarted.metrics = &stubMetrics{cpuMillis: 30}
+	restarted.now = fixedTime.Add(30 * time.Minute)
+	restarted.watch(t, workload, fixedTime.Add(time.Hour))
+
+	engine, err := restarted.engines.getOrCreate(workload.UID, forecast.Settings{}, "")
+	require.NoError(t, err)
+	require.True(t, engine.Observed(fixedTime), "the hour the restart came in is learned")
+	assert.Contains(t, drainEvents(t, restarted.Reconciler), "the hour from 12:00 UTC peaked at 90%",
+		"its peak from before the restart")
+}
+
 func TestForecastState_UnreadableStateStartsAfreshWithAWarning(t *testing.T) {
 	gzipped := func(s string) string {
 		var buf bytes.Buffer

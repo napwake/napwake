@@ -409,7 +409,7 @@ func TestAwakeDemand(t *testing.T) {
 			r := newAutomationReconciler(t, workload, &stubForecaster{}, automationOpts{})
 			r.clock = func() time.Time { return monotonic(now) }
 
-			assert.InDelta(t, tt.want, r.awakeDemand(workload, tt.percent), 1e-9)
+			assert.InDelta(t, tt.want, r.awakeDemand(context.Background(), workload, tt.percent), 1e-9)
 		})
 	}
 }
