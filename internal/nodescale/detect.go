@@ -44,6 +44,11 @@ const (
 	ClusterAutoscaler Kind = "Cluster Autoscaler"
 	EKSAutoMode       Kind = "EKS Auto Mode"
 	GKEAutopilot      Kind = "GKE Autopilot"
+	// EKSFargate runs each pod on a node of its own and bills the pod, so,
+	// as on GKE Autopilot, what a pause frees comes off the bill as its
+	// pods stop. Found only when every node is Fargate's: on a cluster
+	// with EC2 nodes too, what scales those decides.
+	EKSFargate Kind = "EKS Fargate"
 )
 
 // Karpenter's NodePool consolidation policies, and the consolidateAfter
@@ -65,6 +70,7 @@ const (
 	clusterAutoscalerName   = "cluster-autoscaler"
 	gkeAutopilotNodePrefix  = "gk3-"
 	eksAutoModeComputeType  = "auto"
+	eksFargateComputeType   = "fargate"
 )
 
 // readTimeout bounds each read Detect and Read make. They're single lists
@@ -159,6 +165,11 @@ func Detect(ctx context.Context, r client.Reader) (Autoscaler, error) {
 	}
 	auto, karpenter, provider, autopilot := classifyNodes(nodes)
 
+	if fargate := fargateNodes(nodes); fargate > 0 && fargate == len(nodes) {
+		a.Scalers = append(a.Scalers, Scaler{Kind: EKSFargate, Provider: "EKS",
+			Evidence: fmt.Sprintf("%s, every one, labelled %s=%s", countNodes(fargate), labelEKSComputeType,
+				eksFargateComputeType)})
+	}
 	if auto > 0 {
 		a.Scalers = append(a.Scalers, Scaler{Kind: EKSAutoMode,
 			Evidence: fmt.Sprintf("%s labelled %s=%s", countNodes(auto), labelEKSComputeType, eksAutoModeComputeType)})
@@ -267,6 +278,22 @@ func classifyNodes(nodes []metav1.PartialObjectMetadata) (auto, karpenter int, p
 		}
 	}
 	return auto, karpenter, provider, gke > 0 && gk3 == gke
+}
+
+func fargateNodes(nodes []metav1.PartialObjectMetadata) int {
+	n := 0
+	for _, node := range nodes {
+		if isFargate(node.Labels) {
+			n++
+		}
+	}
+	return n
+}
+
+// isFargate says whether a node is EKS Fargate's, which runs one pod and
+// goes with it.
+func isFargate(labels map[string]string) bool {
+	return labels[labelEKSComputeType] == eksFargateComputeType
 }
 
 func statusConfigMap(ctx context.Context, r client.Reader) (bool, error) {

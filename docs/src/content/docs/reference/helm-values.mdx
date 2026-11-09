@@ -409,7 +409,7 @@ Without the operator, every ManagedWorkload is stuck on its finalizer, which onl
 | Value | Default | Description |
 |-------|---------|-------------|
 | <Ref id="guard-uninstall">guard.uninstall</Ref> | `true` | Refuse `helm uninstall` while ManagedWorkloads are left, through a pre-delete hook Job, `<fullname>-uninstall-guard`. Argo CD 3.3 and later runs it as PreDelete, blocking Application deletion too. Earlier versions skip it ([uninstall](/getting-started/installation/#uninstall)) |
-| <Ref id="guard-upgrade">guard.upgrade</Ref> | `true` | Refuse `helm upgrade` or `helm rollback` to a `watchNamespaces` leaving out namespaces with managed workloads. It's a pre-upgrade and pre-rollback hook Job, `<fullname>-upgrade-guard`, only with `watchNamespaces` set. Argo CD runs it as PreSync, before every sync ([narrowing](/operations/upgrading/#narrowing-watchnamespaces)) |
+| <Ref id="guard-upgrade">guard.upgrade</Ref> | `true` | Refuse `helm upgrade` or `helm rollback` to a `watchNamespaces` leaving out namespaces with managed workloads. `helm upgrade` refuses as it renders the chart, so Helm records no revision. Then a pre-upgrade and pre-rollback hook Job, `<fullname>-upgrade-guard`, checks again. Both only with `watchNamespaces` set. Argo CD runs the hook as PreSync, before every sync ([narrowing](/operations/upgrading/#narrowing-watchnamespaces)) |
 | <Ref id="guard-nodeselector">guard.nodeSelector</Ref> | `{}` | The hooks' node selector. Empty uses the operator's |
 | <Ref id="guard-tolerations">guard.tolerations</Ref> | `[]` | Empty uses the operator's |
 | <Ref id="guard-affinity">guard.affinity</Ref> | `{}` | Empty uses the operator's |
@@ -438,6 +438,8 @@ Helm stops before changing anything and prints the list.
 - Mesh sidecars are kept out, since a running sidecar would keep the Job from finishing.
 - Their pods carry `control-plane: uninstall-guard` or `control-plane: upgrade-guard`, so the operator's Service and NetworkPolicy don't select them.
 - `--no-hooks` skips both.
+- Before the upgrade guard's hook, `helm upgrade` refuses what it would refuse at once, as it renders the chart, so Helm records no failed revision. With your access, it reads the operator's Deployment, then the ManagedWorkloads in the namespaces the upgrade leaves out. `--no-hooks` doesn't skip that. `guard.upgrade: false` drops it.
+- A `helm rollback` doesn't render the chart, and Argo CD renders it with no cluster to look in, so only the hook guards those.
 
 </details>
 

@@ -32,9 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
-	"github.com/napwake/napwake/internal/autoscaler"
 	"github.com/napwake/napwake/internal/forecast"
-	"github.com/napwake/napwake/internal/lifecycle"
 )
 
 // turnedBackEnv is an API server with the doorman's Service in front of
@@ -97,40 +95,19 @@ func (e *turnedBackEnv) create(t *testing.T, ns string, setup func(*v1alpha1.Man
 	tc.key = client.ObjectKeyFromObject(w)
 
 	c := client.WithFieldOwner(indexedClient{e.admin}, v1alpha1.FieldManager)
-	finder := autoscaler.NewFinder(c)
-	tc.r = &Reconciler{
+	tc.r = withTheOperatorsPauser(&Reconciler{
 		Client: c, Scheme: testScheme(t), Recorder: events.NewFakeRecorder(1000), PodReader: indexedClient{e.admin},
-		pauser:      testClockPauser{Pauser: lifecycle.NewPauser(c, finder), now: func() time.Time { return tc.now }},
-		autoscalers: finder,
-		metrics:     &stubMetrics{cpuMillis: 70, cpuPerReplica: 1000, replicas: 1},
-		engines:     newEngineRegistry(func() forecaster { return tc.forecast }),
-		clock:       func() time.Time { return tc.now },
+		metrics: &stubMetrics{cpuMillis: 70, cpuPerReplica: 1000, replicas: 1},
+		engines: newEngineRegistry(func() forecaster { return tc.forecast }),
+		clock:   func() time.Time { return tc.now },
 		DialDoorman: func(_ context.Context, addr string) error {
 			tc.dialled = append(tc.dialled, addr)
 			return nil
 		},
-	}
+	}, c)
 	routeThroughDoorman(tc.r)
 	remember(tc.r, w)
 	return tc
-}
-
-// testClockPauser is the operator's pauser, with the scale-down it records
-// timed by the test's clock, which the operator reads, not the real one.
-// A wake is judged by how long after it the workload woke.
-type testClockPauser struct {
-	*lifecycle.Pauser
-	now func() time.Time
-}
-
-func (p testClockPauser) Pause(ctx context.Context, workload *v1alpha1.ManagedWorkload) (lifecycle.Suspension, error) {
-	first := workload.Status.Pause != nil && workload.Status.Pause.PausedAt == nil
-	suspension, err := p.Pauser.Pause(ctx, workload)
-	if err == nil && first && workload.Status.Pause.PausedAt != nil {
-		at := metav1.NewTime(p.now())
-		workload.Status.Pause.PausedAt = &at
-	}
-	return suspension, err
 }
 
 // reconcile has the operator reconcile the workload at its clock, after
@@ -260,4 +237,8 @@ func TestTurnedBackPause_TeachesTheForecastItsHourIsBusy(t *testing.T) {
 			assert.Less(t, tc.fed(t, hour.Add(time.Hour)), 10.0, "the hour after, with no request, isn't busy")
 		})
 	}
+
+	t.Run("its pauser is on its reconciler's clock", func(t *testing.T) {
+		requirePauserOnItsClock(t, env.create(t, "clock", nil).r, "clock")
+	})
 }

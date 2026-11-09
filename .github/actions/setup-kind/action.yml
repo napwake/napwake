@@ -1,5 +1,7 @@
 name: Set up kind
-description: Installs pinned kind and kubectl releases for linux/amd64, checking each against a pinned checksum.
+description: >-
+  Installs pinned kind and kubectl releases for linux/amd64, checking each against a pinned checksum. They come from
+  the cache, keyed by their versions and checksums, or, on a miss, are downloaded, retried, then cached.
 
 inputs:
   version:
@@ -20,21 +22,64 @@ inputs:
 runs:
   using: composite
   steps:
-    - shell: bash
+    - name: Restore kind and kubectl
+      id: restore
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/setup-kind
+        key: setup-kind-${{ runner.os }}-${{ runner.arch }}-${{ inputs.version }}-${{ inputs.sha256 }}-kubectl-${{ inputs.kubectl-version }}-${{ inputs.kubectl-sha256 }}
+
+    # GitHub's release downloads answered 504 for 15 minutes on 8 Nov 2026,
+    # failing every job that needed kind. Three tries, 20 then 40 seconds
+    # apart, ride out an outage of under a minute.
+    - name: Download kind and kubectl
+      if: steps.restore.outputs.cache-hit != 'true'
+      shell: bash
       env:
+        DIR: ${{ runner.temp }}/setup-kind
         VERSION: ${{ inputs.version }}
-        SHA256: ${{ inputs.sha256 }}
         KUBECTL_VERSION: ${{ inputs.kubectl-version }}
+      run: |
+        fetch() {
+          local to=$1 url=$2 wait=20
+          for try in 1 2 3; do
+            curl -fsSLo "$to" "$url" && return 0
+            [ "$try" = 3 ] && break
+            echo "::warning::downloading $url failed (try $try of 3), trying again in ${wait}s"
+            sleep "$wait"
+            wait=$((wait * 2))
+          done
+          echo "::error::couldn't download $url"
+          return 1
+        }
+        mkdir -p "$DIR"
+        fetch "$DIR/kind" "https://github.com/kubernetes-sigs/kind/releases/download/${VERSION}/kind-linux-amd64"
+        fetch "$DIR/kubectl" "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+
+    # Checked whether downloaded or restored, before anything is cached or
+    # installed.
+    - name: Check kind's and kubectl's checksums
+      shell: bash
+      working-directory: ${{ runner.temp }}/setup-kind
+      env:
+        SHA256: ${{ inputs.sha256 }}
         KUBECTL_SHA256: ${{ inputs.kubectl-sha256 }}
       run: |
-        curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/${VERSION}/kind-linux-amd64"
         echo "${SHA256}  kind" | sha256sum --check --strict
-        chmod +x kind
-        sudo mv kind /usr/local/bin/kind
-        kind version
-
-        curl -fsSLo kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
         echo "${KUBECTL_SHA256}  kubectl" | sha256sum --check --strict
-        chmod +x kubectl
-        sudo mv kubectl /usr/local/bin/kubectl
+
+    - name: Cache kind and kubectl
+      if: steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/setup-kind
+        key: ${{ steps.restore.outputs.cache-primary-key }}
+
+    - name: Install kind and kubectl
+      shell: bash
+      working-directory: ${{ runner.temp }}/setup-kind
+      run: |
+        sudo install -m 0755 kind /usr/local/bin/kind
+        kind version
+        sudo install -m 0755 kubectl /usr/local/bin/kubectl
         kubectl version --client

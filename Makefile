@@ -60,9 +60,9 @@ fmt: ## Run go fmt against code.
 	go fmt ./...
 
 .PHONY: vet
-vet: ## Run go vet against code.
+vet: ## Run go vet against code, and the tests built only with a tag
 	go vet ./...
-	go vet -tags e2e ./test/...
+	go vet -tags e2e,sizing,soak ./...
 
 .PHONY: test
 test: manifests generate fmt vet setup-envtest ## Run tests.
@@ -287,6 +287,14 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 	@! helm template napwake charts/napwake | grep -q -- '--guard=upgrade' && \
 		helm template napwake charts/napwake --set 'watchNamespaces={shop}' | grep -q -- '--guard=upgrade' || { \
 		echo "the upgrade guard doesn't run exactly when watchNamespaces is set, so narrowing it can strand paused workloads"; exit 1; }
+	@# helm upgrade refuses as the chart renders what the upgrade guard would,
+	@# so Helm records no failed revision. Argo CD renders with no cluster to
+	@# look in, and keeps the hook.
+	@HELM="$$(command -v helm)" go test -count=1 ./hack/chartguard || { \
+		echo "the chart doesn't refuse, as it renders, exactly the upgrades the upgrade guard refuses at once"; exit 1; }
+	@helm template napwake charts/napwake --is-upgrade --api-versions napwake.dev/v1alpha1 --set 'watchNamespaces={shop}' | \
+		grep -q -- '--guard=upgrade' || { \
+		echo "rendered as an upgrade with no cluster to look in, as Argo CD renders it, the chart fails or drops the upgrade guard"; exit 1; }
 	@# Helm 3 before 3.19 deletes only a failed hook, so a refused guard leaves the
 	@# RBAC hooks that ran before it. Every guard's are pre-delete hooks too, with
 	@# any values, so a clean uninstall clears whatever an earlier refusal left.
@@ -697,6 +705,13 @@ setup-envtest: envtest ## Download the binaries required for ENVTEST in the loca
 		echo "Error: Failed to set up envtest binaries for version $(ENVTEST_K8S_VERSION)."; \
 		exit 1; \
 	}
+
+# CI caches envtest's binaries by this, and its jobs then run make with
+# ENVTEST_INSTALLED_ONLY=1, which setup-envtest reads, so they use those
+# binaries without the network (.github/actions/setup-envtest).
+.PHONY: envtest-version
+envtest-version: ## Print the Kubernetes version envtest's binaries are for, and setup-envtest's release.
+	@echo "$(ENVTEST_K8S_VERSION)-$(ENVTEST_VERSION)"
 
 .PHONY: envtest
 envtest: $(ENVTEST) ## Download setup-envtest locally if necessary.

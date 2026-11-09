@@ -79,7 +79,7 @@ func TestPause_StopsWaitingForPodsThatDontStop(t *testing.T) {
 			if _, ok := tt.target.(*appsv1.StatefulSet); ok {
 				workload.Spec.Target.Kind = v1alpha1.TargetKindStatefulSet
 			}
-			pausedAt := metav1.NewTime(p.clock().Add(-tt.waited))
+			pausedAt := metav1.NewTime(p.clock().Add(-tt.waited - requeueLag))
 			workload.Status.Pause.PausedAt = &pausedAt
 
 			paused, err := p.Pause(context.Background(), workload)

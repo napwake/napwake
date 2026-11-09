@@ -31,7 +31,6 @@ import (
 	"github.com/spf13/cobra"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
-	"github.com/napwake/napwake/internal/cost"
 	"github.com/napwake/napwake/internal/discovery"
 	"github.com/napwake/napwake/internal/forecast"
 )
@@ -242,8 +241,6 @@ func replayCluster(ctx context.Context, run forecastRun, loc *time.Location, opt
 		namespaces:      opts.namespaces,
 		exclude:         opts.exclude,
 		cpuThreshold:    opts.cpuThreshold,
-		cpuPrice:        cost.DefaultRates.CPUPerHour,
-		memoryPrice:     cost.DefaultRates.MemoryPerHour,
 		idleAfter:       opts.idleAfter,
 		forecast:        &discovery.ForecastOptions{Confidence: run.mode.Threshold(), Location: loc},
 		historyOptional: run.historyOptional,

@@ -742,6 +742,7 @@ func TestPricesFor(t *testing.T) {
 		{name: "no prices given", wantCPU: 0.031, wantCPUAssumed: true, wantMemoryAssumed: true},
 		{name: "a CPU price", args: []string{"--cpu-price", "0.05"}, wantCPU: 0.05, wantMemoryAssumed: true},
 		{name: "a memory price", args: []string{"--memory-price", "0.006"}, wantCPU: 0.031, wantCPUAssumed: true},
+		{name: "a CPU price of nothing", args: []string{"--cpu-price", "0"}, wantMemoryAssumed: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

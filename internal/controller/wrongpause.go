@@ -114,10 +114,12 @@ func (r *Reconciler) pauseBegan(workload *v1alpha1.ManagedWorkload) time.Time {
 // warning says what to change. One that lasted the window held: the count
 // starts again. Anything else, such as the forecast waking it, says nothing
 // either way, nor does a pause someone asked for, which the idle clock
-// didn't decide, or a wake for awake dependents, whose use it was.
+// didn't decide, or a wake for awake dependents, whose use it was, or for
+// a dependent handed back.
 func (r *Reconciler) judgePause(ctx context.Context, workload *v1alpha1.ManagedWorkload, why *phaseEvent) func() {
 	pause := workload.Status.Pause
 	nothing := func() {}
+	handedBack := r.handBacks.take(workload.UID)
 	if pause == nil || why == nil || r.dryRun(workload) {
 		return nothing
 	}
@@ -140,6 +142,9 @@ func (r *Reconciler) judgePause(ctx context.Context, workload *v1alpha1.ManagedW
 		return nothing
 	}
 	if why.cause == v1alpha1.WokenByAnnotation {
+		if handedBack != "" && handedBack == workload.Annotations[v1alpha1.AnnotationLastActivity] {
+			return nothing
+		}
 		held, err := r.heldByDependentsNow(ctx, workload)
 		if err != nil {
 			log.FromContext(ctx).Info("couldn't read whether the workload's dependents woke it, so its pause "+
@@ -177,6 +182,44 @@ func (r *Reconciler) judgePause(ctx context.Context, workload *v1alpha1.ManagedW
 		opmetrics.WrongPauses.WithLabelValues(workload.Namespace, workload.Name).Inc()
 		r.emitEvent(workload, false, "Warning", ReasonPausedWhileInUse, actionEvaluateIdle, "%s", message)
 	}
+}
+
+// handBackDependencies wakes the dependencies of a workload Napwake lets
+// go of, which its hand-back scales up, and remembers each stamp as the
+// hand-back's. Its ManagedWorkload is gone, or going, by the time a
+// dependency wakes, so nothing holds the dependency then; but the wake is
+// for the workload handed back, not the dependency's own use.
+func (r *Reconciler) handBackDependencies(ctx context.Context, workload *v1alpha1.ManagedWorkload) {
+	for uid, stamp := range r.stampDependencies(ctx, workload, func(*workloadNode) bool { return true }) {
+		r.handBacks.stamped(uid, stamp)
+	}
+}
+
+// handBackStamps remembers the activity stamp each dependency last had from
+// a dependent's hand-back, by the dependency's UID, until its next wake is
+// judged. Only this operator holds it: a wake after a restart, or after
+// another operator took over, is judged as any other.
+type handBackStamps struct {
+	mu    sync.Mutex
+	byUID map[types.UID]string
+}
+
+func (h *handBackStamps) stamped(uid types.UID, stamp string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.byUID == nil {
+		h.byUID = make(map[types.UID]string)
+	}
+	h.byUID[uid] = stamp
+}
+
+// take forgets the workload's hand-back stamp, returning it, or "".
+func (h *handBackStamps) take(uid types.UID) string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	stamp := h.byUID[uid]
+	delete(h.byUID, uid)
+	return stamp
 }
 
 // wakeCauses say what undid a pause.
