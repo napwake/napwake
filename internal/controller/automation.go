@@ -670,6 +670,20 @@ func (r *Reconciler) awaitPodMetrics(workload *v1alpha1.ManagedWorkload, target 
 	return min(metricsRecheck, left), true
 }
 
+// restartPodMetricsGrace gives the pods a wake brings back the grace new
+// pods get, from now: the minutes the ones before the pause had waited for
+// their first metrics don't count against them. A problem already reported
+// stands, until metrics are read.
+func (r *Reconciler) restartPodMetricsGrace(workload *v1alpha1.ManagedWorkload) {
+	c := meta.FindStatusCondition(workload.Status.Conditions, conditionMetricsAvailable)
+	if c == nil || c.Status != metav1.ConditionUnknown {
+		return
+	}
+	awaiting := *c
+	meta.RemoveStatusCondition(&workload.Status.Conditions, conditionMetricsAvailable)
+	r.setCondition(workload, conditionMetricsAvailable, awaiting.Status, awaiting.Reason, awaiting.Message)
+}
+
 // restartCondition sets a condition whose LastTransitionTime says how long
 // it has held for its reason, not only its status: one that changes reason
 // is set afresh.
