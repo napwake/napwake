@@ -381,15 +381,7 @@ func (r *Reconciler) reconcileWake(ctx context.Context, workload *v1alpha1.Manag
 		why = &phaseEvent{reason: ReasonWakeRequested, message: wakeRequestedMessage,
 			cause: v1alpha1.WokenByWakeRequest}
 	case woken:
-		why = &phaseEvent{reason: ReasonWokeByActivity, message: "activity annotation is newer than the pause, waking",
-			cause: v1alpha1.WokenByAnnotation}
-		if wakeSource(workload) == v1alpha1.ActivitySourceRequest {
-			why.cause = requestCause(workload)
-			why.message = "a request is waiting, waking"
-			if why.cause == v1alpha1.WokenByClick {
-				why.message = "a person asked to wake it, waking"
-			}
-		}
+		why = r.annotatedWake(ctx, workload)
 	}
 	var queries pausedQueries
 	if why == nil {
@@ -423,6 +415,38 @@ func (r *Reconciler) reconcileWake(ctx context.Context, workload *v1alpha1.Manag
 	return r.handleResume(ctx, workload, &phaseEvent{reason: ReasonAutoResume, message: fmt.Sprintf(
 		"forecast expects %.0f%% utilization %s (threshold %s%%), waking ahead of demand", predicted, when,
 		v1alpha1.FormatCPUThreshold(threshold))})
+}
+
+// annotatedWake says what woke a paused workload whose activity annotations
+// changed, each with a reason of its own: a request the doorman held, or a
+// person's click on one that asks first, which the doorman stamps; a
+// dependent's wake, which stamps its dependencies; or anything else that
+// set an activity annotation. A dependent that woke holds it, as the API
+// server has it: the stamp can come before the cache has its wake.
+func (r *Reconciler) annotatedWake(ctx context.Context, workload *v1alpha1.ManagedWorkload) *phaseEvent {
+	if wakeSource(workload) == v1alpha1.ActivitySourceRequest {
+		if requestCause(workload) == v1alpha1.WokenByClick {
+			return &phaseEvent{reason: ReasonWokenByClick, message: "a person asked to wake it, waking",
+				cause: v1alpha1.WokenByClick}
+		}
+		return &phaseEvent{reason: ReasonWokenByRequest, message: "a request is waiting, waking",
+			cause: v1alpha1.WokenByRequest}
+	}
+	why := &phaseEvent{reason: ReasonWokeByActivity, message: "activity annotation is newer than the pause, waking",
+		cause: v1alpha1.WokenByAnnotation}
+	holders, err := r.heldByDependentsNow(ctx, workload)
+	if err != nil {
+		log.FromContext(ctx).Info("couldn't tell whether a dependent woke the workload", "workload", workload.Name,
+			"namespace", workload.Namespace, "error", err.Error())
+		return why
+	}
+	switch n := len(holders); {
+	case n == 1:
+		why.reason, why.message = ReasonWokenByDependent, "its dependent "+holders[0]+" woke, waking"
+	case n > 1:
+		why.reason, why.message = ReasonWokenByDependent, "its dependents "+listNames(holders)+" woke, waking"
+	}
+	return why
 }
 
 // requestCause is what a request the doorman stamped is: a person's click,

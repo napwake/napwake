@@ -37,7 +37,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 	opmetrics "github.com/napwake/napwake/internal/metrics"
 )
 
@@ -196,6 +195,10 @@ type Server struct {
 	healthCheckAgents []string
 	checkAPI          func(ctx context.Context) error
 
+	// listen opens a route's listener: net.Listen, but for tests, which
+	// hand over a port they hold so no other test can take it first.
+	listen func(network, address string) (net.Listener, error)
+
 	backends  *backends
 	admission *admission
 	apiReader client.Reader
@@ -204,8 +207,11 @@ type Server struct {
 	wakeKeySecret types.NamespacedName
 	awayFlush     time.Duration
 
-	mu     sync.Mutex
-	routes map[int32]route
+	mu sync.Mutex
+	// watched keeps every ManagedWorkload's routes from the informer's
+	// events, when there's an informer to tell.
+	watched *watchedRoutes
+	routes  map[int32]route
 	// drains are the routes that have left status, or been replaced, by
 	// port, kept until their drain ends whatever claims the port since.
 	drains    map[int32]route
@@ -217,7 +223,7 @@ type Server struct {
 	conns        map[net.Conn]struct{}
 	wakeCalls    map[types.NamespacedName]*wakeCall
 	stamped      map[types.NamespacedName]stampRecord
-	lastWarn     map[types.NamespacedName]time.Time
+	lastWarn     map[warnKey]time.Time
 	metered      map[types.NamespacedName]bool
 	away         map[types.NamespacedName]awayCount
 	closed       bool
@@ -259,6 +265,7 @@ func NewServer(c client.Client, recorder events.EventRecorder, opts Options) *Se
 
 		healthCheckAgents: healthCheckAgents(opts.HealthCheckAgents),
 		checkAPI:          opts.CheckAPI,
+		listen:            net.Listen,
 		admission:         newAdmission(defaultLimits),
 		routes:            map[int32]route{},
 		drains:            map[int32]route{},
@@ -268,7 +275,7 @@ func NewServer(c client.Client, recorder events.EventRecorder, opts Options) *Se
 		conns:             map[net.Conn]struct{}{},
 		wakeCalls:         map[types.NamespacedName]*wakeCall{},
 		stamped:           map[types.NamespacedName]stampRecord{},
-		lastWarn:          map[types.NamespacedName]time.Time{},
+		lastWarn:          map[warnKey]time.Time{},
 		metered:           map[types.NamespacedName]bool{},
 		away:              map[types.NamespacedName]awayCount{},
 	}
@@ -304,6 +311,13 @@ func (s *Server) Start(ctx context.Context) error {
 		}
 		defer stop()
 		poll = s.resyncEvery
+		// Without the watch, as before the CRD is in place, routes are
+		// read from a List at each sync instead.
+		if stopWorkloads, err := s.watchWorkloads(ctx); err != nil {
+			log.FromContext(ctx).WithName("doorman").Error(err, "watching managed workloads; listing them instead")
+		} else {
+			defer stopWorkloads()
+		}
 	}
 	syncTicker := time.NewTicker(RouteSyncInterval)
 	defer syncTicker.Stop()
@@ -490,43 +504,16 @@ func (s *Server) shutdown(cancelConns context.CancelFunc, grace time.Duration) {
 // or whose port goes to another Service, drains for RouteDrain, and until
 // it's over, it counts as one of the port's claims.
 func (s *Server) syncRoutes(ctx, connCtx context.Context) error {
-	var list v1alpha1.ManagedWorkloadList
-	if err := s.client.List(ctx, &list); err != nil {
-		return fmt.Errorf("listing managed workloads: %w", err)
+	claims, exists, err := s.workloadClaims(ctx)
+	if err != nil {
+		return err
 	}
 	now := s.now()
 	s.lastSync.Store(now.UnixNano())
 
-	claims := map[int32][]route{}
-	existing := make(map[types.NamespacedName]bool, len(list.Items))
-	for _, w := range list.Items {
-		existing[types.NamespacedName{Namespace: w.Namespace, Name: w.Name}] = true
-		maxWait := defaultMaxWait
-		if w.Spec.Wake != nil && w.Spec.Wake.MaxWait != nil && w.Spec.Wake.MaxWait.Duration > 0 {
-			maxWait = min(w.Spec.Wake.MaxWait.Duration, v1alpha1.WakeMaxWaitLimit)
-		}
-		page := w.Spec.Wake == nil || w.Spec.Wake.Page == nil || *w.Spec.Wake.Page
-		for _, r := range w.Status.Doorman {
-			claims[r.DoormanPort] = append(claims[r.DoormanPort], route{
-				workload: types.NamespacedName{Namespace: w.Namespace, Name: w.Name},
-				service:  r.Service,
-				portName: r.PortName,
-				maxWait:  maxWait,
-				page:     page,
-				asks:     w.Spec.Wake.Asks(),
-				uid:      w.UID,
-				began:    pauseBegan(&w),
-				pausedAt: pausedAt(&w),
-				waking:   isWaking(&w),
-				pausing:  w.Status.Phase == v1alpha1.PhasePausing,
-				awake:    awake(&w),
-			})
-		}
-	}
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.forgetDeleted(existing)
+	s.forgetDeleted(exists)
 	routes, conflicts := s.resolve(claims, now)
 	s.reportConflicts(ctx, conflicts)
 	s.routes = routes
@@ -604,7 +591,7 @@ func (s *Server) syncListeners(connCtx context.Context, now time.Time) error {
 		if _, ok := s.listeners[port]; ok {
 			continue
 		}
-		l, err := net.Listen("tcp", net.JoinHostPort(s.host, strconv.Itoa(int(port))))
+		l, err := s.listen("tcp", net.JoinHostPort(s.host, strconv.Itoa(int(port))))
 		if err != nil {
 			if _, ok := s.listenFailed[port]; !ok {
 				s.listenFailed[port] = now
@@ -622,25 +609,25 @@ func (s *Server) syncListeners(connCtx context.Context, now time.Time) error {
 // forgetDeleted drops the series of workloads that no longer exist, as the
 // operator drops its own, and what this replica remembers about them. s.mu
 // must be held.
-func (s *Server) forgetDeleted(existing map[types.NamespacedName]bool) {
+func (s *Server) forgetDeleted(exists func(types.NamespacedName) bool) {
 	for w := range s.metered {
-		if !existing[w] {
+		if !exists(w) {
 			opmetrics.DeleteWorkload(w.Namespace, w.Name)
 			delete(s.metered, w)
 		}
 	}
 	for w := range s.stamped {
-		if !existing[w] {
+		if !exists(w) {
 			delete(s.stamped, w)
 		}
 	}
-	for w := range s.lastWarn {
-		if !existing[w] {
-			delete(s.lastWarn, w)
+	for k := range s.lastWarn {
+		if !exists(k.workload) {
+			delete(s.lastWarn, k)
 		}
 	}
 	for w := range s.away {
-		if !existing[w] {
+		if !exists(w) {
 			delete(s.away, w)
 		}
 	}

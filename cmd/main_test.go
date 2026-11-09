@@ -515,9 +515,9 @@ func TestLeaderElectionHandsOverOnStop(t *testing.T) {
 	}
 }
 
-func startEnvtest(t *testing.T) *rest.Config {
+func startEnvtest(t *testing.T, crds ...string) *rest.Config {
 	t.Helper()
-	env := &envtest.Environment{}
+	env := &envtest.Environment{CRDDirectoryPaths: crds, ErrorIfCRDPathMissing: len(crds) > 0}
 	if os.Getenv("KUBEBUILDER_ASSETS") == "" {
 		dirs, _ := filepath.Glob(filepath.Join("..", "bin", "k8s", "*"))
 		if len(dirs) > 0 {
@@ -601,6 +601,58 @@ func TestDoormanCacheHoldsOnlyTrustedSlicesTrimmed(t *testing.T) {
 	assert.Equal(t, []string{"10.244.1.9"}, got.Endpoints[0].Addresses)
 	assert.Equal(t, "Pod", got.Endpoints[0].TargetRef.Kind)
 	assert.Nil(t, got.Endpoints[0].NodeName, "what the doorman doesn't read isn't kept")
+	assert.Empty(t, got.ManagedFields)
+}
+
+// The doorman caches ManagedWorkloads cut down to what it reads, without
+// the forecast's state, the costs and the conditions that are most of
+// their size.
+func TestDoormanCacheHoldsManagedWorkloadsTrimmed(t *testing.T) {
+	cfg := startEnvtest(t, filepath.Join("..", "config", "crd", "bases"))
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	direct, err := client.New(cfg, client.Options{Scheme: scheme})
+	require.NoError(t, err)
+	require.NoError(t, direct.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "shop"}}))
+	w := &v1alpha1.ManagedWorkload{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "web",
+			Annotations: map[string]string{v1alpha1.AnnotationLastRequest: "2026-11-08T09:00:00Z"}},
+		Spec: v1alpha1.ManagedWorkloadSpec{Target: v1alpha1.WorkloadRef{Kind: v1alpha1.TargetKindDeployment, Name: "web"}},
+	}
+	require.NoError(t, direct.Create(ctx, w))
+	routed := metav1.Condition{Type: "WakeOnRequest", Status: metav1.ConditionTrue, Reason: "DoormanRouted",
+		Message: "routed", LastTransitionTime: metav1.Now()}
+	w.Status = v1alpha1.ManagedWorkloadStatus{
+		Phase:      v1alpha1.PhasePaused,
+		Conditions: []metav1.Condition{routed},
+		Prediction: &v1alpha1.PredictionStatus{DailyPhase: "Active", WeeklyPhase: "Suggesting", State: "{}"},
+		Doorman:    []v1alpha1.DoormanRoute{{Service: "web", PortName: "http", DoormanPort: 20417}},
+	}
+	require.NoError(t, direct.Status().Update(ctx, w))
+
+	opts := doormanCacheOptions(nil)
+	opts.Scheme = scheme
+	c, err := cache.New(cfg, opts)
+	require.NoError(t, err)
+	cacheCtx, stop := context.WithCancel(ctx)
+	done := make(chan error, 1)
+	go func() { done <- c.Start(cacheCtx) }()
+	defer func() {
+		stop()
+		assert.NoError(t, <-done)
+	}()
+
+	var list v1alpha1.ManagedWorkloadList
+	require.Eventually(t, func() bool {
+		return c.List(ctx, &list, client.InNamespace("shop")) == nil && len(list.Items) == 1
+	}, 30*time.Second, 100*time.Millisecond)
+	got := list.Items[0]
+	assert.Equal(t, w.Status.Doorman, got.Status.Doorman, "its routes are kept")
+	assert.Equal(t, "2026-11-08T09:00:00Z", got.Annotations[v1alpha1.AnnotationLastRequest])
+	assert.Nil(t, got.Status.Prediction, "the forecast's state isn't kept")
+	assert.Empty(t, got.Status.Conditions)
+	assert.Empty(t, got.Spec.Target.Name)
 	assert.Empty(t, got.ManagedFields)
 }
 

@@ -75,7 +75,7 @@ func TestSimulatorMatchesTheReconciler(t *testing.T) {
 			require.NoError(t, err)
 			simulated := make([]lifecycleEvent, 0, len(r.Wakes)+len(r.EarlyPauses)+len(r.Pauses))
 			for _, w := range r.Wakes {
-				reason := ReasonWokeByActivity
+				reason := ReasonWokenByRequest
 				if w.Cause == sim.WokenByForecast {
 					reason = ReasonAutoResume
 				}

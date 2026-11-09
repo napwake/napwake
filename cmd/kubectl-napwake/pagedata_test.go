@@ -362,6 +362,21 @@ func TestStatusPage_DoormanWhateverTheEventSays(t *testing.T) {
 	pageHas(t, got, `<p class="bldg-say">The doorman holds the door while deployment/web wakes.</p>`)
 }
 
+// A person's click is through the doorman too, its waking-up page.
+func TestStatusPage_DoormanForAClick(t *testing.T) {
+	web := statusWorkloadObj("preview-7", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhaseResuming,
+		30*time.Second)
+	objs := []client.Object{web,
+		statusEvent("preview-7", "web", "Paused", "web: paused", 2*time.Hour),
+		statusEvent("preview-7", "web", "WakeAsked", "a person asked on Service web, waking", 41*time.Second),
+		statusEvent("preview-7", "web", "WokenByClick", "web: a person asked to wake it, waking", 40*time.Second),
+	}
+
+	got := renderStatusPageData(t, statusPageOf(t, objs...))
+
+	pageHas(t, got, `<p class="bldg-say">The doorman holds the door while deployment/web wakes.</p>`)
+}
+
 // A namespace shows what came off the bill under what pausing freed in it,
 // whenever it freed anything, whatever the amount reads.
 func TestReportPage_NamespaceSavedWhateverTheAmountReads(t *testing.T) {

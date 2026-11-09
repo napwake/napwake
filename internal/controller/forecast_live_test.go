@@ -145,7 +145,7 @@ func liveDataPoints(t *testing.T, created time.Time, loc *time.Location, policy 
 		}
 		fr.now = next
 	}
-	return saved, countEvents(recorder, ReasonWokeByActivity)
+	return saved, countEvents(recorder, ReasonWokenByRequest)
 }
 
 // savedDataPoints is how many hours the forecast saved in the workload's
