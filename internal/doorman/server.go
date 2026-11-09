@@ -188,10 +188,6 @@ type Server struct {
 	resyncEvery time.Duration
 	silent      time.Duration
 
-	proxyIdle       time.Duration
-	drainedLifetime time.Duration
-	proxyCheck      time.Duration
-
 	healthCheckAgents []string
 	checkAPI          func(ctx context.Context) error
 
@@ -225,8 +221,11 @@ type Server struct {
 	stamped      map[types.NamespacedName]stampRecord
 	lastWarn     map[warnKey]time.Time
 	metered      map[types.NamespacedName]bool
-	away         map[types.NamespacedName]awayCount
-	closed       bool
+	// proxied counts the connections proxied for each route, for
+	// napwake_doorman_proxied_connections_by_route.
+	proxied map[routeKey]int
+	away    map[types.NamespacedName]awayCount
+	closed  bool
 
 	accepting sync.WaitGroup
 	handling  sync.WaitGroup
@@ -258,10 +257,7 @@ func NewServer(c client.Client, recorder events.EventRecorder, opts Options) *Se
 		wakeKeySecret: opts.WakeKeySecret,
 		awayFlush:     turnedAwayFlush,
 
-		resyncEvery:     backendResyncInterval,
-		proxyIdle:       proxyIdleTimeout,
-		drainedLifetime: drainedProxyLifetime,
-		proxyCheck:      proxyCheckInterval,
+		resyncEvery: backendResyncInterval,
 
 		healthCheckAgents: healthCheckAgents(opts.HealthCheckAgents),
 		checkAPI:          opts.CheckAPI,
@@ -277,6 +273,7 @@ func NewServer(c client.Client, recorder events.EventRecorder, opts Options) *Se
 		stamped:           map[types.NamespacedName]stampRecord{},
 		lastWarn:          map[warnKey]time.Time{},
 		metered:           map[types.NamespacedName]bool{},
+		proxied:           map[routeKey]int{},
 		away:              map[types.NamespacedName]awayCount{},
 	}
 }

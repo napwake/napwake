@@ -235,6 +235,16 @@ var (
 		Help: "Connections the doorman has passed to a woken workload and is still carrying.",
 	})
 
+	// DoormanRouteProxiedConnections is DoormanProxiedConnections by the
+	// route each came on: the workload, and its Service and port. The doorman
+	// keeps a connection until an end closes it, so this shows one a client
+	// keeps for long, such as a database pool's. A route's series goes once
+	// it carries none.
+	DoormanRouteProxiedConnections = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "napwake_doorman_proxied_connections_by_route",
+		Help: "Connections the doorman has passed to a woken workload and is still carrying, by the route they came on.",
+	}, []string{"namespace", "workload", "service", "port"})
+
 	DoormanPortConflicts = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "napwake_doorman_port_conflicts",
 		Help: "Doorman ports claimed by more than one route, which the doorman refuses to serve.",
@@ -287,6 +297,7 @@ func init() {
 		DoormanWaitSeconds,
 		DoormanHeldConnections,
 		DoormanProxiedConnections,
+		DoormanRouteProxiedConnections,
 		DoormanPortConflicts,
 		DoormanListenFailures,
 	)

@@ -26,9 +26,9 @@ import (
 	"net/http"
 	"net/netip"
 	"sync"
-	"sync/atomic"
 	"time"
 
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
@@ -68,20 +68,6 @@ const (
 	// proxyBufferSize is what each direction of a proxied connection copies
 	// through, for the same reason.
 	proxyBufferSize = 8 << 10
-
-	// proxyIdleTimeout closes a proxied connection that has carried nothing
-	// either way for this long. One whose client or server pings, as
-	// websockets and database pools do, stays open; one whose caller
-	// vanished without closing it doesn't hold its place for ever.
-	proxyIdleTimeout = 10 * time.Minute
-
-	// drainedProxyLifetime is how long a proxied connection lasts once its
-	// route is draining. The workload is awake by then and its Service
-	// sends new connections to its pods directly, so closing it moves a
-	// long-lived caller there.
-	drainedProxyLifetime = 5 * time.Minute
-
-	proxyCheckInterval = 30 * time.Second
 )
 
 // The results a connection the doorman accepted ends with, as counted by
@@ -155,7 +141,36 @@ func (s *Server) handle(ctx context.Context, port int32, rt route, conn net.Conn
 	defer opmetrics.DoormanProxiedConnections.Dec()
 	s.track(upstream)
 	defer s.forget(upstream)
-	s.proxy(port, rt, conn, fromCaller, upstream)
+	defer s.proxying(rt)()
+	s.proxy(conn, fromCaller, upstream)
+}
+
+// routeKey is a route's place: its workload, Service and port.
+type routeKey struct {
+	workload types.NamespacedName
+	service  string
+	portName string
+}
+
+// proxying counts a connection proxied for rt until the function it returns
+// is called, in napwake_doorman_proxied_connections_by_route.
+func (s *Server) proxying(rt route) func() {
+	key := routeKey{workload: rt.workload, service: rt.service, portName: rt.portName}
+	labels := []string{rt.workload.Namespace, rt.workload.Name, rt.service, rt.portName}
+	s.mu.Lock()
+	s.proxied[key]++
+	opmetrics.DoormanRouteProxiedConnections.WithLabelValues(labels...).Set(float64(s.proxied[key]))
+	s.mu.Unlock()
+	return func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.proxied[key]--; s.proxied[key] > 0 {
+			opmetrics.DoormanRouteProxiedConnections.WithLabelValues(labels...).Set(float64(s.proxied[key]))
+			return
+		}
+		delete(s.proxied, key)
+		opmetrics.DoormanRouteProxiedConnections.DeleteLabelValues(labels...)
+	}
 }
 
 func (s *Server) record(rt route, result string, waited time.Duration) {
@@ -565,80 +580,36 @@ func remoteAddr(conn net.Conn) netip.Addr {
 	return netip.Addr{}
 }
 
-// proxy copies in both directions until both sides are done, or until
-// closeIdle ends the connection. Closing the write half on EOF lets the
-// other direction finish its response.
-func (s *Server) proxy(port int32, accepted route, downstream net.Conn, fromDownstream io.Reader, upstream net.Conn) {
-	var active atomic.Int64
-	active.Store(s.now().UnixNano())
+// proxy copies in both directions until both sides are done. Closing the
+// write half on EOF lets the other direction finish its response.
+//
+// A connection is kept until one end closes it, however long its route has
+// drained or it has been quiet, and the doorman sets no limit of its own: a
+// connection made while the workload woke, such as a database pool's, is
+// one its client means to keep, and closing it fails the client's next use
+// of it, which a pool, such as PostgREST's, answers with a 503 (P86). A
+// pool's own maximum lifetime moves it to the pods in time. An end that
+// vanishes without closing is found by TCP keep-alive, which Go turns on
+// for the connections the doorman accepts and dials, and a stopping doorman
+// closes what it still carries at the end of its grace period.
+func (s *Server) proxy(downstream net.Conn, fromDownstream io.Reader, upstream net.Conn) {
 	var copies sync.WaitGroup
 	copies.Go(func() {
-		s.copyActive(upstream, fromDownstream, &active)
+		copyThrough(upstream, fromDownstream)
 		closeWrite(upstream)
 	})
 	copies.Go(func() {
-		s.copyActive(downstream, upstream, &active)
+		copyThrough(downstream, upstream)
 		closeWrite(downstream)
 	})
-
-	done := make(chan struct{})
-	var watch sync.WaitGroup
-	watch.Go(func() { s.closeIdle(done, port, accepted, &active, downstream, upstream) })
 	copies.Wait()
-	close(done)
-	watch.Wait()
 }
 
-// copyActive copies src to dst through a buffer of proxyBufferSize,
-// noting when bytes last moved. Hiding the connections' ReadFrom and
-// WriteTo keeps io from allocating its own, larger buffer.
-func (s *Server) copyActive(dst io.Writer, src io.Reader, active *atomic.Int64) {
-	w := activityWriter{w: dst, active: active, now: s.now}
-	_, _ = io.CopyBuffer(w, struct{ io.Reader }{src}, make([]byte, proxyBufferSize)) // an error just ends this direction
-}
-
-type activityWriter struct {
-	w      io.Writer
-	active *atomic.Int64
-	now    func() time.Time
-}
-
-func (a activityWriter) Write(p []byte) (int, error) {
-	n, err := a.w.Write(p)
-	if n > 0 {
-		a.active.Store(a.now().UnixNano())
-	}
-	return n, err
-}
-
-// closeIdle closes a proxied connection that has been idle for proxyIdle,
-// or has outlived its route's drain by drainedLifetime, until done.
-func (s *Server) closeIdle(done <-chan struct{}, port int32, accepted route, active *atomic.Int64, conns ...net.Conn) {
-	ticker := time.NewTicker(s.proxyCheck)
-	defer ticker.Stop()
-	var drainingSince time.Time
-	if accepted.draining() {
-		drainingSince = s.now()
-	}
-	for {
-		select {
-		case <-done:
-			return
-		case <-ticker.C:
-		}
-		now := s.now()
-		if drainingSince.IsZero() && s.currentRoute(port, accepted).draining() {
-			drainingSince = now
-		}
-		idle := now.Sub(time.Unix(0, active.Load())) >= s.proxyIdle
-		drained := !drainingSince.IsZero() && now.Sub(drainingSince) >= s.drainedLifetime
-		if idle || drained {
-			for _, c := range conns {
-				_ = c.Close() // ends both copies; the caller sees the connection drop
-			}
-			return
-		}
-	}
+// copyThrough copies src to dst through a buffer of proxyBufferSize.
+// Hiding the connections' ReadFrom and WriteTo keeps io from allocating its
+// own, larger buffer.
+func copyThrough(dst io.Writer, src io.Reader) {
+	_, _ = io.CopyBuffer(struct{ io.Writer }{dst}, struct{ io.Reader }{src}, make([]byte, proxyBufferSize)) // an error just ends this direction
 }
 
 func closeWrite(conn net.Conn) {

@@ -82,6 +82,7 @@ Served by the doorman pods, on the same port and path as the operator's.
 | <Ref id="napwake_doorman_wait_seconds">napwake_doorman_wait_seconds</Ref> | Histogram | `result` | How long the doorman held a connection before passing it through or closing it, for each connection `napwake_doorman_wakes_total` counts |
 | <Ref id="napwake_doorman_held_connections">napwake_doorman_held_connections</Ref> | Gauge | | Connections held right now, waiting for their workload to wake |
 | <Ref id="napwake_doorman_proxied_connections">napwake_doorman_proxied_connections</Ref> | Gauge | | Connections passed to a woken workload and still being carried |
+| <Ref id="napwake_doorman_proxied_connections_by_route">napwake_doorman_proxied_connections_by_route</Ref> | Gauge | `namespace`, `workload`, `service`, `port` | The same, by the workload's Service and port they came on. The doorman [keeps them](/concepts/wake-on-request/#connections-made-as-it-wakes) until an end closes them, so this shows one a client keeps for long, such as a database pool's. A route's series goes once it carries none |
 | <Ref id="napwake_doorman_port_conflicts">napwake_doorman_port_conflicts</Ref> | Gauge | | Doorman ports claimed by more than one route, which the doorman refuses to serve. Should be 0 |
 | <Ref id="napwake_doorman_listen_failures">napwake_doorman_listen_failures</Ref> | Gauge | | Routed doorman ports this pod can't listen on, which refuse every connection. Should be 0. A pod that can't listen on one for 30 seconds reports itself not Ready |
 
