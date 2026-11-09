@@ -114,6 +114,7 @@ The queue worker is woken by a Prometheus activity query instead. The public pre
 | Workload | `eager` (60) | `balanced` (75) | `cautious` (85) |
 |----------|--------------|-----------------|-----------------|
 | Busy on weekdays from 09:10 to 17:30, quiet nights and weekends | 8 / 14 | 8 / 14 | 8 / 14 |
+| The same, taken on before the operator had a Prometheus URL, which is set on its third day ([Learning from history](#learning-from-history)) | 3 / 3 | 3 / 3 | 3 / 3 |
 | The same, with people arriving and leaving up to 20 minutes either side and away one weekday in ten (the median of 20) | 8 / 14 | 8 / 14 | 8 / 14 |
 | The same, with people arriving and leaving up to an hour either side and away one weekday in four (the median of 20) | 8 / 29 | 9 / never | 10 / never |
 | The same hours every day, weekends included | 8 / 14 | 8 / 14 | 8 / 14 |
@@ -131,7 +132,7 @@ A test in the repo runs these, and fails if they drift from this table.
 | One it can't get right every day, as in the third row | A higher threshold waits for more evidence |
 | Always busy, or always idle | Acting changes nothing. One is never paused, and the other never woken or held awake by its forecast of no demand |
 | Any, before the forecast acts | Idle detection and wake on request work from the first hour. The first request of the morning wakes the workload, or with `ask` the first click |
-| Any, with Prometheus history | The forecast [learns from its history](#learning-from-history) first, so a few weeks of a steady pattern acts from the first day |
+| Any, with Prometheus history | The forecast [learns from its history](#learning-from-history) first, so a few weeks of a steady pattern acts from the first day. With a URL set within a week of Napwake taking the workload on, it acts from the day it's set |
 
 ## When it acts
 
@@ -273,6 +274,8 @@ Then it carries on live. A steady pattern acts from the first day. An irregular 
 | When it fails | The operator asks for one workload at a time, and waits up to 30 seconds. A failing query is tried twice more, two minutes apart, before the forecast learns live only |
 | A reconcile | Never held up. The forecast learns live meanwhile, and takes up what was learned once it's ready |
 | How often | Once per ManagedWorkload, when it's new. One that has learned live keeps what it learned. Deleting and creating it again starts it afresh, from history again |
+| A URL set after Napwake took the workload on | Within a week of take-on, the ManagedWorkload's creation, the operator reads the four weeks before the hour it was taken on in. The forecast learns them, then every hour it has learned live since, in order, requests included. It's as if it had started from them. Later than a week, it carries on live. By then it acts on what the history would have taught it |
+| The hours after take-on | Never read. Prometheus holds the hours Napwake paused the workload in, which read as quiet. Learned, they'd teach the forecast its own pauses |
 
 | What history can't tell | What it assumes |
 |-------------------------|-----------------|
@@ -285,11 +288,11 @@ Then it carries on live. A steady pattern acts from the first day. An irregular 
 
 | `history.reason` | Event | Meaning |
 |------------------|-------|---------|
-| `Learned` | `ForecastLearnedHistory` | Learned `hours` of history, `from` and `to`. The message says how much, such as `the forecast learned from 4 weeks of the workload's CPU history in Prometheus` |
+| `Learned` | `ForecastLearnedHistory` | Learned `hours` of history, `from` and `to`. The message says how much, such as `the forecast learned from 4 weeks of the workload's CPU history in Prometheus`. For a URL set after take-on, it adds `from before Napwake took it on, beneath the 72 hours it had learned live since` |
 | `NoHistory` | `ForecastLearningLive` | Prometheus has no CPU for its pods, as for a workload deployed with it. The forecast learns from now |
 | `NoCPURequests` | `ForecastHistoryUnavailable` (warning) | Its containers request no CPU, so there's nothing to measure its use against |
 | `QueryFailed` | `ForecastHistoryUnavailable` (warning) | Prometheus didn't answer three times. The message has its error |
-| `NoPrometheusURL` | none | The operator has no Prometheus URL, so the forecast learns live from the start |
+| `NoPrometheusURL` | none | The operator had no Prometheus URL when it took the workload on, so the forecast learned live from the start. With a URL set within a week of that, the history is learned then, and the reason becomes one of the above. Set later, the message says it came too late. If what was learned live can't be learned again on top of the history, it says why, with a `ForecastHistoryUnavailable` warning |
 
 [`kubectl napwake forecast`](/getting-started/kubectl-plugin/#replay-the-forecast) shows what the forecast would make of your workloads' history before you opt them in.
 
@@ -304,9 +307,10 @@ Each hour is fed in once it's over, as the busiest moment seen in it. It's recor
 | While the workload is | The hour records |
 |-----------------------|------------------|
 | Awake | The highest utilisation, from CPU read every minute. The first 15 minutes after a wake aren't counted, whatever woke it, `kubectl scale` included. After that, an hour the [activity clock](/concepts/idle-detection/#what-counts-as-activity) sees it in use counts as at least twice `cpuThreshold`. That's use from CPU above `cpuThreshold`, an activity annotation or a Prometheus query |
+| Awake, and held by [dependents](/concepts/dependencies/) | As above, and a dependent holding it that its own clock sees in use counts as its use too, at least twice `cpuThreshold`. So does a dependent of that dependent, and on up the chain. Each dependent's first 15 minutes after its own wake don't count. While dependents hold it, an activity annotation on it isn't its own use. Each dependent's wake stamps one |
 | Awake, and the forecast holds its pause off, behind the doorman with `wake.mode: Request` and no Prometheus activity query | Nothing, for 7 days after a request undid a [wrong pause](/concepts/idle-detection/#paused-while-in-use). Its requests show its use, and nothing sees them while it's held awake. Its CPU, under `cpuThreshold`, would teach the forecast the hour is quiet. An hour already busy before the hold, such as one a request woke it in, records as usual. After those 7 days, or once a wrong pause has another cause, the hour records its CPU, as above. Not in dry-run |
-| Pausing, and a request through the doorman calls the pause off, with `wake.mode: Request` | At least twice `cpuThreshold`, as a request that wakes it from zero. Its pods never stopped, so the first 15 minutes after the wake would hide it otherwise. A wake request, an activity annotation or, with `Ask`, a click that calls a pause off isn't counted itself. The hour records what the workload uses after those 15 minutes |
-| Paused behind the [doorman](/concepts/wake-on-request/) (`WakeOnRequest=True`), with `wake.mode: Request` | No demand, while a check finds it still paused, since a request would have woken it. A request that wakes it counts as at least twice `cpuThreshold`, however little it then uses. So do a [wake request](/guides/pause/#wake-now) and an activity annotation. That holds while its Prometheus activity queries can't be evaluated. The hour is busy if a request woke it or a query found activity, and quiet otherwise |
+| Pausing, and what would wake it calls the pause off | At least twice `cpuThreshold`, as when the same wakes it from zero. That's a request through the doorman, with `Ask` a click, a wake request or an activity annotation. Its pods never stopped, so the first 15 minutes after the wake would hide it otherwise. A dependent's wake isn't counted itself, as from zero. Nor are awake dependents that call the pause off just before the scale-down. The hour records what the workload uses after those 15 minutes, its dependents' use included |
+| Paused behind the [doorman](/concepts/wake-on-request/) (`WakeOnRequest=True`), with `wake.mode: Request` | No demand, while a check finds it still paused, since a request would have woken it. A request that wakes it counts as at least twice `cpuThreshold`, however little it then uses. So do a [wake request](/guides/pause/#wake-now) and an activity annotation. The annotation a dependent's wake stamps doesn't count. The dependent's use does, once it's awake. That holds while its Prometheus activity queries can't be evaluated. The hour is busy if a request woke it or a query found activity, and quiet otherwise |
 | Paused behind the doorman, with [`wake.mode: Ask`](/concepts/wake-on-request/#asking-before-waking) | No demand, while a check finds it still paused, since someone who needed it would have woken it. A person's wake counts as at least twice `cpuThreshold`. That's a click on **Wake it**, a wake request or an activity annotation. So does a query finding activity |
 | With `Ask`, while the doorman doesn't route it, or its queries can't be evaluated | Demand is seen only if someone woke it, so the hour isn't learned. Nobody can click then, and the doorman sees only people. So an outage of the doorman or of Prometheus can't teach it quiet hours |
 | With `Ask`, and no Service to route, such as a queue worker | It learns from its queries while they can be evaluated, as with `Request` |
@@ -331,13 +335,15 @@ A workload whose use stays under `cpuThreshold`, with no other source, is idle t
 | The first 15 minutes after a wake don't count | Starting up isn't demand. Counted, a wake ahead of a busy hour would teach the forecast that the hour before is busy too. It would wake the workload earlier every week |
 | An hour in use counts as at least twice `cpuThreshold` | A light-use workload's use may show only in an annotation or a query. Without the floor, it would learn light use on mornings `autoResume` had it ready. On mornings people woke it, it would learn a request's twice `cpuThreshold`. The forecast would then have it ready only every other morning |
 | A waking request counts as twice `cpuThreshold` | So the hour people arrive in is learned as busy. A wake request, an activity annotation and a click count the same |
-| A request that calls a pause off counts as one that wakes it | Its pods never stopped, so the 15 minutes after the wake would hide it. A workload whose use shows only in requests, its CPU under `cpuThreshold`, would learn those hours from its CPU. The forecast would never hold its pauses off in them |
+| A dependent in use is its dependencies' use | A dependency's own CPU may stay under `cpuThreshold` while it serves its dependent. On mornings a request woke them, it learned the request's twice `cpuThreshold`. On mornings the forecast woke them ahead, it learned its CPU. Judged against both, its forecast stopped acting. On a test cluster, 9 of a shop's 11 did, the first morning woken ahead |
+| A dependent's wake isn't its dependencies' demand | `autoResume` wakes a dependent ahead of people, and its wake stamps its dependencies. Counted, the hour before people's would be learned as busy. The dependency's forecast would then wake it an hour early every day. A dependent's use, once it's awake, is what counts |
+| What calls a pause off counts as it would waking the workload | Its pods never stopped, so the 15 minutes after the wake would hide it. A workload whose use shows only in what undoes its pauses, its CPU under `cpuThreshold`, would learn those hours from its CPU. The forecast would never hold its pauses off in them |
 | An hour the forecast holds isn't learned, for 7 days after a request undid a pause | Nothing sees the requests while the workload is held awake. Learned from its CPU, the hour would be far quieter than forecast. Two or three such hours in a day, and the forecast stops acting, for wrong pauses to teach it the hours again. The 7 days end the holds in the old hours of a workload no longer used. Hours a workload drops while it keeps others can be held for weeks, as wrong pauses in the hours it keeps restart the 7 days |
 | An hour busy before the forecast holds it records as usual | So a load that starts an hour earlier is learned. Unseen, its first hour would be held and dropped, and `autoResume` would never wake it ahead. Use seen after the hold in the same hour, such as CPU above `cpuThreshold`, is dropped with it. The forecast held the hour expecting it busy, so that costs nothing |
 | With `ask`, a paused hour behind the doorman nobody woke it in is quiet | Only people wake it then. Someone who needed it would have clicked or asked |
 | Only where people could have woken it | So an outage can't teach the forecast quiet hours |
 | A query watches a paused workload | That's how a workload no Service routes requests to, such as a queue worker, learns its nights. It uses a query of its queue's length |
-| The hour under way is kept in memory | After an operator restart or a leader change, that hour is skipped, unless it was only minutes old. It isn't recorded from the part seen after |
+| The hour under way is written with status | After an operator restart or a leader change within minutes, it goes on from what was written. After a longer gap within it, it's skipped, since its busiest minutes may have gone unseen. It isn't recorded from the part seen after. Kept in memory alone, an operator restarted at the same time each day lost the same hour of the day every time, and its forecasts never acted |
 
 </details>
 
@@ -468,7 +474,10 @@ The learned state lives in the ManagedWorkload's status, in `status.prediction.s
 | Case | What happens |
 |---|---|
 | What it holds | The model's components, the scored errors, the anomaly statistics, and the weekly changes held for the next day. Whether the forecast doubts the hour under way. The last hour observed, and the demand last seen in each hour of the week, which [`startsActing`](#when-it-acts) is projected from |
-| Operator restarts and leader changes | The engine survives them. An hour observed before a restart isn't observed twice, and the hour under way at a restart is skipped. Restarted daily, at a different hour each day, the operator loses those hours and nothing else. The forecast acts within hours of when it would have |
+| Operator restarts and leader changes | The engine survives them. An hour observed before a restart isn't observed twice |
+| The hour under way at a restart | It goes on from `status.prediction.hour`, what the operator last wrote of it. That's written at least every 5 minutes. If the new operator's first look comes more than 7 minutes after the last look written, the hour is skipped. One that ended meanwhile is learned if its looks were written to within 7 minutes of its end |
+| Restarted daily, back within 2 minutes | Nothing is lost, at the same time each day or not. The forecast acts when it would have |
+| Down 10 minutes daily | It loses the hour each restart lands in, and nothing else. At a different hour each day, the forecast acts within hours of when it would have. At the same hour each day, it never sees that hour of the day whole, and stays `Observing` |
 | A last observed hour more than an hour ahead of the operator's clock | Not trusted, since a wrong clock recorded it. The next hour is observed as usual, rather than refused until real time catches up |
 | State from an older version, after an upgrade | Discarded with a normal `ForecastReset` event, not a warning. With a Prometheus URL, the forecast learns again from the workload's [CPU history](#learning-from-history), as a new workload's does. Without one, the engine starts learning again |
 | State that can't be read otherwise, such as after a hand edit | Discarded with a `ForecastReset` warning event. The engine starts learning again |

@@ -32,15 +32,22 @@ timezone: UTC
 # StatefulSets, Services, Ingresses, PVCs, HPAs, nodes and namespaces, or only the
 # watched namespaces', the EndpointSlices it writes and the doorman's, and,
 # watching every namespace, what each pod bound to a node requests,
-# measured at about 2.7 KB a pod, so its memory grows with the cluster.
-# Raise the limit on clusters with many thousands of workloads. The garbage
-# collector aims at 90% of the limit, leaving the rest for memory outside
-# its heap, and works harder near it rather than letting the operator be
-# OOM-killed.
+# measured at about 2.3 KB a pod. Of each Deployment and StatefulSet it
+# keeps only what it reads of the pod template, about 9.6 KB for a chart's
+# with a service mesh. So its memory grows with the cluster, managed or
+# not. Running, at its peak resident memory, it measured 139Mi with 1,000
+# ManagedWorkloads, each with weeks of forecasts, a Deployment, a pod and a
+# Service, and 790Mi with 10,000, or 954Mi with 100,000 pods behind 10,000
+# Deployments, 1,000 of them managed. 1280Mi covers either with a fifth to
+# spare. Raise the limit beyond, by about 75Mi for each 1,000 more such
+# workloads, or 90Mi for each 1,000 more Deployments of 10 pods. The
+# garbage collector aims at 90% of the limit, leaving the rest for memory
+# outside its heap, and works harder near it rather than letting the
+# operator be OOM-killed.
 resources:
   limits:
     cpu: 500m
-    memory: 512Mi
+    memory: 1280Mi
   requests:
     cpu: 10m
     memory: 128Mi
@@ -263,7 +270,9 @@ guard:
   # later runs it as a PreDelete hook, blocking the Application's deletion.
   uninstall: true
   # Refuses helm upgrade or rollback to a watchNamespaces that leaves out a
-  # namespace where the operator manages workloads. Argo CD runs it as a
+  # namespace where the operator manages workloads. helm upgrade refuses
+  # first as it renders the chart, so Helm records no revision, and
+  # --no-hooks doesn't skip that; false does. Argo CD runs the hook as a
   # PreSync hook, before every sync.
   upgrade: true
   # Empty uses the operator's settings above. Istio's and Linkerd's sidecar

@@ -62,6 +62,13 @@ func withoutVolatile(status *v1alpha1.ManagedWorkloadStatus) *v1alpha1.ManagedWo
 			ForecastBusyFrom: a.ForecastBusyFrom,
 		}
 	}
+	// The hour under way changes with every look. Written with the rest, it
+	// lets a restarted operator go on with it; only a look that couldn't see
+	// demand is written at once, so a restart can't forget the hour is
+	// blind.
+	if p := s.Prediction; p != nil && p.Hour != nil {
+		p.Hour = &v1alpha1.PredictionHour{Blind: p.Hour.Blind}
+	}
 	return s
 }
 

@@ -19,6 +19,7 @@ package controller
 import (
 	"slices"
 	"sync"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -28,9 +29,10 @@ import (
 )
 
 // workloadNode is what the dependency graph keeps of a ManagedWorkload:
-// only what holding, waking and waiting on dependencies read. A node is
-// replaced, never changed, so one read under the graph's lock stays
-// consistent after it's released.
+// only what holding, waking and waiting on dependencies read, and what a
+// dependency's forecast reads of its dependents' use. A node is replaced,
+// never changed, so one read under the graph's lock stays consistent after
+// it's released.
 type workloadNode struct {
 	key     types.NamespacedName
 	uid     types.UID
@@ -51,6 +53,11 @@ type workloadNode struct {
 	waitsFor  []workloadID
 	// dependencies are those declared and those learned.
 	dependencies []workloadID
+	// activity is its activity clock as its status has it, and wokeAt its
+	// last wake, for when a dependency's forecast judges whether it was in
+	// use.
+	activity *v1alpha1.ActivityStatus
+	wokeAt   time.Time
 }
 
 func newWorkloadNode(w *v1alpha1.ManagedWorkload, dryRun bool) *workloadNode {
@@ -67,6 +74,13 @@ func newWorkloadNode(w *v1alpha1.ManagedWorkload, dryRun bool) *workloadNode {
 	n.dependencies = make([]workloadID, 0, len(refs))
 	for _, ref := range refs {
 		n.dependencies = append(n.dependencies, dependencyID(w, ref))
+	}
+	if a := w.Status.Activity; a != nil {
+		n.activity = &v1alpha1.ActivityStatus{LastActivityTime: a.LastActivityTime,
+			LastActivitySource: a.LastActivitySource}
+	}
+	if w.Status.LastActedAt != nil {
+		n.wokeAt = w.Status.LastActedAt.Time
 	}
 	return n
 }

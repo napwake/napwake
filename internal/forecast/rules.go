@@ -224,11 +224,12 @@ type Hour struct {
 	// mean, is what the forecast's decisions need: the activity clock counts
 	// a workload as active for any minute above the threshold, so an hour
 	// busy for its last ten minutes is an hour it must be awake for.
-	Peak        float64
-	first, last time.Time
-	// blind is set by a look that couldn't see demand: the workload was
+	Peak float64
+	// First and Last are when the first and the latest look in it were.
+	First, Last time.Time
+	// Blind is set by a look that couldn't see demand: the workload was
 	// paused where a request wouldn't wake it.
-	blind bool
+	Blind bool
 }
 
 // Look adds a look at demand made at now, in the hour that began at start,
@@ -238,11 +239,11 @@ type Hour struct {
 func (h *Hour) Look(start, now time.Time, demand float64, visible bool) (ended Hour, over bool) {
 	prev := *h
 	if prev.Start.IsZero() || !prev.Start.Equal(start) {
-		*h = Hour{Start: start, first: now}
+		*h = Hour{Start: start, First: now}
 	}
-	h.last = now
+	h.Last = now
 	h.Peak = max(h.Peak, demand)
-	h.blind = h.blind || !visible
+	h.Blind = h.Blind || !visible
 	return prev, !prev.Start.IsZero() && prev.Start.Before(start)
 }
 
@@ -254,5 +255,26 @@ func (h *Hour) Look(start, now time.Time, demand float64, visible bool) (ended H
 // hour isn't held against it: a slow wake or pause leaves one, and the
 // looks either side of it show the demand around it.
 func (h Hour) Whole(gap time.Duration) bool {
-	return !h.blind && h.first.Sub(h.Start) <= gap && h.Start.Add(time.Hour).Sub(h.last) <= gap
+	return !h.Blind && h.First.Sub(h.Start) <= gap && h.Start.Add(time.Hour).Sub(h.Last) <= gap
+}
+
+// TakeUp is the hour a restarted operator, or a new leader, goes on seeing
+// at its first look, made at now in the hour that began at start, from
+// written, what the operator before it last wrote of the hour it was
+// seeing, and whether there's one to go on with. An hour that has ended
+// is taken up whatever the gap since, for Whole to judge by its edges, as
+// it would have been had the operator not stopped. The hour under way is
+// taken up only if its looks were written no more than gap before now: a
+// longer gap within it, while nobody watched, may have hidden its busiest
+// minutes, as an hour first looked at more than gap after it began may.
+// Without this, an operator restarted at the same time each day would
+// never see that hour of the day whole, and the forecast would never act.
+func TakeUp(written Hour, start, now time.Time, gap time.Duration) (Hour, bool) {
+	switch {
+	case written.Start.IsZero() || written.Start.After(start) || written.Last.After(now):
+		return Hour{}, false
+	case written.Start.Before(start):
+		return written, true
+	}
+	return written, now.Sub(written.Last) <= gap
 }

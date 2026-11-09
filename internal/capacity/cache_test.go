@@ -100,13 +100,15 @@ func TestTrimPod(t *testing.T) {
 	require.True(t, ok)
 
 	assert.Equal(t, podRequests(&pod.Spec), podRequests(&trimmed.Spec))
+	again, err := trimPod(trimmed.DeepCopy())
+	require.NoError(t, err)
+	assert.Equal(t, trimmed, again, "trimming what's trimmed changes nothing")
 	assert.Equal(t, &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "api-1", Namespace: "shop", ResourceVersion: "7"},
-		Spec: corev1.PodSpec{NodeName: "node-a", Containers: []corev1.Container{{Resources: corev1.ResourceRequirements{
-			Requests: corev1.ResourceList{
-				corev1.ResourceCPU:    *resource.NewMilliQuantity(610, resource.DecimalSI),
-				corev1.ResourceMemory: *resource.NewQuantity((1024+64+16)<<20, resource.BinarySI),
-			}}}}},
+		Spec: corev1.PodSpec{NodeName: "node-a", Overhead: corev1.ResourceList{
+			corev1.ResourceCPU:    *resource.NewMilliQuantity(610, resource.DecimalSI),
+			corev1.ResourceMemory: *resource.NewQuantity((1024+64+16)<<20, resource.BinarySI),
+		}},
 		Status: corev1.PodStatus{Phase: corev1.PodRunning},
 	}, trimmed)
 }

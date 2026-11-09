@@ -32,9 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
-	"github.com/napwake/napwake/internal/autoscaler"
 	"github.com/napwake/napwake/internal/forecast"
-	"github.com/napwake/napwake/internal/lifecycle"
 )
 
 // turnedBackEnv is an API server with the doorman's Service in front of
@@ -97,40 +95,19 @@ func (e *turnedBackEnv) create(t *testing.T, ns string, setup func(*v1alpha1.Man
 	tc.key = client.ObjectKeyFromObject(w)
 
 	c := client.WithFieldOwner(indexedClient{e.admin}, v1alpha1.FieldManager)
-	finder := autoscaler.NewFinder(c)
-	tc.r = &Reconciler{
+	tc.r = withTheOperatorsPauser(&Reconciler{
 		Client: c, Scheme: testScheme(t), Recorder: events.NewFakeRecorder(1000), PodReader: indexedClient{e.admin},
-		pauser:      testClockPauser{Pauser: lifecycle.NewPauser(c, finder), now: func() time.Time { return tc.now }},
-		autoscalers: finder,
-		metrics:     &stubMetrics{cpuMillis: 70, cpuPerReplica: 1000, replicas: 1},
-		engines:     newEngineRegistry(func() forecaster { return tc.forecast }),
-		clock:       func() time.Time { return tc.now },
+		metrics: &stubMetrics{cpuMillis: 70, cpuPerReplica: 1000, replicas: 1},
+		engines: newEngineRegistry(func() forecaster { return tc.forecast }),
+		clock:   func() time.Time { return tc.now },
 		DialDoorman: func(_ context.Context, addr string) error {
 			tc.dialled = append(tc.dialled, addr)
 			return nil
 		},
-	}
+	}, c)
 	routeThroughDoorman(tc.r)
 	remember(tc.r, w)
 	return tc
-}
-
-// testClockPauser is the operator's pauser, with the scale-down it records
-// timed by the test's clock, which the operator reads, not the real one.
-// A wake is judged by how long after it the workload woke.
-type testClockPauser struct {
-	*lifecycle.Pauser
-	now func() time.Time
-}
-
-func (p testClockPauser) Pause(ctx context.Context, workload *v1alpha1.ManagedWorkload) (lifecycle.Suspension, error) {
-	first := workload.Status.Pause != nil && workload.Status.Pause.PausedAt == nil
-	suspension, err := p.Pauser.Pause(ctx, workload)
-	if err == nil && first && workload.Status.Pause.PausedAt != nil {
-		at := metav1.NewTime(p.now())
-		workload.Status.Pause.PausedAt = &at
-	}
-	return suspension, err
 }
 
 // reconcile has the operator reconcile the workload at its clock, after
@@ -171,6 +148,33 @@ func (tc *turnedBackCase) stamp(t *testing.T) {
 	require.NoError(t, tc.admin.Patch(tc.ctx, &w, client.MergeFrom(original)))
 }
 
+// annotate sets an annotation on the workload, as kubectl napwake wake, a
+// tool or a waking dependent does.
+func (tc *turnedBackCase) annotate(t *testing.T, key, value string) {
+	t.Helper()
+	var w v1alpha1.ManagedWorkload
+	require.NoError(t, tc.admin.Get(tc.ctx, tc.key, &w))
+	original := w.DeepCopy()
+	metav1.SetMetaDataAnnotation(&w.ObjectMeta, key, value)
+	require.NoError(t, tc.admin.Patch(tc.ctx, &w, client.MergeFrom(original)))
+}
+
+// dependentWakes has a dependent of the workload, web, waking, as it is
+// when it stamps the workload: Resuming, from a pause.
+func (tc *turnedBackCase) dependentWakes(t *testing.T) {
+	t.Helper()
+	web := &v1alpha1.ManagedWorkload{
+		ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: tc.key.Namespace},
+		Spec: v1alpha1.ManagedWorkloadSpec{
+			Target:    v1alpha1.WorkloadRef{Kind: v1alpha1.TargetKindDeployment, Name: "web"},
+			DependsOn: []v1alpha1.DependencyRef{{Kind: v1alpha1.TargetKindDeployment, Name: "api"}},
+		},
+	}
+	require.NoError(t, tc.admin.Create(tc.ctx, web))
+	web.Status.Phase = v1alpha1.PhaseResuming
+	require.NoError(t, tc.admin.Status().Update(tc.ctx, web))
+}
+
 // watchUntil has the operator check the workload once a minute, at half
 // past each, as it does, up to and including until.
 func (tc *turnedBackCase) watchUntil(t *testing.T, until time.Time) {
@@ -208,9 +212,11 @@ func (tc *turnedBackCase) setDryRun(t *testing.T) {
 // the wake's warm-up hid the request after, so the forecast learned those
 // hours from its CPU, and wouldn't hold its pauses there. A request that
 // turns a pause back is the demand one that wakes it from zero is, in the
-// hour it comes in, and in no other. The operator's own check that the
-// doorman listens is no request. A click, for a workload that asks first,
-// and dry-run, learn as they did.
+// hour it comes in, and in no other. So, P72, are a person's click, for a
+// workload that asks first, a wake request and an activity annotation, as
+// each is from zero. A dependent's wake isn't, as it isn't from zero: the
+// dependent's use is, once awake. The operator's own check that the doorman
+// listens is no request, and dry-run learns as it did.
 func TestTurnedBackPause_TeachesTheForecastItsHourIsBusy(t *testing.T) {
 	env := startTurnedBackEnv(t)
 	hour := time.Date(2026, 10, 26, 10, 0, 0, 0, time.UTC)
@@ -231,7 +237,18 @@ func TestTurnedBackPause_TeachesTheForecastItsHourIsBusy(t *testing.T) {
 			want: v1alpha1.PhasePaused},
 		{name: "a person's click, for a workload that asks",
 			setup: func(w *v1alpha1.ManagedWorkload) { w.Spec.Wake = &v1alpha1.WakeSpec{Mode: v1alpha1.WakeOnAsk} },
-			come:  (*turnedBackCase).stamp, want: v1alpha1.PhaseRunning},
+			come:  (*turnedBackCase).stamp, want: v1alpha1.PhaseRunning, busy: true},
+		{name: "a wake request", want: v1alpha1.PhaseRunning, busy: true,
+			come: func(tc *turnedBackCase, t *testing.T) { tc.annotate(t, v1alpha1.AnnotationWakeRequested, "wake-1") }},
+		{name: "a tool's activity annotation", want: v1alpha1.PhaseRunning, busy: true,
+			come: func(tc *turnedBackCase, t *testing.T) {
+				tc.annotate(t, v1alpha1.AnnotationLastActivity, tc.now.UTC().Format(time.RFC3339))
+			}},
+		{name: "a dependent's wake", want: v1alpha1.PhaseRunning,
+			come: func(tc *turnedBackCase, t *testing.T) {
+				tc.dependentWakes(t)
+				tc.annotate(t, v1alpha1.AnnotationLastActivity, tc.now.UTC().Format(time.RFC3339))
+			}},
 		{name: "a request, as dry-run is switched on",
 			come: func(tc *turnedBackCase, t *testing.T) {
 				tc.stamp(t)
@@ -253,11 +270,15 @@ func TestTurnedBackPause_TeachesTheForecastItsHourIsBusy(t *testing.T) {
 			require.NoError(t, tc.admin.Get(tc.ctx, tc.key, &w))
 			assert.Equal(t, tt.want, w.Status.Phase)
 			if tt.busy {
-				assert.GreaterOrEqual(t, tc.fed(t, hour), busy, "the hour the request came in is busy")
+				assert.GreaterOrEqual(t, tc.fed(t, hour), busy, "the hour it came in is busy")
 			} else {
 				assert.Less(t, tc.fed(t, hour), 10.0, "the hour is its CPU, 7%")
 			}
 			assert.Less(t, tc.fed(t, hour.Add(time.Hour)), 10.0, "the hour after, with no request, isn't busy")
 		})
 	}
+
+	t.Run("its pauser is on its reconciler's clock", func(t *testing.T) {
+		requirePauserOnItsClock(t, env.create(t, "clock", nil).r, "clock")
+	})
 }

@@ -73,9 +73,26 @@ func newTestPauser(c client.Client) *Pauser {
 		client:      c,
 		scaler:      &subResourceScaler{client: c},
 		autoscalers: autoscaler.NewFinder(c),
-		clock:       func() metav1.Time { return metav1.NewTime(time.Date(2026, 3, 14, 12, 0, 0, 0, time.UTC)) },
+		clock:       func() metav1.Time { return metav1.NewTime(monotonic(time.Date(2026, 3, 14, 12, 0, 0, 0, time.UTC))) },
 	}
 }
+
+// monotonic is t as time.Now() would give it at that moment, with a
+// monotonic clock reading, as internal/controller's tests read time: two
+// readings of the same instant differ by a microsecond or two, either way,
+// and times that both carry one are compared by it alone. A clock built
+// with time.Date carries none, and hides any comparison that depends on it.
+func monotonic(t time.Time) time.Time {
+	now := time.Now()
+	return now.Add(t.Sub(now.Round(0)))
+}
+
+// requeueLag is how long after the wait it asked for a requeued call reads
+// the clock: the real clock goes on while a requeue waits, so it's never
+// early. A test that times a call to the very instant a wait ends could
+// land a microsecond or two before it, which two monotonic readings of the
+// same instant differ by.
+const requeueLag = time.Millisecond
 
 // resume resumes w as a resume that has only just scaled it up, and
 // reports whether it's settled.

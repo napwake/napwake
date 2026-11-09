@@ -85,7 +85,7 @@ func TestWakeOnScaleUp_ByAPerson(t *testing.T) {
 	assert.Nil(t, meta.FindStatusCondition(w.Status.Conditions, conditionGitOpsConflict))
 	assert.Equal(t, int32(5), targetReplicas(t, r), "left as they set it")
 	assert.Contains(t, drainEvents(t, r), "scaled up to 5 replicas by kubectl-edit outside Napwake")
-	assert.Zero(t, r.awakeDemand(w, 80), "starting up after the scale-up isn't demand the forecast should learn")
+	assert.Zero(t, r.awakeDemand(context.Background(), w, 80), "starting up after the scale-up isn't demand the forecast should learn")
 }
 
 // A GitOps tool undoing a pause is a setup problem: reported once with the
@@ -248,21 +248,50 @@ func TestGitOpsConflict_ClearsWhenAPauseHolds(t *testing.T) {
 }
 
 // A workload an autoscaler scales says so, and how Napwake pauses it
-// alongside.
+// alongside. One whose range starts at 0 can be taken to zero by its
+// autoscaler, which Napwake leaves to it (P79), and Napwake wakes it to at
+// least one replica, not anywhere in that range.
 func TestReportAutoscaler(t *testing.T) {
 	scheme := testScheme(t)
-	hpa := &autoscalingv2.HorizontalPodAutoscaler{
-		ObjectMeta: metav1.ObjectMeta{Name: "api-hpa", Namespace: "default"},
-		Spec: autoscalingv2.HorizontalPodAutoscalerSpec{MinReplicas: ptr.To[int32](2), MaxReplicas: 6,
-			ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{Kind: "Deployment", Name: "api"}},
+	hpa := func(minReplicas, maxReplicas int32) *autoscalingv2.HorizontalPodAutoscaler {
+		return &autoscalingv2.HorizontalPodAutoscaler{
+			ObjectMeta: metav1.ObjectMeta{Name: "api-hpa", Namespace: "default"},
+			Spec: autoscalingv2.HorizontalPodAutoscalerSpec{MinReplicas: ptr.To(minReplicas), MaxReplicas: maxReplicas,
+				ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{Kind: "Deployment", Name: "api"}},
+		}
+	}
+	scaledObject := func(spec map[string]any) *unstructured.Unstructured {
+		spec["scaleTargetRef"] = map[string]any{"name": "api"}
+		so := &unstructured.Unstructured{Object: map[string]any{"spec": spec}}
+		so.SetGroupVersionKind(kedaScaledObject)
+		so.SetNamespace("default")
+		so.SetName("api-scaler")
+		return so
 	}
 	for _, tt := range []struct {
 		name string
 		objs []client.Object
 		want string
 	}{
-		{name: "an HPA", objs: []client.Object{hpa},
-			want: "HPA api-hpa scales it between 2 and 6 replicas; Napwake pauses it at zero, where the HPA stops scaling"},
+		{name: "an HPA", objs: []client.Object{hpa(2, 6)},
+			want: "HPA api-hpa scales it between 2 and 6 replicas; Napwake pauses it at zero, where the HPA stops " +
+				"scaling, and resumes it within that range"},
+		{name: "an HPA from 0", objs: []client.Object{hpa(0, 3)},
+			want: "HPA api-hpa scales it between 0 and 3 replicas, and to zero itself: Napwake leaves that zero to " +
+				"the HPA, and holds no requests there. While it runs, Napwake pauses it at zero, where the HPA stops " +
+				"scaling, and resumes it to between 1 and 3 replicas"},
+		{name: "an HPA from 0 to 1", objs: []client.Object{hpa(0, 1)},
+			want: "HPA api-hpa scales it between 0 and 1 replicas, and to zero itself: Napwake leaves that zero to " +
+				"the HPA, and holds no requests there. While it runs, Napwake pauses it at zero, where the HPA stops " +
+				"scaling, and resumes it to 1 replica"},
+		{name: "KEDA", objs: []client.Object{scaledObject(map[string]any{"minReplicaCount": int64(1),
+			"maxReplicaCount": int64(5)})},
+			want: "KEDA api-scaler scales it between 1 and 5 replicas; Napwake pauses it by having KEDA hold it at " +
+				"zero, and resumes it within that range"},
+		{name: "KEDA from 0, its default", objs: []client.Object{scaledObject(map[string]any{})},
+			want: "KEDA api-scaler scales it between 0 and 100 replicas, and to zero itself: Napwake leaves that " +
+				"zero to KEDA, and holds no requests there. While it runs, Napwake pauses it by having KEDA hold it " +
+				"at zero, and resumes it to between 1 and 100 replicas"},
 		{name: "nothing"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -280,7 +309,7 @@ func TestReportAutoscaler(t *testing.T) {
 				return
 			}
 			require.NotNil(t, cond)
-			assert.Contains(t, cond.Message, tt.want)
+			assert.Equal(t, tt.want, cond.Message)
 		})
 	}
 }
@@ -423,7 +452,7 @@ func TestScaledToZero_BackUpIsActivity(t *testing.T) {
 	assert.Equal(t, int32(2), targetReplicas(t, r))
 	assert.False(t, meta.IsStatusConditionTrue(got.Status.Conditions, conditionScaledToZero))
 	assert.Equal(t, v1alpha1.ActivitySourceScaledUp, got.Status.Activity.LastActivitySource)
-	assert.Zero(t, r.awakeDemand(got, 80), "starting up again isn't demand the forecast should learn")
+	assert.Zero(t, r.awakeDemand(context.Background(), got, 80), "starting up again isn't demand the forecast should learn")
 }
 
 // A pause recorded with zero replicas, as an earlier version made of a

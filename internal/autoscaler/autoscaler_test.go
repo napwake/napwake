@@ -135,9 +135,10 @@ func TestFind_RemembersKEDAIsntInstalled(t *testing.T) {
 			}
 			return c.List(ctx, list, opts...)
 		}}).Build()
-	now := time.Date(2026, 10, 4, 9, 0, 0, 0, time.UTC)
-	f := NewFinder(c)
-	f.now = func() time.Time { return now }
+	// Its caller's clock, which the test moves, while the real one barely
+	// does.
+	now := time.Now()
+	f := NewFinder(c).WithClock(func() time.Time { return now })
 
 	for range 3 {
 		got, found, err := f.Find(context.Background(), "shop", v1alpha1.TargetKindDeployment, "web")
@@ -151,7 +152,12 @@ func TestFind_RemembersKEDAIsntInstalled(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 2, lookups, "a pause or resume looks again")
 
-	now = now.Add(kedaRecheck)
+	now = now.Add(kedaRecheck - time.Second)
+	_, _, err = f.Find(context.Background(), "shop", v1alpha1.TargetKindDeployment, "web")
+	require.NoError(t, err)
+	assert.Equal(t, 2, lookups, "relied on until kedaRecheck has passed by its clock")
+
+	now = now.Add(time.Second)
 	_, _, err = f.Find(context.Background(), "shop", v1alpha1.TargetKindDeployment, "web")
 	require.NoError(t, err)
 	assert.Equal(t, 3, lookups, "looked for again, in case KEDA was installed since")
@@ -170,9 +176,8 @@ func TestFind_ReusesANamespacesScaledObjects(t *testing.T) {
 			}
 			return c.List(ctx, list, opts...)
 		}})
-	now := time.Date(2026, 10, 4, 9, 0, 0, 0, time.UTC)
-	f := NewFinder(c)
-	f.now = func() time.Time { return now }
+	now := time.Now()
+	f := NewFinder(c).WithClock(func() time.Time { return now })
 	find := func(find func(context.Context, string, v1alpha1.TargetKind, string) (Autoscaler, bool, error)) {
 		t.Helper()
 		got, found, err := find(context.Background(), "shop", v1alpha1.TargetKindDeployment, "web")
@@ -189,7 +194,11 @@ func TestFind_ReusesANamespacesScaledObjects(t *testing.T) {
 	find(f.FindNow)
 	assert.Equal(t, 2, lists, "a pause or resume lists them afresh")
 
-	now = now.Add(scaledObjectsReuse)
+	now = now.Add(scaledObjectsReuse - time.Second)
+	find(f.Find)
+	assert.Equal(t, 2, lists, "reused until scaledObjectsReuse has passed by its clock")
+
+	now = now.Add(time.Second)
 	find(f.Find)
 	assert.Equal(t, 3, lists, "listed again once the list is as old as it's reused for")
 }
