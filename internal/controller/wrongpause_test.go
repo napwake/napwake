@@ -485,6 +485,66 @@ func TestWrongPause_ADependentStampsItsDependenciesOnceItsWaking(t *testing.T) {
 	}
 }
 
+// The break-it review of the dependency hold, on main: postgres paused a
+// minute, api deleted, postgres Running with WrongPauses 1. A paused
+// dependent whose ManagedWorkload is deleted is handed back, and its
+// hand-back stamps its dependencies awake for it. By the time a dependency
+// wakes, the dependent is gone, or going, and holds nothing, but the wake
+// was for the dependent's use, not the dependency's, and isn't a wrong pause
+// of its own. A stamp that isn't the hand-back's is judged as ever.
+func TestWrongPause_ADependentsHandBackIsntAWrongPauseOfItsDependency(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		// draining keeps the dependent's ManagedWorkload while its doorman
+		// ports drain, Running.
+		draining bool
+		// later is a stamp that comes after the hand-back's, before the
+		// dependency wakes.
+		later     time.Duration
+		wantWrong int32
+	}{
+		{name: "gone at once"},
+		{name: "kept while its ports drain", draining: true},
+		{name: "another stamp after it", later: 5 * time.Second, wantWrong: 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			pausedAt := metav1.NewTime(monotonic(fixedTime).Add(-time.Minute))
+			web := depWorkload("default", "web", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused,
+				v1alpha1.DependencyRef{Kind: v1alpha1.TargetKindDeployment, Name: "api"})
+			web.Finalizers = []string{finalizerName}
+			web.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 2, StartedAt: &pausedAt, PausedAt: &pausedAt,
+				WakeAnnotations: &v1alpha1.WakeAnnotations{}}
+			web.Status.LastTransitionTime = &pausedAt
+			if tt.draining {
+				web.Status.DoormanDraining = []v1alpha1.DrainingPort{{Port: 20000,
+					Until: metav1.NewTime(monotonic(fixedTime).Add(portDrain))}}
+			}
+			r, now := pausedFor(t, "api", time.Minute, nil, web, targetDeploymentWithReplicas("web", "default", 0))
+			require.NoError(t, r.Delete(context.Background(), fetch(t, r, "web")))
+
+			reconcileNamed(t, r, "web")
+			require.Contains(t, drainEvents(t, r), "web: restored to 2 replicas: no longer managed", "handed back")
+			stamp := fetch(t, r, "api").Annotations[v1alpha1.AnnotationLastActivity]
+			require.Equal(t, now.UTC().Format(time.RFC3339), stamp, "the hand-back stamped api")
+			if tt.later > 0 {
+				annotate(t, r, "api", v1alpha1.AnnotationLastActivity, now.Add(tt.later).UTC().Format(time.RFC3339))
+				*now = now.Add(tt.later)
+			}
+			reconcileNamed(t, r, "api")
+
+			w := fetch(t, r, "api")
+			require.NotEqual(t, v1alpha1.PhasePaused, w.Status.Phase, "woken")
+			var wrong int32
+			if w.Status.IdleWait != nil {
+				wrong = w.Status.IdleWait.WrongPauses
+			}
+			assert.Equal(t, tt.wantWrong, wrong)
+			assert.Len(t, recorded(r.Recorder.(*events.FakeRecorder), "Warning "+ReasonPausedWhileInUse),
+				int(tt.wantWrong))
+		})
+	}
+}
+
 // backedOff is the named workload, running, after two wrong pauses in a
 // row, with what setup makes of it, and a reconciler for it and objs,
 // which include its target, if it has one.

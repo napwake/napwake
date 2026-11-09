@@ -172,6 +172,7 @@ type Reconciler struct {
 	history         historyReader
 	doormanFamilies doormanFamilies
 	quietCPU        quietCPU
+	handBacks       handBackStamps
 	uids            workloadUIDs
 	graph           *workloadGraph
 	clock           func() time.Time
@@ -897,6 +898,7 @@ func (r *Reconciler) handleResume(ctx context.Context, workload *v1alpha1.Manage
 	} else {
 		r.clearCondition(workload, conditionResumeIncomplete, ReasonAllReplicasReady)
 	}
+	r.restartPodMetricsGrace(workload)
 	if err := r.transition(ctx, workload, v1alpha1.PhaseRunning, "Resumed"); err != nil {
 		return nil, err
 	}
@@ -1132,6 +1134,7 @@ func (r *Reconciler) forgetWorkload(uid types.UID) {
 	r.doormanFailures.reset(uid)
 	r.doormanPorts.release(uid, r.now())
 	r.engines.forget(uid)
+	r.handBacks.take(uid)
 }
 
 // workloadUIDs remembers the UID of each workload by name. A workload
@@ -1190,7 +1193,7 @@ func (r *Reconciler) releaseTarget(ctx context.Context, workload *v1alpha1.Manag
 		if replicas, err = r.pauser.Restore(ctx, workload); err != nil {
 			return false, 0, fmt.Errorf("restoring the paused target: %w", err)
 		}
-		r.wakeDependencies(ctx, workload)
+		r.handBackDependencies(ctx, workload)
 	}
 	if err := r.removeDoorman(ctx, workload); err != nil {
 		return false, 0, fmt.Errorf("removing doorman routes: %w", err)

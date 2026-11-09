@@ -675,6 +675,13 @@ setup-envtest: envtest ## Download the binaries required for ENVTEST in the loca
 		exit 1; \
 	}
 
+# CI caches envtest's binaries by this, and its jobs then run make with
+# ENVTEST_INSTALLED_ONLY=1, which setup-envtest reads, so they use those
+# binaries without the network (.github/actions/setup-envtest).
+.PHONY: envtest-version
+envtest-version: ## Print the Kubernetes version envtest's binaries are for, and setup-envtest's release.
+	@echo "$(ENVTEST_K8S_VERSION)-$(ENVTEST_VERSION)"
+
 .PHONY: envtest
 envtest: $(ENVTEST) ## Download setup-envtest locally if necessary.
 $(ENVTEST): $(LOCALBIN)

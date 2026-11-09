@@ -33,6 +33,11 @@ import (
 const (
 	ada   = "Ada Lovelace <ada@example.com>"
 	grace = "Grace Hopper <grace@example.com>"
+
+	// dependabot is how Dependabot authors its commits, and
+	// dependabotSignoff how it signs them off.
+	dependabot        = "dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>"
+	dependabotSignoff = "dependabot[bot] <support@github.com>"
 )
 
 // repo is a git repository in a temporary directory, with git's global and
@@ -125,6 +130,27 @@ func TestCheck(t *testing.T) {
 			name: "a sign-off that isn't a line of its own",
 			commits: []struct{ author, message string }{
 				{ada, "fix(doorman): one, Signed-off-by: " + ada},
+			},
+			unsigned: []int{0},
+		},
+		{
+			name: "Dependabot's commit, signed off as Dependabot signs off",
+			commits: []struct{ author, message string }{
+				{dependabot, "chore(deps): bump one\n\n---\nupdated-dependencies:\n- dependency-name: one\n...\n\n" +
+					"Signed-off-by: " + dependabotSignoff},
+			},
+		},
+		{
+			name: "Dependabot's commit, not signed off",
+			commits: []struct{ author, message string }{
+				{dependabot, "chore(deps): bump one"},
+			},
+			unsigned: []int{0},
+		},
+		{
+			name: "Dependabot's sign-off on a commit someone else authored",
+			commits: []struct{ author, message string }{
+				{ada, "fix(doorman): one\n\nSigned-off-by: " + dependabotSignoff},
 			},
 			unsigned: []int{0},
 		},

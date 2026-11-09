@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 	"github.com/napwake/napwake/internal/cost"
 	"github.com/napwake/napwake/internal/human"
@@ -72,6 +74,18 @@ func (r *Reconciler) beginWouldBePause(ctx context.Context, workload *v1alpha1.M
 	workload.Status.DryRun.Pauses++
 	workload.Status.DryRun.Resources = r.captureResourceSnapshot(ctx, workload)
 	workload.Status.DryRun.QueryActiveSincePause = false
+}
+
+// firstClockStart is when a workload's idle clock starts, at Napwake's
+// first check of it: now, or, for one asked to pause before that check,
+// when its would-be pause began, to the second, as the API server keeps it.
+// Only activity since then ends the pause, and a clock started at the check
+// would read as some.
+func (r *Reconciler) firstClockStart(workload *v1alpha1.ManagedWorkload) metav1.Time {
+	if began := workload.Status.LastTransitionTime; began != nil && inWouldBePause(workload, r.dryRun(workload)) {
+		return metav1.NewTime(began.Truncate(time.Second))
+	}
+	return r.clockTime()
 }
 
 // inWouldBePause reports whether the workload is in a pause dry-run holds

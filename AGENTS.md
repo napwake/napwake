@@ -52,6 +52,8 @@ go test -race -count=1 ./internal/controller -run 'TestOptIn'
 
 The files in `bin/k8s/` are read-only. Run `chmod -R u+w bin/k8s` before deleting them, or a worktree that holds them.
 
+Once they're there, `ENVTEST_INSTALLED_ONLY=1` has every target use them without the network, which setup-envtest otherwise reaches to find the latest patch release. CI restores them from its cache, keyed by `make -s envtest-version`, and runs that way (`.github/actions/setup-envtest`). It caches kind and kubectl too (`.github/actions/setup-kind`), checking their checksums each run, and retries a download that fails.
+
 What CI runs on every pull request:
 
 | Workflow, job | Command |
