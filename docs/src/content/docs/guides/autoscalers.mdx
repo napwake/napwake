@@ -43,7 +43,15 @@ CPU from the workload's own pods counts as activity, whatever the HPA does. So a
 
 ## When the HPA scales to zero
 
-An HPA with `minReplicas: 0` and an object or external metric can scale a workload to zero itself. From Kubernetes 1.37 that's on by default. Napwake leaves that zero to the HPA, as it does any [workload already at zero](/guides/pause/#workloads-already-at-zero). Nothing holds requests while the HPA has it at zero, so they fail as they would without Napwake. Napwake can still pause it while it runs. But while the metric is at zero, a wake doesn't last. Once the HPA hasn't needed replicas for its scale-down window, 5 minutes by default, its next check takes the workload back to zero. A request the doorman is still holding is then closed unanswered. To have the doorman hold the first request while the workload wakes, keep `minReplicas` at 1 or more and let Napwake do the pausing.
+An HPA with `minReplicas: 0` and an object or external metric can scale a workload to zero itself. From Kubernetes 1.37 that's on by default. Napwake leaves that zero to the HPA, as it does any [workload already at zero](/guides/pause/#workloads-already-at-zero). Nothing holds requests while the HPA has it at zero, so they fail as they would without Napwake. Napwake can still pause it while it runs, and wakes it to at least one replica. But while the metric is at zero, a wake doesn't last. Once the HPA hasn't needed replicas for its scale-down window, 5 minutes by default, its next check takes the workload back to zero. A request the doorman is still holding is then closed unanswered. To have the doorman hold the first request while the workload wakes, keep `minReplicas` at 1 or more and let Napwake do the pausing.
+
+Its `Autoscaled` condition reads:
+
+```text wrap
+HPA my-api scales it between 0 and 10 replicas, and to zero itself: Napwake leaves that zero to the HPA, and holds no requests there. While it runs, Napwake pauses it at zero, where the HPA stops scaling, and resumes it to between 1 and 10 replicas
+```
+
+A ScaledObject's `minReplicaCount` is 0 unless it sets one, and its `Autoscaled` says the same of KEDA.
 
 ## KEDA
 

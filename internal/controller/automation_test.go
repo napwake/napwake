@@ -593,6 +593,70 @@ func TestAutomation_NoPodMetricsWaitsForNewPods(t *testing.T) {
 	}
 }
 
+// On kind (P80), a workload paused 16 seconds after Napwake took it on,
+// before its first pods had metrics, and woken 3 minutes later, was warned
+// NoPodMetrics a tenth of a second after Resumed: the grace was timed from
+// before the pause. The woken pods get the grace new pods get, from the
+// wake, and are warned about once they go on without metrics past it.
+func TestReconcile_NoPodMetricsGraceRestartsOnWake(t *testing.T) {
+	now := monotonic(fixedTime)
+	workload := depWorkload("default", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning)
+	workload.Finalizers = []string{finalizerName}
+	target := targetDeploymentWithReplicas("api", "default", 2)
+	target.Status = appsv1.DeploymentStatus{Replicas: 2, ReadyReplicas: 2}
+	r := depReconciler(t, &stubPauser{pauseDone: true, resumeDone: true}, workload, target)
+	r.Recorder = events.NewFakeRecorder(100)
+	r.metrics = &stubMetrics{err: fmt.Errorf("%w for default/api", opmetrics.ErrNoPodMetrics), replicas: 2}
+	r.clock = func() time.Time { return now }
+	// scale has the target's replicas, and as many Ready, as the cluster
+	// has them once a pause or a wake has run.
+	scale := func(replicas int32) {
+		t.Helper()
+		var d appsv1.Deployment
+		require.NoError(t, r.Get(context.Background(), client.ObjectKeyFromObject(target), &d))
+		d.Spec.Replicas = ptr.To(replicas)
+		require.NoError(t, r.Update(context.Background(), &d))
+		d.Status = appsv1.DeploymentStatus{Replicas: replicas, ReadyReplicas: replicas}
+		require.NoError(t, r.Status().Update(context.Background(), &d))
+	}
+	look := func(at time.Duration) *metav1.Condition {
+		t.Helper()
+		now = monotonic(fixedTime).Add(at)
+		reconcileNamed(t, r, "api")
+		return metricsCondition(fetch(t, r, "api"))
+	}
+
+	cond := look(0)
+	require.NotNil(t, cond)
+	require.Equal(t, "AwaitingPodMetrics", cond.Reason, "its first pods' metrics are awaited")
+
+	annotate(t, r, "api", v1alpha1.AnnotationPauseRequested, pauseToken)
+	look(16 * time.Second)
+	require.Equal(t, v1alpha1.PhasePaused, fetch(t, r, "api").Status.Phase)
+	scale(0)
+	look(17 * time.Second)
+	require.Equal(t, v1alpha1.PhasePaused, fetch(t, r, "api").Status.Phase)
+
+	annotate(t, r, "api", v1alpha1.AnnotationLastActivity, now.Add(3*time.Minute).UTC().Format(time.RFC3339))
+	look(3 * time.Minute)
+	scale(2)
+	look(3*time.Minute + 50*time.Millisecond)
+	require.Equal(t, v1alpha1.PhaseRunning, fetch(t, r, "api").Status.Phase, "woken")
+	require.Contains(t, drainEvents(t, r), "Normal Resumed api: resumed")
+
+	cond = look(3*time.Minute + 100*time.Millisecond)
+	assert.Equal(t, metav1.ConditionUnknown, cond.Status)
+	assert.Equal(t, "AwaitingPodMetrics", cond.Reason)
+	cond = look(5*time.Minute + 59*time.Second)
+	assert.Equal(t, "AwaitingPodMetrics", cond.Reason, "within the grace from the wake")
+	assert.NotContains(t, drainEvents(t, r), "NoPodMetrics", "no warning within the grace")
+
+	cond = look(6*time.Minute + time.Second)
+	assert.Equal(t, metav1.ConditionFalse, cond.Status, "Ready pods without metrics past the grace")
+	assert.Equal(t, reasonNoPodMetrics, cond.Reason)
+	assert.Equal(t, 1, strings.Count(drainEvents(t, r), "Warning NoPodMetrics"))
+}
+
 func TestAutomation_ZeroReplicasFeedsZeroDemand(t *testing.T) {
 	workload := automationWorkload(v1alpha1.PhaseRunning)
 	engine := &stubForecaster{phase: forecast.Observing}
