@@ -1,0 +1,55 @@
+name: Set up envtest
+description: >-
+  Puts envtest's etcd and kube-apiserver, for the Kubernetes version the Makefile names, in bin/k8s, from the cache,
+  or, on a miss, from make setup-envtest, retried, then caches them. Later make targets in the job use them without
+  the network.
+
+runs:
+  using: composite
+  steps:
+    - name: Envtest's version
+      id: version
+      shell: bash
+      run: echo "version=$(make -s envtest-version)" >> "$GITHUB_OUTPUT"
+
+    - name: Restore envtest
+      id: restore
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: bin/k8s
+        key: envtest-${{ runner.os }}-${{ runner.arch }}-${{ steps.version.outputs.version }}
+
+    # GitHub's release downloads answered 504 for 15 minutes on 8 Nov 2026,
+    # failing every job that set up envtest. Three tries, 20 then 40 seconds
+    # apart, ride out an outage of under a minute. setup-envtest checks
+    # each download against the checksum its release index gives.
+    - name: Download envtest
+      if: steps.restore.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        wait=20
+        for try in 1 2 3; do
+          make setup-envtest && exit 0
+          [ "$try" = 3 ] && break
+          echo "::warning::make setup-envtest failed (try $try of 3), trying again in ${wait}s"
+          sleep "$wait"
+          wait=$((wait * 2))
+        done
+        echo "::error::couldn't set up envtest"
+        exit 1
+
+    - name: Cache envtest
+      if: steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: bin/k8s
+        key: ${{ steps.restore.outputs.cache-primary-key }}
+
+    # setup-envtest reads ENVTEST_INSTALLED_ONLY: the job's later make
+    # targets use the binaries in bin/k8s, and fail rather than reach the
+    # network, as they'd otherwise do to find the latest patch release.
+    - name: Use envtest without the network
+      shell: bash
+      run: |
+        echo "ENVTEST_INSTALLED_ONLY=1" >> "$GITHUB_ENV"
+        ENVTEST_INSTALLED_ONLY=1 make setup-envtest

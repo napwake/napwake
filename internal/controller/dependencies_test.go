@@ -93,7 +93,7 @@ func depReconciler(t *testing.T, pauser *stubPauser, objs ...client.Object) *Rec
 		pauser:   pauser,
 		metrics:  &metrics,
 		engines:  newEngineRegistry(func() forecaster { return &stubForecaster{phase: forecast.Observing} }),
-		clock:    func() time.Time { return fixedTime },
+		clock:    func() time.Time { return monotonic(fixedTime) },
 	}, objs...)
 }
 
@@ -659,7 +659,7 @@ func TestDependencies_DryRunWouldBePauseEndsWhenADependentWakes(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, v1alpha1.PhaseIdle, postgres.Status.Phase, "measuring the pause api's let it make")
 
-	r.clock = func() time.Time { return fixedTime.Add(time.Minute) }
+	r.clock = func() time.Time { return monotonic(fixedTime.Add(time.Minute)) }
 	api = fetch(t, r, "api")
 	api.Annotations = map[string]string{v1alpha1.AnnotationLastActivity: fixedTime.Add(time.Minute).Format(time.RFC3339)}
 	_, err = r.reconcileAutomation(ctx, api, clockTarget("app:v1", nil))
@@ -677,7 +677,7 @@ func TestDependencies_DryRunWouldBePauseEndsWhenADependentWakes(t *testing.T) {
 	api = fetch(t, r, "api")
 	api.Status.Phase = v1alpha1.PhaseIdle
 	require.NoError(t, r.Status().Update(ctx, api))
-	r.clock = func() time.Time { return fixedTime.Add(2 * time.Minute) }
+	r.clock = func() time.Time { return monotonic(fixedTime.Add(2 * time.Minute)) }
 	postgres = fetch(t, r, "postgres")
 	_, err = r.reconcileAutomation(ctx, postgres, postgresTarget(1, 1))
 	require.NoError(t, err)
@@ -707,7 +707,7 @@ func TestDependencies_DryRunWouldBePauseOutlastsAHold(t *testing.T) {
 		api = fetch(t, r, "api")
 		api.Status.Phase = phase
 		require.NoError(t, r.Status().Update(ctx, api))
-		r.clock = func() time.Time { return fixedTime.Add(time.Duration(i+1) * time.Minute) }
+		r.clock = func() time.Time { return monotonic(fixedTime.Add(time.Duration(i+1) * time.Minute)) }
 
 		postgres = fetch(t, r, "postgres")
 		_, err = r.reconcileAutomation(ctx, postgres, postgresTarget(1, 1))
@@ -1396,7 +1396,7 @@ func TestDependencies_UnwatchedNamespaceDoesNotBlock(t *testing.T) {
 	metrics := idleCPU
 	r := &Reconciler{Client: cached, Scheme: scheme, Recorder: events.NewFakeRecorder(20),
 		WatchNamespaces: []string{"default"}, pauser: pauser, metrics: &metrics,
-		clock:   func() time.Time { return fixedTime },
+		clock:   func() time.Time { return monotonic(fixedTime) },
 		engines: newEngineRegistry(func() forecaster { return &stubForecaster{phase: forecast.Observing} })}
 
 	var w v1alpha1.ManagedWorkload

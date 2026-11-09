@@ -590,12 +590,13 @@ func (r *Reconciler) wakeDryRunDependencies(ctx context.Context, workload *v1alp
 }
 
 // stampDependencies stamps those of the workload's dependencies that Napwake
-// manages and that stamp picks.
+// manages and that stamp picks, and returns each stamp written, by the
+// dependency's UID.
 func (r *Reconciler) stampDependencies(ctx context.Context, workload *v1alpha1.ManagedWorkload,
-	stamp func(*workloadNode) bool) {
+	stamp func(*workloadNode) bool) map[types.UID]string {
 	refs := dependencyRefs(workload)
 	if len(refs) == 0 {
-		return
+		return nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, dependencyTimeout)
 	defer cancel()
@@ -603,18 +604,23 @@ func (r *Reconciler) stampDependencies(ctx context.Context, workload *v1alpha1.M
 	g, err := r.loadDependencyGraph(ctx)
 	if err != nil {
 		r.reportWakeFailure(ctx, workload, "its dependencies", err)
-		return
+		return nil
 	}
+	stamped := map[types.UID]string{}
 	for _, ref := range refs {
 		id := dependencyID(workload, ref)
 		dep := g.owner(id)
 		if dep == nil || dep.uid == workload.UID || !g.allows(workload.Namespace, id) || !stamp(dep) {
 			continue
 		}
-		if err := r.stampActivity(ctx, dep.key); err != nil {
+		value, err := r.stampActivity(ctx, dep.key)
+		if err != nil {
 			r.reportWakeFailure(ctx, workload, dep.key.String(), err)
+			continue
 		}
+		stamped[dep.uid] = value
 	}
+	return stamped
 }
 
 // ReasonDependencyWakeFailed reports a dependency Napwake couldn't wake
@@ -628,18 +634,21 @@ func (r *Reconciler) reportWakeFailure(ctx context.Context, workload *v1alpha1.M
 		"couldn't wake %s, so it may still be paused: %v", what, err)
 }
 
-func (r *Reconciler) stampActivity(ctx context.Context, dep types.NamespacedName) error {
+// stampActivity stamps the dependency's ManagedWorkload with activity now,
+// and returns the stamp.
+func (r *Reconciler) stampActivity(ctx context.Context, dep types.NamespacedName) (string, error) {
+	value := r.now().UTC().Format(time.RFC3339)
 	patch, err := json.Marshal(map[string]any{"metadata": map[string]any{"annotations": map[string]string{
-		v1alpha1.AnnotationLastActivity: r.now().UTC().Format(time.RFC3339),
+		v1alpha1.AnnotationLastActivity: value,
 	}}})
 	if err != nil {
-		return fmt.Errorf("encoding the wake of dependency %s: %w", dep, err)
+		return "", fmt.Errorf("encoding the wake of dependency %s: %w", dep, err)
 	}
 	obj := &v1alpha1.ManagedWorkload{ObjectMeta: metav1.ObjectMeta{Namespace: dep.Namespace, Name: dep.Name}}
 	if err := r.Patch(ctx, obj, client.RawPatch(types.MergePatchType, patch)); err != nil {
-		return fmt.Errorf("waking dependency %s: %w", dep, err)
+		return "", fmt.Errorf("waking dependency %s: %w", dep, err)
 	}
-	return nil
+	return value, nil
 }
 
 // waitForDependencies holds a resume until every waitForReady dependency
@@ -700,7 +709,7 @@ func (r *Reconciler) waitForDependencies(ctx context.Context, workload *v1alpha1
 		if dep != nil && dep.uid != workload.UID && !isAwake(dep.phase) {
 			// Retried every check while it waits, so it isn't announced:
 			// the wake that failed first was.
-			if err := r.stampActivity(ctx, dep.key); err != nil {
+			if _, err := r.stampActivity(ctx, dep.key); err != nil {
 				log.FromContext(ctx).Info("couldn't wake a dependency again", "workload", workload.Name,
 					"namespace", workload.Namespace, "dependency", id.String(), "error", err.Error())
 			}

@@ -32,3 +32,32 @@ jobs:
           version: v4.3.1
       - name: Install the chart with watchNamespaces, and pause and wake a workload through the doorman
         run: make test-helm-smoke
+
+  # Helm 3 diffs a rollback against the last revision, and Helm 4 against
+  # the cluster, so a refused upgrade that left a failed revision broke
+  # helm rollback on Helm 3 only (P66). 3.18 is the first Helm 3 that
+  # prints a failed hook's output, which the test reads.
+  helm3-smoke:
+    name: Helm 3 (watchNamespaces)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: ./.github/actions/setup-kind
+        with:
+          version: v0.33.0
+          sha256: aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
+          # kind v0.33.0's default node image is Kubernetes 1.37.0.
+          kubectl-version: v1.37.0
+          kubectl-sha256: 6129359f4e1f3848a5572ccb0b26cf28b8ca08cef38c95a765b2f64a2c961a2f
+      - name: Install Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v3.18.6
+      - name: Install the chart with watchNamespaces, and pause and wake a workload through the doorman
+        run: make test-helm-smoke

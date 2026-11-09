@@ -36,6 +36,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -47,7 +48,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
-	"github.com/napwake/napwake/internal/autoscaler"
 	"github.com/napwake/napwake/internal/lifecycle"
 	"github.com/napwake/napwake/internal/metrics"
 )
@@ -80,7 +80,7 @@ func (s *stubPauser) Pause(_ context.Context, w *v1alpha1.ManagedWorkload) (life
 		return lifecycle.Suspension{}, s.pauseErr
 	}
 	if w.Status.Pause.PausedAt == nil {
-		w.Status.Pause.PausedAt = ptr.To(metav1.NewTime(fixedTime))
+		w.Status.Pause.PausedAt = ptr.To(metav1.NewTime(monotonic(fixedTime)))
 	}
 	return lifecycle.Suspension{Done: s.pauseDone, Running: s.podsRunning}, nil
 }
@@ -143,7 +143,7 @@ func newTestReconcilerWithReplicas(t *testing.T, workload *v1alpha1.ManagedWorkl
 		Recorder: events.NewFakeRecorder(10),
 		pauser:   pauser,
 		engines:  newEngineRegistry(func() forecaster { return &stubForecaster{} }),
-		clock:    func() time.Time { return fixedTime },
+		clock:    func() time.Time { return monotonic(fixedTime) },
 	}, workload)
 }
 
@@ -176,7 +176,7 @@ func newTestReconcilerWithTarget(t *testing.T, workload *v1alpha1.ManagedWorkloa
 		Recorder: events.NewFakeRecorder(10),
 		pauser:   pauser,
 		engines:  newEngineRegistry(func() forecaster { return &stubForecaster{} }),
-		clock:    func() time.Time { return fixedTime },
+		clock:    func() time.Time { return monotonic(fixedTime) },
 	}, workload)
 }
 
@@ -484,10 +484,10 @@ func TestReconcileDelete_RestoresAPausedWorkload(t *testing.T) {
 				builder = builder.WithObjects(targetDeploymentWithReplicas("api", "default", 0))
 			}
 			c := builder.Build()
-			r := &Reconciler{Client: c, Scheme: testScheme(t), Recorder: events.NewFakeRecorder(10),
-				pauser:  lifecycle.NewPauser(c, autoscaler.NewFinder(c)),
+			r := withTheOperatorsPauser(&Reconciler{Client: c, Scheme: testScheme(t), Recorder: events.NewFakeRecorder(10),
 				engines: newEngineRegistry(func() forecaster { return &stubForecaster{} }),
-				clock:   func() time.Time { return fixedTime }}
+				clock:   func() time.Time { return monotonic(fixedTime) }}, c)
+			requirePauserOnItsClock(t, r, "default")
 
 			_, err := r.Reconcile(context.Background(), reconcileFor("api"))
 			require.NoError(t, err)
@@ -511,7 +511,7 @@ func TestReconcileDelete_RestoresAPausedWorkload(t *testing.T) {
 func TestReconcileDelete_HandsBackOnceWhileItsPortsDrain(t *testing.T) {
 	r, pauser := pausedRouted(t)
 	now := fixedTime
-	r.clock = func() time.Time { return now }
+	r.clock = func() time.Time { return monotonic(now) }
 	require.NoError(t, r.Delete(context.Background(), fetch(t, r, "api")))
 
 	for range 3 {
@@ -671,7 +671,7 @@ func TestReconcile_DuplicateTargetBlocksNewer(t *testing.T) {
 		Recorder: recorder,
 		pauser:   &stubPauser{},
 		engines:  newEngineRegistry(func() forecaster { return &stubForecaster{} }),
-		clock:    func() time.Time { return fixedTime },
+		clock:    func() time.Time { return monotonic(fixedTime) },
 	}
 
 	// Reconcile the newer one, which should be blocked.
@@ -767,7 +767,7 @@ func TestReconcile_DuplicateTargetAllowsOlder(t *testing.T) {
 		Recorder: events.NewFakeRecorder(10),
 		pauser:   &stubPauser{},
 		engines:  newEngineRegistry(func() forecaster { return &stubForecaster{} }),
-		clock:    func() time.Time { return fixedTime },
+		clock:    func() time.Time { return monotonic(fixedTime) },
 	}
 
 	// Reconcile the older one, which should proceed normally.
@@ -820,7 +820,7 @@ func TestReconcile_DuplicateTargetClearsWhenResolved(t *testing.T) {
 		Recorder: events.NewFakeRecorder(10),
 		pauser:   &stubPauser{},
 		engines:  newEngineRegistry(func() forecaster { return &stubForecaster{} }),
-		clock:    func() time.Time { return fixedTime },
+		clock:    func() time.Time { return monotonic(fixedTime) },
 	}
 
 	// No duplicate exists anymore, so the condition should clear.
@@ -865,7 +865,7 @@ func newSharedTargetReconciler(t *testing.T, objs ...client.Object) (*Reconciler
 		Recorder: recorder,
 		pauser:   &stubPauser{},
 		engines:  newEngineRegistry(func() forecaster { return &stubForecaster{} }),
-		clock:    func() time.Time { return fixedTime },
+		clock:    func() time.Time { return monotonic(fixedTime) },
 	}, recorder
 }
 
@@ -1030,7 +1030,7 @@ func TestResume_TimesItsReplicasFromItsDependenciesReady(t *testing.T) {
 	require.NoError(t, err)
 	assert.Zero(t, pauser.waited, "its dependencies are Ready only now")
 
-	r.clock = func() time.Time { return fixedTime.Add(time.Minute) }
+	r.clock = func() time.Time { return monotonic(fixedTime.Add(time.Minute)) }
 	_, err = r.handleResume(context.Background(), fetch(t, r, "api"), nil)
 	require.NoError(t, err)
 	assert.Equal(t, time.Minute, pauser.waited, "from what was written as they became Ready")
@@ -1053,7 +1053,7 @@ func TestResume_TimesItsReplicasOnceWhenADependencyWontStart(t *testing.T) {
 	require.NoError(t, err)
 	assert.Zero(t, pauser.waited, "it's scaled up only now")
 
-	r.clock = func() time.Time { return fixedTime.Add(5 * time.Minute) }
+	r.clock = func() time.Time { return monotonic(fixedTime.Add(5 * time.Minute)) }
 	_, err = r.handleResume(context.Background(), fetch(t, r, "api"), nil)
 	require.NoError(t, err)
 	assert.Equal(t, 5*time.Minute, pauser.waited, "the wait for its own replicas started over")
@@ -1076,7 +1076,7 @@ func TestResume_TimesTheRestFromTheFirstReplicaReady(t *testing.T) {
 	assert.Zero(t, pauser.waited.Serving, "none was Ready before")
 	assert.Equal(t, 110*time.Second, pauser.waited.ScaledUp)
 
-	r.clock = func() time.Time { return fixedTime.Add(90 * time.Second) }
+	r.clock = func() time.Time { return monotonic(fixedTime.Add(90 * time.Second)) }
 	_, err = r.handleResume(context.Background(), getWorkload(t, r, "api"), nil)
 	require.NoError(t, err)
 	assert.Equal(t, 90*time.Second, pauser.waited.Serving, "from what was written as the first became Ready")
@@ -1300,11 +1300,11 @@ func TestReconcile_ResumesInterruptedTransition(t *testing.T) {
 }
 
 func TestSetCondition_UpdatesReasonWithoutStatusChange(t *testing.T) {
-	r := &Reconciler{clock: func() time.Time { return fixedTime }}
+	r := &Reconciler{clock: func() time.Time { return monotonic(fixedTime) }}
 	workload := &v1alpha1.ManagedWorkload{}
 
 	r.setCondition(workload, conditionMetricsAvailable, metav1.ConditionFalse, "NoPodMetrics", "no pods reporting")
-	r.clock = func() time.Time { return fixedTime.Add(time.Hour) }
+	r.clock = func() time.Time { return monotonic(fixedTime.Add(time.Hour)) }
 	r.setCondition(workload, conditionMetricsAvailable, metav1.ConditionFalse, "MetricsUnavailable", "metrics API down")
 
 	cond := meta.FindStatusCondition(workload.Status.Conditions, conditionMetricsAvailable)
@@ -1407,22 +1407,66 @@ func lifecycleReconciler(t *testing.T, workload *v1alpha1.ManagedWorkload, repli
 		WithStatusSubresource(&v1alpha1.ManagedWorkload{}).
 		WithObjects(append([]client.Object{workload, target}, objs...)...).
 		WithInterceptorFuncs(funcs).Build()
-	finder := autoscaler.NewFinder(c)
-	return holding(&Reconciler{
-		Client:      c,
-		Scheme:      scheme,
-		Recorder:    events.NewFakeRecorder(100),
-		pauser:      lifecycle.NewPauser(c, finder),
-		autoscalers: finder,
-		metrics:     &stubMetrics{cpuMillis: 5, cpuPerReplica: 500, memoryPerReplica: 1 << 30, replicas: max(replicas, 1)},
-		engines:     newEngineRegistry(func() forecaster { return &stubForecaster{} }),
-		clock:       func() time.Time { return fixedTime },
-	}, append([]client.Object{workload}, objs...)...)
+	r := withTheOperatorsPauser(&Reconciler{
+		Client:   c,
+		Scheme:   scheme,
+		Recorder: events.NewFakeRecorder(100),
+		metrics:  &stubMetrics{cpuMillis: 5, cpuPerReplica: 500, memoryPerReplica: 1 << 30, replicas: max(replicas, 1)},
+		engines:  newEngineRegistry(func() forecaster { return &stubForecaster{} }),
+		clock:    func() time.Time { return monotonic(fixedTime) },
+	}, c)
+	return holding(r, append([]client.Object{workload}, objs...)...)
+}
+
+// The operator reads one clock: the pauser SetupWithManager gives it stamps
+// its pauses and wakes with the reconciler's.
+func TestReconciler_PausesByItsClock(t *testing.T) {
+	r := &Reconciler{Client: fakeClientBuilder(testScheme(t)).Build(),
+		clock: func() time.Time { return monotonic(fixedTime) }}
+	r.initDefaults()
+	requirePauserOnItsClock(t, r, "default")
+}
+
+// lifecycleReconciler's pauser is the operator's, on its reconciler's clock.
+func TestLifecycleReconciler_HasItsPauserOnItsClock(t *testing.T) {
+	r := lifecycleReconciler(t, lifecycleWorkload("api", v1alpha1.PhaseRunning), 3, interceptor.Funcs{})
+	requirePauserOnItsClock(t, r, "default")
 }
 
 func realPauserReconciler(t *testing.T, workload *v1alpha1.ManagedWorkload, objs ...client.Object) *Reconciler {
 	t.Helper()
 	return lifecycleReconciler(t, workload, 0, interceptor.Funcs{}, objs...)
+}
+
+// The operator reads one clock: the autoscaler finder SetupWithManager
+// gives it relies on KEDA's absence, as it reuses what it lists, for as
+// long by the reconciler's clock as everything else the reconciler times.
+func TestReconciler_FindsAutoscalersByItsClock(t *testing.T) {
+	lookups := 0
+	c := fakeClientBuilder(testScheme(t)).WithInterceptorFuncs(interceptor.Funcs{
+		List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+			if _, ok := list.(*unstructured.UnstructuredList); ok {
+				lookups++
+				return &meta.NoKindMatchError{GroupKind: kedaScaledObject.GroupKind()}
+			}
+			return c.List(ctx, list, opts...)
+		}}).Build()
+	now := monotonic(fixedTime)
+	r := &Reconciler{Client: c, clock: func() time.Time { return now }}
+	r.initDefaults()
+	find := func() {
+		t.Helper()
+		_, _, err := r.autoscalers.Find(context.Background(), "default", v1alpha1.TargetKindDeployment, "api")
+		require.NoError(t, err)
+	}
+
+	find()
+	now = now.Add(10*time.Minute - time.Second)
+	find()
+	assert.Equal(t, 1, lookups, "KEDA's absence relied on for 10 minutes by the reconciler's clock")
+	now = now.Add(time.Second)
+	find()
+	assert.Equal(t, 2, lookups, "and looked for again once they've passed")
 }
 
 // failStatusWrite fails the first status write of a ManagedWorkload that

@@ -137,8 +137,6 @@ func scanCmd(kube *kubeFlags) *cobra.Command {
 	opts := scanOptions{
 		kube:         kube,
 		cpuThreshold: defaultCPUThreshold,
-		cpuPrice:     cost.DefaultRates.CPUPerHour,
-		memoryPrice:  cost.DefaultRates.MemoryPerHour,
 		window:       "7d",
 		idleAfter:    time.Hour,
 		timeout:      5 * time.Minute,
@@ -528,10 +526,9 @@ func scanCluster(ctx context.Context, window time.Duration, prom prometheusSetup
 	}
 	scanner := discovery.NewScanner(c, c)
 	report, err := scanner.ScanCluster(ctx, discovery.ClusterOptions{
-		Namespaces:   namespaces,
-		CPUThreshold: opts.cpuThreshold,
-		Rates: cost.Rates{CPUPerHour: opts.cpuPrice, MemoryPerHour: opts.memoryPrice,
-			StoragePerMonth: cost.DefaultRates.StoragePerMonth},
+		Namespaces:      namespaces,
+		CPUThreshold:    opts.cpuThreshold,
+		Rates:           opts.rates(),
 		OwnCPUPrice:     opts.ownCPUPrice,
 		OwnMemoryPrice:  opts.ownMemoryPrice,
 		Now:             opts.now,

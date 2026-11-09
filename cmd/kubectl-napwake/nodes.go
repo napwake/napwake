@@ -515,6 +515,8 @@ func describeScaler(s nodescale.Scaler, pools []nodescale.NodePool) string {
 		}
 	case nodescale.GKEAutopilot:
 		return string(s.Kind) + " (scales nodes itself)"
+	case nodescale.EKSFargate:
+		return string(s.Kind) + " (a node for each pod, gone when it stops)"
 	case nodescale.ClusterAutoscaler:
 		name := string(s.Kind)
 		if s.Provider != "" {

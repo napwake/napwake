@@ -163,7 +163,7 @@ func TestWakeRequest_EndsAWouldBePause(t *testing.T) {
 	workload.Spec.DryRun = true
 	r := lifecycleReconciler(t, workload, 3, interceptor.Funcs{})
 	now := fixedTime
-	r.clock = func() time.Time { return now }
+	r.clock = func() time.Time { return monotonic(now) }
 	reconcileUntilSettled(t, r)
 	require.Equal(t, v1alpha1.PhaseIdle, getWorkload(t, r, "api").Status.Phase)
 

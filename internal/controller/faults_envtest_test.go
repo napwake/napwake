@@ -37,7 +37,6 @@ import (
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 	"github.com/napwake/napwake/internal/autoscaler"
-	"github.com/napwake/napwake/internal/lifecycle"
 )
 
 var errInjected = errors.New("injected failure")
@@ -128,14 +127,12 @@ func (e *faultEnv) create(t *testing.T, ns string) client.ObjectKey {
 func (e *faultEnv) reconciler(t *testing.T, c client.Client) *Reconciler {
 	t.Helper()
 	c = client.WithFieldOwner(indexedClient{c}, v1alpha1.FieldManager)
-	finder := autoscaler.NewFinder(c)
-	return &Reconciler{
+	return withTheOperatorsPauser(&Reconciler{
 		Client: c, Scheme: testScheme(t), Recorder: events.NewFakeRecorder(1000),
-		pauser: lifecycle.NewPauser(c, finder), autoscalers: finder,
 		metrics: &stubMetrics{cpuPerReplica: 100, memoryPerReplica: 1 << 30, replicas: 3},
 		engines: newEngineRegistry(func() forecaster { return &stubForecaster{} }),
 		clock:   time.Now,
-	}
+	}, c)
 }
 
 // settle stands in for the Deployment controller: the pods asked for are

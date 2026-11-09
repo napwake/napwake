@@ -39,7 +39,7 @@ func busyWorkloadReconciler(t *testing.T) (*Reconciler, *time.Time) {
 	r := newTestReconciler(t, workload, &stubPauser{})
 	r.metrics = &stubMetrics{cpuMillis: 500, cpuPerReplica: 1000, memoryPerReplica: 1 << 30, replicas: 1}
 	now := fixedTime
-	r.clock = func() time.Time { return now }
+	r.clock = func() time.Time { return monotonic(now) }
 	return r, &now
 }
 
@@ -141,7 +141,7 @@ func TestReconcile_ActivitySurvivesARestart(t *testing.T) {
 	r := newTestReconciler(t, workload, &stubPauser{pauseDone: true})
 	r.metrics = &stubMetrics{cpuMillis: 500, cpuPerReplica: 1000, replicas: 1}
 	now := fixedTime
-	r.clock = func() time.Time { return now }
+	r.clock = func() time.Time { return monotonic(now) }
 	reconcileAndVersion(t, r)
 	now = now.Add(time.Minute)
 	reconcileAndVersion(t, r)
@@ -150,7 +150,7 @@ func TestReconcile_ActivitySurvivesARestart(t *testing.T) {
 	restarted := &Reconciler{Client: r.Client, Scheme: r.Scheme, Recorder: r.Recorder, pauser: pauser,
 		metrics: &stubMetrics{cpuMillis: 5, cpuPerReplica: 1000, replicas: 1},
 		engines: newEngineRegistry(func() forecaster { return &stubForecaster{} }),
-		clock:   func() time.Time { return now }}
+		clock:   func() time.Time { return monotonic(now) }}
 	now = fixedTime.Add(5*time.Minute + 30*time.Second)
 	reconcileAndVersion(t, restarted)
 
