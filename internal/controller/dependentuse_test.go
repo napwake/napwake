@@ -545,7 +545,7 @@ func TestPausedDemand_ADependentsWakeIsntDemand(t *testing.T) {
 
 			require.Equal(t, v1alpha1.PhaseRunning, postgres.Status.Phase, "woken")
 			hour := r.engines.hours[postgres.UID]
-			assert.Equal(t, forecast.HourStart(fixedTime, nil), hour.Start)
+			assert.Equal(t, inUTC(forecast.HourStart(fixedTime, nil)), inUTC(hour.Start))
 			assert.InDelta(t, tt.want, hour.Peak, 1e-9)
 		})
 	}
