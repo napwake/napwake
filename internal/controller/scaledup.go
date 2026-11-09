@@ -307,7 +307,9 @@ const conditionAutoscaled = "Autoscaled"
 
 // reportAutoscaler says what scales the workload while it runs, and how
 // Napwake pauses it alongside: an HPA stops at zero replicas, and KEDA is
-// held at zero through its own annotation.
+// held at zero through its own annotation. One whose range starts at 0 can
+// take the workload to zero itself, which Napwake leaves to it, as any
+// workload already at zero, and is woken to at least one replica.
 func (r *Reconciler) reportAutoscaler(ctx context.Context, workload *v1alpha1.ManagedWorkload) error {
 	if r.autoscalers == nil {
 		return nil
@@ -320,11 +322,23 @@ func (r *Reconciler) reportAutoscaler(ctx context.Context, workload *v1alpha1.Ma
 		meta.RemoveStatusCondition(&workload.Status.Conditions, conditionAutoscaled)
 		return nil
 	}
-	how := "Napwake pauses it at zero, where the HPA stops scaling, and resumes it within that range"
-	if a.Kind == autoscaler.KEDA {
-		how = "Napwake pauses it by having KEDA hold it at zero, and resumes it within that range"
-	}
-	r.setCondition(workload, conditionAutoscaled, metav1.ConditionTrue, string(a.Kind),
-		fmt.Sprintf("%s %s scales it between %d and %d replicas; %s", a.Kind, a.Name, a.Min, a.Max, how))
+	r.setCondition(workload, conditionAutoscaled, metav1.ConditionTrue, string(a.Kind), autoscaledMessage(a))
 	return nil
+}
+
+func autoscaledMessage(a autoscaler.Autoscaler) string {
+	owner, pauses := "the HPA", "Napwake pauses it at zero, where the HPA stops scaling"
+	if a.Kind == autoscaler.KEDA {
+		owner, pauses = "KEDA", "Napwake pauses it by having KEDA hold it at zero"
+	}
+	scales := fmt.Sprintf("%s %s scales it between %d and %d replicas", a.Kind, a.Name, a.Min, a.Max)
+	if a.Min > 0 {
+		return fmt.Sprintf("%s; %s, and resumes it within that range", scales, pauses)
+	}
+	resumes := fmt.Sprintf("to between 1 and %d replicas", a.Max)
+	if a.Max <= 1 {
+		resumes = "to 1 replica"
+	}
+	return fmt.Sprintf("%s, and to zero itself: Napwake leaves that zero to %s, and holds no requests there. "+
+		"While it runs, %s, and resumes it %s", scales, owner, pauses, resumes)
 }

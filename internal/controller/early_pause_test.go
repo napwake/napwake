@@ -337,7 +337,7 @@ func TestEarlyPause_DryRunMeasuresIt(t *testing.T) {
 	assert.Contains(t, early[0], "[dry-run] api: idle for 30 minutes")
 	assert.Contains(t, early[0], "would have paused before idleAfter (1 hour) runs out")
 
-	r.clock = func() time.Time { return fixedTime.Add(40 * time.Minute) }
+	r.clock = func() time.Time { return monotonic(fixedTime.Add(40 * time.Minute)) }
 	r.metrics = &stubMetrics{cpuMillis: 500, cpuPerReplica: 1000, replicas: 1}
 	_, err = r.reconcileAutomation(context.Background(), workload, target)
 	require.NoError(t, err)

@@ -17,10 +17,21 @@ limitations under the License.
 package main
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
+	"github.com/napwake/napwake/internal/cost"
 	"github.com/napwake/napwake/internal/discovery"
 )
 
@@ -119,4 +130,62 @@ func TestNodeTypesPhrase_Many(t *testing.T) {
 		"on-demand list prices of the cluster's 5 node types (m6i.large, m6i.xlarge, r6i.large and 2 more, "+
 			"AWS eu-west-1)",
 		nodeTypesPhrase(types))
+}
+
+// --help shows no default for the price flags: unset, each node is priced
+// at its own type's list price, and only one with none at the assumed
+// price, so a default would say what isn't so, as --timezone's did.
+func TestScanHelp_PricesHaveNoFalseDefault(t *testing.T) {
+	out, err := runCLI(t, nil, "scan", "--help")
+	require.NoError(t, err)
+
+	for _, flag := range []string{"--cpu-price float", "--memory-price float"} {
+		i := strings.Index(out, flag)
+		require.GreaterOrEqual(t, i, 0, flag)
+		line, _, _ := strings.Cut(out[i:], "\n")
+		assert.Contains(t, line, "Unset, each node is priced at its type's list price", flag)
+		assert.NotContains(t, line, "(default", flag)
+	}
+}
+
+// With no price given, a workload on a node with no list price is priced at
+// the assumed prices, AWS on-demand in us-east-1, and a price given, zero
+// included, replaces only its own.
+func TestCLI_ScanPricesUnsetAtTheAssumedPrices(t *testing.T) {
+	objs := []client.Object{
+		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "preview-42"}},
+		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "preview-42"},
+			Spec: appsv1.DeploymentSpec{Replicas: ptr.To[int32](2),
+				Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "api"}},
+				Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "api"}},
+					Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "main",
+						Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("1"), corev1.ResourceMemory: resource.MustParse("4Gi"),
+						}}}}}}}},
+	}
+	assumed := cost.DefaultRates
+	tests := []struct {
+		name        string
+		args        []string
+		cpu, memory float64
+	}{
+		{name: "none given", cpu: assumed.CPUPerHour, memory: assumed.MemoryPerHour},
+		{name: "a CPU price", args: []string{"--cpu-price", "0.05"}, cpu: 0.05, memory: assumed.MemoryPerHour},
+		{name: "a memory price of nothing", args: []string{"--memory-price", "0"}, cpu: assumed.CPUPerHour},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := runCLI(t, newStatusClient(t, interceptor.Funcs{}, objs...),
+				append([]string{"scan", "-n", "preview-42", "--window", "0", "-o", "json"}, tt.args...)...)
+			require.NoError(t, err, out)
+			var result scanResult
+			require.NoError(t, json.Unmarshal([]byte(out), &result))
+
+			assert.InDelta(t, tt.cpu, result.Prices.CPUPerHour, 1e-9)
+			assert.InDelta(t, tt.memory, result.Prices.MemoryPerHour, 1e-9)
+			require.Len(t, result.Workloads, 1)
+			assert.InDelta(t, 2*(tt.cpu+4*tt.memory), result.Workloads[0].HourlyCost, 1e-9,
+				"two replicas of a vCPU and 4 GiB")
+		})
+	}
 }

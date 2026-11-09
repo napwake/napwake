@@ -18,6 +18,7 @@ package sim
 
 import (
 	"errors"
+	"math"
 	"sync"
 	"testing"
 	"time"
@@ -323,27 +324,68 @@ func TestDaylightSaving_WrongTimezoneCostsMornings(t *testing.T) {
 	assert.Equal(t, later.UsedDays, later.Ready, "relearned within two weeks")
 }
 
-// The operator restarting every day, at a different time each day, loses
-// the hour each restart lands in and nothing else: the forecast is taken up
-// from the state it saved, and starts acting within hours of when it
-// would have without the restarts.
+// The operator restarting every day, at a different time each day, and
+// back within two minutes, loses nothing: the hour each restart lands in is
+// taken up from what the operator last wrote of it. Down for ten minutes,
+// it loses that hour and nothing else: the forecast is taken up from the
+// state it saved, and starts acting within hours of when it would have
+// without the restarts.
 func TestOperatorRestarts(t *testing.T) {
-	restarts := make([]Restart, 0, 56)
-	for d := range 56 {
-		at := monday.Add(time.Duration(d)*day + time.Duration(d*97%1440)*time.Minute)
-		restarts = append(restarts, Restart{At: at, Down: 2 * time.Minute})
-	}
 	steady := simulate(t, Scenario{Duration: 8 * week, Traffic: OfficeHours(time.UTC)})
-	r := simulate(t, Scenario{Duration: 8 * week, Traffic: OfficeHours(time.UTC), Restarts: restarts})
-
-	assert.Less(t, r.Hours, steady.Hours, "the hours the restarts landed in aren't learned")
-	assert.Greater(t, r.Hours, steady.Hours-56, "only those")
-	acts, ok := r.Reached(forecast.DailyActive)
-	require.True(t, ok)
 	steadyActs, _ := steady.Reached(forecast.DailyActive)
-	assert.InDelta(t, steadyActs.Hours(), acts.Hours(), 12)
-	s := r.Summarize(monday.Add(4 * week))
-	assert.Equal(t, s.UsedDays, s.Ready)
+	for _, down := range []time.Duration{2 * time.Minute, 10 * time.Minute} {
+		t.Run(down.String(), func(t *testing.T) {
+			restarts := make([]Restart, 0, 56)
+			for d := range 56 {
+				at := monday.Add(time.Duration(d)*day + time.Duration(d*97%1440)*time.Minute)
+				restarts = append(restarts, Restart{At: at, Down: down})
+			}
+			r := simulate(t, Scenario{Duration: 8 * week, Traffic: OfficeHours(time.UTC), Restarts: restarts})
+
+			if down == 2*time.Minute {
+				assert.Equal(t, steady.Hours, r.Hours, "every hour learned")
+			} else {
+				assert.Less(t, r.Hours, steady.Hours, "the hours the restarts landed in aren't learned")
+				assert.Greater(t, r.Hours, steady.Hours-56, "only those")
+			}
+			acts, ok := r.Reached(forecast.DailyActive)
+			require.True(t, ok)
+			assert.InDelta(t, steadyActs.Hours(), acts.Hours(), 12)
+			s := r.Summarize(monday.Add(4 * week))
+			assert.Equal(t, s.UsedDays, s.Ready)
+		})
+	}
+}
+
+// The operator restarted at the same time every day, as by a nightly job,
+// and back within two minutes, learns every hour, and the forecast acts
+// when it would have without the restarts. Each restart takes up the hour
+// under way from what the operator last wrote of it. Before, every restart
+// lost its hour, the same hour of the day each time, so the forecast never
+// saw a whole day, and stayed Observing. Down for ten minutes each time, it
+// still does: those minutes may have hidden the hour's busiest.
+func TestOperatorRestartsAtTheSameTimeDaily(t *testing.T) {
+	steady := simulate(t, Scenario{Duration: 8 * week, Traffic: OfficeHours(time.UTC)})
+	steadyActs, _ := steady.Reached(forecast.DailyActive)
+	for _, down := range []time.Duration{2 * time.Minute, 10 * time.Minute} {
+		t.Run(down.String(), func(t *testing.T) {
+			restarts := make([]Restart, 0, 56)
+			for d := range 56 {
+				restarts = append(restarts, Restart{At: monday.Add(time.Duration(d)*day + 10*time.Hour + 30*time.Minute),
+					Down: down})
+			}
+			r := simulate(t, Scenario{Duration: 8 * week, Traffic: OfficeHours(time.UTC), Restarts: restarts})
+
+			acts, ok := r.Reached(forecast.DailyActive)
+			if down > 2*time.Minute {
+				assert.False(t, ok, "the forecast never sees a whole day")
+				return
+			}
+			assert.Equal(t, steady.Hours, r.Hours, "every hour learned")
+			require.True(t, ok, "the forecast acts")
+			assert.Equal(t, steadyActs, acts)
+		})
+	}
 }
 
 // Without the doorman, a paused workload's hours can't be seen, so its
@@ -488,6 +530,34 @@ func TestWarmStart(t *testing.T) {
 	assert.Equal(t, 10, s.UsedDays)
 	assert.Equal(t, 10, s.Ready, "ready from the first morning")
 	assert.Zero(t, s.WastedWakes)
+}
+
+// A workload taken on before the operator had a Prometheus URL learns live,
+// and acts after 8 days. Given one on its third day, its forecast learns
+// the four weeks before take-on beneath those three days, and acts, and is
+// fully active, from then: every morning from the next is ready. Given one
+// a week or more after take-on, it goes on learning live.
+func TestWarmStart_URLSetLater(t *testing.T) {
+	live := simulate(t, Scenario{Duration: 3 * week, Traffic: OfficeHours(time.UTC)})
+	liveActs, ok := live.Reached(forecast.DailyActive)
+	require.True(t, ok)
+	assert.Equal(t, 8.0, math.Round(liveActs.Hours()/24), "learning live, it acts after 8 days")
+
+	later := simulate(t, Scenario{Duration: 3 * week, Traffic: OfficeHours(time.UTC), URLAt: 3 * day})
+	acts, ok := later.Reached(forecast.DailyActive)
+	require.True(t, ok)
+	assert.Equal(t, 3*day, acts, "acting from the moment it learns its history")
+	full, ok := later.Reached(forecast.FullyActive)
+	require.True(t, ok)
+	assert.Equal(t, 3*day, full)
+	s := later.Summarize(monday.Add(4 * day))
+	assert.Equal(t, s.UsedDays, s.Ready, "every morning ready from the next")
+	assert.Zero(t, s.WastedWakes)
+
+	tooLate := simulate(t, Scenario{Duration: 3 * week, Traffic: OfficeHours(time.UTC), URLAt: HistoryLateFor})
+	lateActs, ok := tooLate.Reached(forecast.DailyActive)
+	require.True(t, ok)
+	assert.Equal(t, liveActs, lateActs, "a week on, as if never set")
 }
 
 // What the outlook projects in the first week, before the forecast acts, is

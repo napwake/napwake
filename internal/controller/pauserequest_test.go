@@ -159,7 +159,7 @@ func TestPauseRequest_WakesOnARequest(t *testing.T) {
 // last-activity or last-request, and not a last-activity from a clock ahead
 // of the operator's. Only a change made since the pause does.
 func TestPauseRequest_EarlierActivityDoesntWake(t *testing.T) {
-	// The real clock, which the lifecycle stamps pausedAt with.
+	// The real clock, which the operator, and so its pauser, reads.
 	start := time.Now()
 	workload := requestedPause()
 	workload.Annotations[v1alpha1.AnnotationLastActivity] = start.Add(-10 * time.Minute).Format(time.RFC3339)
@@ -349,7 +349,7 @@ func TestPauseRequest_DryRun(t *testing.T) {
 	workload.Annotations[v1alpha1.AnnotationLastActivity] = fixedTime.Add(-10 * time.Minute).Format(time.RFC3339)
 	r := lifecycleReconciler(t, workload, 3, interceptor.Funcs{})
 	now := fixedTime
-	r.clock = func() time.Time { return now }
+	r.clock = func() time.Time { return monotonic(now) }
 
 	reconcileUntilSettled(t, r)
 

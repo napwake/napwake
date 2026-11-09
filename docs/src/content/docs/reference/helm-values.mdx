@@ -227,20 +227,31 @@ Values that are there stay, `false`, `0` and `""` included. With its own default
 | <Ref id="resources-requests-cpu">resources.requests.cpu</Ref> | `10m` | CPU request |
 | <Ref id="resources-requests-memory">resources.requests.memory</Ref> | `128Mi` | Memory request |
 | <Ref id="resources-limits-cpu">resources.limits.cpu</Ref> | `500m` | CPU limit |
-| <Ref id="resources-limits-memory">resources.limits.memory</Ref> | `512Mi` | Memory limit. Raise it on clusters with many thousands of workloads |
+| <Ref id="resources-limits-memory">resources.limits.memory</Ref> | `1280Mi` | Memory limit, enough for some 10,000 ManagedWorkloads with a pod and a Service each, or 100,000 pods behind 10,000 Deployments, with a fifth to spare. Raise it beyond, by about 75Mi for each 1,000 more workloads, or 90Mi for each 1,000 more Deployments of 10 pods |
 
 <details class="nw-details">
 <summary>What the operator keeps in memory</summary>
 
-Its memory grows with the cluster.
+Its memory grows with the cluster, managed or not.
 
 | Objects | Held |
 |---------|------|
 | ManagedWorkloads, Deployments, StatefulSets, Services, Ingresses, PVCs, HPAs, Namespaces | Cached, only the watched namespaces' with `watchNamespaces` |
+| Deployments and StatefulSets | With only what the operator reads of their pod templates. Measured at about 9.6 KB each for a chart's with a service mesh, 14 KB whole |
 | Nodes | Cached without image lists |
-| Pods | Cached only as spare capacity needs, if bound to a node and not finished, as node, phase and requests. Measured at about 2.7 KB each |
+| Pods | Cached only as spare capacity needs, if bound to a node and not finished, as node, phase and requests. Measured at about 2.3 KB each |
 | The EndpointSlices it writes, the doorman Service's | Cached |
 | Other EndpointSlices, ConfigMaps, KEDA ScaledObjects | Read when needed, not cached |
+
+Measured on the operator binary as the chart runs it, at its peak resident memory, with ManagedWorkloads that have weeks of forecasts behind them:
+
+| Cluster | Peak |
+|---------|------|
+| 1,000 ManagedWorkloads, each with a Deployment, a pod and a Service | 139 MiB |
+| 5,000 of them | 430 MiB |
+| 10,000 of them | 790 MiB |
+| 40,000 pods, behind 4,000 Deployments and Services, 1,000 of them managed | 438 MiB |
+| 100,000 pods, behind 10,000 Deployments and Services, 1,000 of them managed | 954 MiB |
 
 Go's garbage collector, in the operator and the doorman, gets a soft limit of 90% of the memory limit. That leaves the rest for memory outside its heap.
 
@@ -398,7 +409,7 @@ Without the operator, every ManagedWorkload is stuck on its finalizer, which onl
 | Value | Default | Description |
 |-------|---------|-------------|
 | <Ref id="guard-uninstall">guard.uninstall</Ref> | `true` | Refuse `helm uninstall` while ManagedWorkloads are left, through a pre-delete hook Job, `<fullname>-uninstall-guard`. Argo CD 3.3 and later runs it as PreDelete, blocking Application deletion too. Earlier versions skip it ([uninstall](/getting-started/installation/#uninstall)) |
-| <Ref id="guard-upgrade">guard.upgrade</Ref> | `true` | Refuse `helm upgrade` or `helm rollback` to a `watchNamespaces` leaving out namespaces with managed workloads. It's a pre-upgrade and pre-rollback hook Job, `<fullname>-upgrade-guard`, only with `watchNamespaces` set. Argo CD runs it as PreSync, before every sync ([narrowing](/operations/upgrading/#narrowing-watchnamespaces)) |
+| <Ref id="guard-upgrade">guard.upgrade</Ref> | `true` | Refuse `helm upgrade` or `helm rollback` to a `watchNamespaces` leaving out namespaces with managed workloads. `helm upgrade` refuses as it renders the chart, so Helm records no revision. Then a pre-upgrade and pre-rollback hook Job, `<fullname>-upgrade-guard`, checks again. Both only with `watchNamespaces` set. Argo CD runs the hook as PreSync, before every sync ([narrowing](/operations/upgrading/#narrowing-watchnamespaces)) |
 | <Ref id="guard-nodeselector">guard.nodeSelector</Ref> | `{}` | The hooks' node selector. Empty uses the operator's |
 | <Ref id="guard-tolerations">guard.tolerations</Ref> | `[]` | Empty uses the operator's |
 | <Ref id="guard-affinity">guard.affinity</Ref> | `{}` | Empty uses the operator's |
@@ -427,6 +438,8 @@ Helm stops before changing anything and prints the list.
 - Mesh sidecars are kept out, since a running sidecar would keep the Job from finishing.
 - Their pods carry `control-plane: uninstall-guard` or `control-plane: upgrade-guard`, so the operator's Service and NetworkPolicy don't select them.
 - `--no-hooks` skips both.
+- Before the upgrade guard's hook, `helm upgrade` refuses what it would refuse at once, as it renders the chart, so Helm records no failed revision. With your access, it reads the operator's Deployment, then the ManagedWorkloads in the namespaces the upgrade leaves out. `--no-hooks` doesn't skip that. `guard.upgrade: false` drops it.
+- A `helm rollback` doesn't render the chart, and Argo CD renders it with no cluster to look in, so only the hook guards those.
 
 </details>
 

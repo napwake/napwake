@@ -50,8 +50,8 @@ func NodeCache() cache.ByObject {
 }
 
 // trimPod keeps of a pod its node, its phase, and what it requests as the
-// scheduler counts it, collapsed into one container: one map of requests a
-// pod rather than one a container.
+// scheduler counts it, collapsed into its overhead, which podRequests adds
+// in: one map of requests a pod, with no container to hold it.
 func trimPod(in any) (any, error) {
 	pod, ok := in.(*corev1.Pod)
 	if !ok {
@@ -68,10 +68,10 @@ func trimPod(in any) (any, error) {
 		Status: corev1.PodStatus{Phase: pod.Status.Phase},
 	}
 	if requests.CPU > 0 || requests.Memory > 0 {
-		trimmed.Spec.Containers = []corev1.Container{{Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
+		trimmed.Spec.Overhead = corev1.ResourceList{
 			corev1.ResourceCPU:    *resource.NewMilliQuantity(int64(math.Round(requests.CPU*1000)), resource.DecimalSI),
 			corev1.ResourceMemory: *resource.NewQuantity(int64(math.Round(requests.Memory)), resource.BinarySI),
-		}}}}
+		}
 	}
 	return trimmed, nil
 }

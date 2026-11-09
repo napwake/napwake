@@ -21,14 +21,17 @@ limitations under the License.
 // chart's sizing advice is measured rather than guessed. Each test fills
 // an API server with realistic objects, then starts the cache the operator
 // or the doorman starts, with its own selectors and trimming, and reads how
-// far the live heap grew once it holds them all. The chart's values.yaml,
-// and the Helm values and cost tracking pages, quote what it measures.
+// far the live heap grew once it holds them all. TestOperatorBinary runs
+// the operator binary itself against such a cluster, as the chart runs it,
+// and reads its runtime's memory. The chart's values.yaml, and the Helm
+// values and cost tracking pages, quote what it measures.
 //
-// It creates up to 100,000 pods, as many endpoints and 50,000
-// ManagedWorkloads, and caches each count several times, which takes about
-// four minutes, so it's left out of CI. Run it with:
+// The caches' tests create up to 100,000 pods, as many endpoints and
+// 50,000 ManagedWorkloads, and cache each count several times, which takes
+// about four minutes. The binary's takes about half an hour. So CI builds
+// them, in make vet and the linter, but doesn't run them. Run them with:
 //
-//	go test -tags sizing -count=1 -timeout 60m -v ./test/sizing
+//	go test -tags sizing -count=1 -timeout 120m -v ./test/sizing
 //
 // Without -race: the race detector turns off the runtime's packing of small
 // objects, so the doorman's EndpointSlices and ManagedWorkloads read up to a
@@ -82,7 +85,7 @@ import (
 // shows in the result.
 const (
 	// The operator, for each pod bound to a node.
-	podBytes int64 = 2700
+	podBytes int64 = 2300
 	// The doorman, for each pod behind a Service, and each Service.
 	endpointBytes int64 = 320
 	serviceBytes  int64 = 1200
@@ -136,9 +139,9 @@ func TestOperatorPodCache(t *testing.T) {
 			p := list.(*corev1.PodList).Items[0]
 			assert.Empty(t, p.Labels, "a cached pod keeps no labels")
 			assert.Empty(t, p.OwnerReferences, "or owners")
-			require.Len(t, p.Spec.Containers, 1, "its requests are collapsed into one container")
-			assert.Equal(t, "750m", p.Spec.Containers[0].Resources.Requests.Cpu().String(),
-				"what the scheduler counts: the app, the log shipper and the mesh proxy, more than the init container")
+			assert.Empty(t, p.Spec.Containers, "or containers")
+			assert.Equal(t, "750m", p.Spec.Overhead.Cpu().String(), "its requests are collapsed into its overhead: "+
+				"what the scheduler counts, the app, the log shipper and the mesh proxy, more than the init container")
 		},
 	})
 	for _, n := range podCounts {
@@ -291,6 +294,7 @@ func summarise(each []int64) result {
 // in one manager does, so their cost isn't counted as the cache's.
 type apiServer struct {
 	cfg        *rest.Config
+	kubeconfig []byte
 	scheme     *k8sruntime.Scheme
 	client     client.Client
 	httpClient *http.Client
@@ -304,6 +308,9 @@ func startAPIServer(t *testing.T, crds ...string) *apiServer {
 	require.NoError(t, clientgoscheme.AddToScheme(s))
 	require.NoError(t, v1alpha1.AddToScheme(s))
 	env := &envtest.Environment{CRDDirectoryPaths: crds, ErrorIfCRDPathMissing: true, Scheme: s}
+	// A cluster's range, with room for a Service for each of 20,000
+	// Deployments. envtest's own holds 256.
+	env.ControlPlane.GetAPIServer().Configure().Set("service-cluster-ip-range", "10.96.0.0/12")
 	cfg, err := env.Start()
 	require.NoError(t, err, "starting envtest; set KUBEBUILDER_ASSETS to an absolute path, as `make setup-envtest` prints")
 	t.Cleanup(func() { assert.NoError(t, env.Stop()) })
@@ -319,7 +326,7 @@ func startAPIServer(t *testing.T, crds ...string) *apiServer {
 	for i := range namespaces {
 		require.NoError(t, c.Create(t.Context(), &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace(i)}}))
 	}
-	return &apiServer{cfg: cfg, scheme: s, client: c, httpClient: httpClient, mapper: mapper}
+	return &apiServer{cfg: cfg, kubeconfig: env.KubeConfig, scheme: s, client: c, httpClient: httpClient, mapper: mapper}
 }
 
 // measure fills the cluster up to each of k's counts, and at each, and

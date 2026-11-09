@@ -167,7 +167,8 @@ func (c *Cluster) PodsOn(node string) []corev1.Pod {
 // known, a node Karpenter doesn't own is judged by Cluster Autoscaler's
 // rules, the stricter of the two. A node whose node group is at its
 // minimum gets CodeAtMinimum alone: Cluster Autoscaler can't remove it,
-// whatever runs on it. Nodes with nothing in the way have no entry.
+// whatever runs on it. Nodes with nothing in the way have no entry, nor
+// do EKS Fargate's, each of which goes with its one pod.
 func (c *Cluster) Blockers(a Autoscaler) map[string][]Reason {
 	pdbs := pdbsByNamespace(c.PDBs)
 	podsByNode := map[string][]*corev1.Pod{}
@@ -186,6 +187,7 @@ func (c *Cluster) Blockers(a Autoscaler) map[string][]Reason {
 		pods := podsByNode[node.Name]
 		var reasons []Reason
 		switch pool := node.Labels[labelKarpenterNodePool]; {
+		case isFargate(node.Labels):
 		case pool != "":
 			reasons = karpenterBlockers(node, pool, pods, pdbs, a)
 		case caScales:

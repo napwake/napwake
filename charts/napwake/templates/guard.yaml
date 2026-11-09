@@ -17,9 +17,15 @@ RBAC hooks that ran before it, until that guard runs again. So every guard's
 RBAC is also a pre-delete hook, whatever the values: helm uninstall deletes
 any an earlier refusal left, makes its own, and deletes them once its hooks
 have run. A refused Job stays an hour, for kubectl logs.
+
+Before either, a helm upgrade the upgrade guard would refuse fails here,
+as the chart renders, so Helm records no revision (napwake.refuseUpgrade).
 */}}
 {{- $guards := list (dict "op" "uninstall" "hook" "pre-delete" "job" .Values.guard.uninstall) }}
 {{- $upgrade := and .Values.guard.upgrade (not (empty .Values.watchNamespaces)) }}
+{{- if and $upgrade .Release.IsUpgrade (.Capabilities.APIVersions.Has "napwake.dev/v1alpha1") }}
+{{- include "napwake.refuseUpgrade" . }}
+{{- end }}
 {{- $guards = append $guards (dict "op" "upgrade" "hook" (ternary "pre-upgrade,pre-rollback" "" $upgrade) "job" $upgrade) }}
 {{- range $guards }}
 {{- $ctx := dict "root" $ "op" .op }}

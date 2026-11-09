@@ -139,7 +139,7 @@ func TestDryRun_AGapInWatchingDoesNotEndAWouldBePause(t *testing.T) {
 			r := newAutomationReconciler(t, workload, &stubForecaster{phase: forecast.Observing},
 				automationOpts{metrics: &metrics, pauser: &stubPauser{}})
 			now := fixedTime
-			r.clock = func() time.Time { return now }
+			r.clock = func() time.Time { return monotonic(now) }
 			if !tt.inMemory {
 				restarted(r, workload)
 			}
@@ -187,7 +187,7 @@ func TestDryRun_EstimateCountsThePauseUnderWay(t *testing.T) {
 		EstimatedFreed:   "$0.07",
 		Resources:        &v1alpha1.ResourceSnapshot{Replicas: 2, CPUMillis: 1000, MemoryBytes: gibibyte},
 	}
-	r := &Reconciler{clock: func() time.Time { return fixedTime }}
+	r := &Reconciler{clock: func() time.Time { return monotonic(fixedTime) }}
 
 	r.trackDryRun(workload)
 
@@ -223,7 +223,7 @@ func TestReconcile_DryRunEstimateGrowsWhileIdle(t *testing.T) {
 	r := newTestReconciler(t, workload, &stubPauser{})
 	r.metrics = &stubMetrics{cpuMillis: 5, cpuPerReplica: 1000, memoryPerReplica: gibibyte, replicas: 2}
 	now := fixedTime
-	r.clock = func() time.Time { return now }
+	r.clock = func() time.Time { return monotonic(now) }
 	written := func() *v1alpha1.ManagedWorkload {
 		_, err := r.Reconcile(context.Background(), reconcileFor("idle-app"))
 		require.NoError(t, err)
@@ -268,7 +268,7 @@ func TestDryRun_APauseThatBeganBeforeMeasuringIsNotCounted(t *testing.T) {
 // are and however small the workload: each one used to be rounded to the
 // cent as it was added, so a small workload never seemed worth pausing.
 func TestDryRun_ShortPausesOfSmallWorkloadsAddUp(t *testing.T) {
-	r := &Reconciler{clock: func() time.Time { return fixedTime }}
+	r := &Reconciler{clock: func() time.Time { return monotonic(fixedTime) }}
 	workload := automationWorkload(v1alpha1.PhaseIdle)
 	workload.Spec.DryRun = true
 	workload.Status.DryRun = measuring(fixedTime.Add(-24 * time.Hour))
@@ -319,6 +319,93 @@ func TestDryRun_WouldBePauseEndsWithoutMeasuredActivity(t *testing.T) {
 	assert.Equal(t, v1alpha1.PhaseRunning, getWorkload(t, r, "api").Status.Phase)
 }
 
+// askedToPauseUnchecked is a dry-run workload, two replicas running, asked
+// to pause before Napwake's first check of it, and a reconciler whose
+// clock the test moves. Its first reconcile, at pauseAsked, makes the
+// would-be pause, and starts no idle clock. Times are written through the
+// fake client, which, as the API server does, keeps them to the second.
+func askedToPauseUnchecked(t *testing.T, pauseAsked time.Time) (*Reconciler, *time.Time) {
+	t.Helper()
+	w := withPauseRequested(lifecycleWorkload("api", v1alpha1.PhaseRunning))
+	w.Spec.DryRun = true
+	w.Spec.IdlePolicy = &v1alpha1.IdlePolicySpec{IdleAfter: &metav1.Duration{Duration: time.Hour}}
+	w.Finalizers = []string{finalizerName}
+	r := newTestReconcilerWithReplicas(t, w, &stubPauser{}, 2)
+	r.Recorder = events.NewFakeRecorder(100)
+	metrics := idleCPU
+	r.metrics = &metrics
+	now := pauseAsked
+	r.clock = func() time.Time { return now }
+
+	_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+	require.NoError(t, err)
+	idle := getWorkload(t, r, "api")
+	require.Equal(t, v1alpha1.PhaseIdle, idle.Status.Phase, "a would-be pause")
+	require.Nil(t, idle.Status.Activity, "no idle clock yet")
+	return r, &now
+}
+
+// The stop switch's envtest failed 3 runs in 10: a dry-run workload asked
+// to pause before its idle clock started had its would-be pause ended at
+// Napwake's first check, by starting the clock, as "activity resumed
+// (created)". Starting the clock isn't activity since the pause began.
+func TestDryRun_TheFirstCheckDoesntEndAWouldBePauseAskedForBeforeIt(t *testing.T) {
+	pauseAsked := monotonic(fixedTime).Add(400 * time.Millisecond)
+	r, now := askedToPauseUnchecked(t, pauseAsked)
+
+	*now = pauseAsked.Add(30 * time.Second)
+	_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+	require.NoError(t, err)
+
+	w := getWorkload(t, r, "api")
+	assert.Equal(t, v1alpha1.PhaseIdle, w.Status.Phase, "the would-be pause goes on")
+	require.NotNil(t, w.Status.Activity, "the first check starts the clock")
+	assert.Equal(t, v1alpha1.ActivitySourceCreated, w.Status.Activity.LastActivitySource)
+	assert.NotContains(t, drainEvents(t, r), ReasonActivityResumed)
+	require.NotNil(t, w.Status.DryRun)
+	assert.Zero(t, w.Status.DryRun.Slept.Duration, "nothing ended it")
+}
+
+// Activity since a would-be pause began ends it, however soon after Napwake
+// first checks the workload, as the activity would wake a paused one. An
+// annotation is stamped to the second, and the pause's beginning is kept to
+// the second too, so one in the second it began counts: it can't be told
+// from one just after, as when a dependent wakes in that second. Starting
+// the clock after it mustn't lose it. One stamped the second before the
+// pause began doesn't count.
+func TestDryRun_ActivityAfterAWouldBePauseAskedForBeforeTheFirstCheckEndsIt(t *testing.T) {
+	pauseAsked := monotonic(fixedTime).Add(400 * time.Millisecond)
+	for _, tt := range []struct {
+		name     string
+		stamped  time.Time
+		wantEnds bool
+	}{
+		{name: "in the second the pause began", stamped: fixedTime, wantEnds: true},
+		{name: "between the pause and the first check", stamped: fixedTime.Add(10 * time.Second), wantEnds: true},
+		{name: "the second before the pause began", stamped: fixedTime.Add(-time.Second)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			r, now := askedToPauseUnchecked(t, pauseAsked)
+			annotate(t, r, "api", v1alpha1.AnnotationLastActivity, tt.stamped.UTC().Format(time.RFC3339))
+
+			*now = pauseAsked.Add(30 * time.Second)
+			_, err := r.Reconcile(context.Background(), reconcileFor("api"))
+			require.NoError(t, err)
+
+			w := getWorkload(t, r, "api")
+			emitted := drainEvents(t, r)
+			if !tt.wantEnds {
+				assert.Equal(t, v1alpha1.PhaseIdle, w.Status.Phase, "activity before the pause doesn't end it")
+				assert.NotContains(t, emitted, ReasonActivityResumed)
+				return
+			}
+			assert.Equal(t, v1alpha1.PhaseRunning, w.Status.Phase, "the activity ends the would-be pause")
+			assert.Contains(t, emitted, "activity resumed (annotation)")
+			assert.NotContains(t, emitted, "(created)")
+		})
+	}
+}
+
 // A would-be pause ends, and is counted, when Napwake stops measuring it:
 // the target scaled to zero, labelled to be ignored, or in a namespace
 // protected since. It lasted until then, however long ago the last activity
@@ -364,7 +451,7 @@ func TestDryRun_WouldBePauseEndsWhenNapwakeLetsGo(t *testing.T) {
 }
 
 func TestTrackDryRun(t *testing.T) {
-	r := &Reconciler{clock: func() time.Time { return fixedTime }}
+	r := &Reconciler{clock: func() time.Time { return monotonic(fixedTime) }}
 	workload := automationWorkload(v1alpha1.PhaseRunning)
 
 	workload.Spec.DryRun = true

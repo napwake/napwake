@@ -202,6 +202,10 @@ type statusResult struct {
 	Workloads   []statusWorkload `json:"workloads"`
 	Problems    []problem        `json:"problems"`
 	Recent      []happening      `json:"recent"`
+	// LettingGo are the workloads whose ManagedWorkload is being deleted,
+	// which Napwake hands back and no longer manages, so they aren't among
+	// Workloads or counted with them.
+	LettingGo []lettingGo `json:"lettingGo,omitempty"`
 	// Note says when fewer namespaces were read than were asked for.
 	Note string `json:"note,omitempty"`
 	// EventsHidden is set when the user can't read events, so Recent is
@@ -256,6 +260,42 @@ type statusWorkload struct {
 	// before any wake has taken that long, which IngressTimeoutShort would
 	// put under Needs attention.
 	shortTimeouts []string
+}
+
+// lettingGo is a workload Napwake is letting go of, as its ManagedWorkload
+// is deleted: it's handed back, and stays up to a minute while its doorman
+// ports drain, as the ManagedWorkload shows Running. Workload is the
+// target's name, as status names workloads, and Target its kind and name.
+type lettingGo struct {
+	Namespace       string `json:"namespace"`
+	Workload        string `json:"workload"`
+	Target          string `json:"target"`
+	ManagedWorkload string `json:"managedWorkload"`
+}
+
+// maxLettingGoNamed is how many workloads being let go the line about them
+// names, as when a preview environment's namespace is deleted.
+const maxLettingGoNamed = 5
+
+// lettingGoLine says which workloads Napwake is letting go of, or "".
+func lettingGoLine(gone []lettingGo) string {
+	n := len(gone)
+	if n == 0 {
+		return ""
+	}
+	names := make([]string, 0, min(n, maxLettingGoNamed)+1)
+	for _, g := range gone[:min(n, maxLettingGoNamed)] {
+		names = append(names, g.Namespace+"/"+g.Workload)
+	}
+	if n > maxLettingGoNamed {
+		names = append(names, number(n-maxLettingGoNamed)+" more")
+	}
+	whose := "whose ManagedWorkload is"
+	if n > 1 {
+		whose = "whose ManagedWorkloads are"
+	}
+	return fmt.Sprintf("Letting go of %s, %s being deleted: Napwake hands %s back and stops managing %s.",
+		joinAnd(names), whose, pronounObject(n), pronounObject(n))
 }
 
 // problem is something about a workload that keeps Napwake from doing
@@ -452,6 +492,11 @@ func clusterStatus(ctx context.Context, c client.Client, home string, opts statu
 	for i := range workloads {
 		w := &workloads[i]
 		targets[w.UID] = w.Spec.Target.Name
+		if !w.DeletionTimestamp.IsZero() {
+			result.LettingGo = append(result.LettingGo, lettingGo{Namespace: w.Namespace, Workload: w.Spec.Target.Name,
+				Target: targetRef(w), ManagedWorkload: w.Name})
+			continue
+		}
 		row := workloadStatus(w, activeUntil[targetOfManaged(w)], now)
 		result.Workloads = append(result.Workloads, row)
 		if discovery.PausingOff(w) {
@@ -1279,6 +1324,9 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time, pl palett
 	p := &printer{w: w}
 	if len(result.Workloads) == 0 {
 		p.line("%s: Napwake manages no workloads here.", result.Cluster)
+		if gone := lettingGoLine(result.LettingGo); gone != "" {
+			p.line("%s", gone)
+		}
 		p.line("%s", billLine(result.NodeAutoscaler))
 		if result.Note != "" {
 			p.line("%s", result.Note)
@@ -1291,6 +1339,9 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time, pl palett
 	}
 	p.line("%s: Napwake manages %s.", result.Cluster, countOf(len(result.Workloads), "workload"))
 	p.line("  %s", pl.phaseCounts(result.Workloads))
+	if gone := lettingGoLine(result.LettingGo); gone != "" {
+		p.line("  %s", gone)
+	}
 	p.line("  %s", billLine(result.NodeAutoscaler))
 	if zone := timeZoneLine(result.ForecastTimeZones); zone != "" {
 		p.line("  %s", zone)

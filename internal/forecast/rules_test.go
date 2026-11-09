@@ -313,3 +313,50 @@ func TestHour(t *testing.T) {
 		})
 	}
 }
+
+// A restarted operator goes on with the hour the one before it last wrote:
+// the hour under way, if its looks were written no more than the gap ago,
+// and an hour since ended whatever the gap, for Whole to judge. Nothing
+// written, or written by a clock ahead of this one's, is nothing to go on
+// with.
+func TestTakeUp(t *testing.T) {
+	const gap = 7 * time.Minute
+	seen := Hour{Start: ruleTime, Peak: 40, First: ruleTime.Add(time.Minute), Last: ruleTime.Add(25 * time.Minute)}
+	tests := []struct {
+		name    string
+		written Hour
+		at      time.Duration
+		ok      bool
+		whole   bool
+	}{
+		{name: "nothing written", at: 27 * time.Minute},
+		{name: "the hour under way, back within minutes", written: seen, at: 27 * time.Minute, ok: true, whole: true},
+		{name: "the hour under way, back at the gap", written: seen, at: 32 * time.Minute, ok: true, whole: true},
+		{name: "the hour under way, back after longer", written: seen, at: 33 * time.Minute},
+		{name: "an hour that ended, written near its end", at: 3*time.Hour + 2*time.Minute, ok: true, whole: true,
+			written: Hour{Start: ruleTime, Peak: 40, First: ruleTime, Last: ruleTime.Add(55 * time.Minute)}},
+		{name: "an hour that ended, written well before its end", written: seen, at: time.Hour + 2*time.Minute,
+			ok: true},
+		{name: "an hour after this one's", written: Hour{Start: ruleTime.Add(time.Hour), First: ruleTime.Add(time.Hour),
+			Last: ruleTime.Add(time.Hour)}, at: 30 * time.Minute},
+		{name: "looks written after now", written: seen, at: 20 * time.Minute},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			now := ruleTime.Add(tt.at)
+			h, ok := TakeUp(tt.written, HourStart(now, nil), now, gap)
+			require.Equal(t, tt.ok, ok)
+			if !ok {
+				return
+			}
+			assert.Equal(t, tt.written, h)
+			// The restarted operator looks every minute from now.
+			for at := now; ; at = at.Add(time.Minute) {
+				if ended, over := h.Look(HourStart(at, nil), at, 0, true); over {
+					assert.Equal(t, tt.whole, ended.Whole(gap) && ended.Peak == 40)
+					return
+				}
+			}
+		})
+	}
+}

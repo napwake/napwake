@@ -724,8 +724,39 @@ func operatorCacheOptions(watched []string, doormanNamespace string) cache.Optio
 		&discoveryv1.EndpointSlice{}: controller.EndpointSliceCache(watched, doormanNamespace),
 		&corev1.Pod{}:                capacity.PodCache(),
 		&corev1.Node{}:               capacity.NodeCache(),
+		&appsv1.Deployment{}:         {Transform: trimTarget},
+		&appsv1.StatefulSet{}:        {Transform: trimTarget},
 	}
 	return opts
+}
+
+// trimTarget is trimForCache for a Deployment or StatefulSet, with its pod
+// template cut down to what the operator reads of it
+// (controller.TrimPodTemplate), since templates are most of their size. A
+// NEG forwarder's Deployment, which the operator patches from its cache,
+// keeps its whole template.
+func trimTarget(in any) (any, error) {
+	out, err := trimForCache(in)
+	if err != nil {
+		return out, err
+	}
+	switch t := out.(type) {
+	case *appsv1.Deployment:
+		if !ownedByManagedWorkload(t) {
+			controller.TrimPodTemplate(&t.Spec.Template)
+		}
+	case *appsv1.StatefulSet:
+		controller.TrimPodTemplate(&t.Spec.Template)
+	}
+	return out, nil
+}
+
+// ownedByManagedWorkload says whether a ManagedWorkload controls obj, as it
+// does the forwarders it runs.
+func ownedByManagedWorkload(obj metav1.Object) bool {
+	owner := metav1.GetControllerOf(obj)
+	return owner != nil && owner.Kind == "ManagedWorkload" &&
+		strings.HasPrefix(owner.APIVersion, v1alpha1.GroupVersion.Group+"/")
 }
 
 // doormanCacheOptions adds to cacheOptions the doorman's view of

@@ -135,25 +135,27 @@ func TestDocs_HowLongItTakes(t *testing.T) {
 		traffic  func(seed uint64) Traffic
 		seeds    int
 		settings func(*Settings)
+		urlAt    time.Duration
 	}{
-		{"Busy on weekdays", office, 1, nil},
+		{"Busy on weekdays", office, 1, nil, 0},
+		{"The same, taken on before the operator had a Prometheus URL", office, 1, nil, 3 * day},
 		{"The same, with people arriving and leaving up to 20 minutes", func(seed uint64) Traffic {
 			return Noisy(time.UTC, seed, 20*time.Minute, 10)
-		}, 20, nil},
+		}, 20, nil, 0},
 		{"The same, with people arriving and leaving up to an hour", func(seed uint64) Traffic {
 			return Noisy(time.UTC, seed, 60*time.Minute, 4)
-		}, 20, nil},
+		}, 20, nil, 0},
 		{"The same hours every day", func(uint64) Traffic {
 			return Working(time.UTC, EveryDay, 9*time.Hour+10*time.Minute, 17*time.Hour+30*time.Minute, 40)
-		}, 1, nil},
-		{"Always busy", func(uint64) Traffic { return Always(true, 40) }, 1, nil},
-		{"Always idle", func(uint64) Traffic { return Always(false, 0) }, 1, nil},
+		}, 1, nil, 0},
+		{"Always busy", func(uint64) Traffic { return Always(true, 40) }, 1, nil, 0},
+		{"Always idle", func(uint64) Traffic { return Always(false, 0) }, 1, nil, 0},
 		{"A queue worker with no Service", func(uint64) Traffic {
 			return Working(time.UTC, EveryDay, 7*time.Hour, 19*time.Hour, 40)
-		}, 1, queueWorker},
+		}, 1, queueWorker, 0},
 		{"A public preview only people wake", func(uint64) Traffic {
 			return Working(time.UTC, Weekdays, 9*time.Hour+5*time.Minute, 17*time.Hour+30*time.Minute, 40)
-		}, 1, asks},
+		}, 1, asks, 0},
 	}
 	table := readDocsTable(t, "### How long it takes", "`balanced` (75)")
 	require.Len(t, table.rows, len(scenarios), "a row for each scenario the test measures")
@@ -173,7 +175,8 @@ func TestDocs_HowLongItTakes(t *testing.T) {
 				if sc.settings != nil {
 					sc.settings(&set)
 				}
-				runs = append(runs, Scenario{Duration: 10 * week, Traffic: sc.traffic(seed), Settings: set})
+				runs = append(runs, Scenario{Duration: 10 * week, Traffic: sc.traffic(seed), Settings: set,
+					URLAt: sc.urlAt})
 			}
 			actsDays, fullDays := make([]float64, 0, sc.seeds), make([]float64, 0, sc.seeds)
 			for _, r := range simulateAll(t, runs) {

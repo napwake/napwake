@@ -34,8 +34,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
-	"github.com/napwake/napwake/internal/autoscaler"
-	"github.com/napwake/napwake/internal/lifecycle"
 	"github.com/napwake/napwake/internal/signal"
 )
 
@@ -89,12 +87,12 @@ func TestPrometheusRestart_DoesNotPauseABusyWorkload(t *testing.T) {
 	require.NoError(t, admin.Status().Update(ctx, mw))
 
 	c := client.WithFieldOwner(indexedClient{admin}, v1alpha1.FieldManager)
-	finder := autoscaler.NewFinder(c)
 	idle := idleCPU
-	r := &Reconciler{Client: c, Scheme: scheme, Recorder: events.NewFakeRecorder(1000), PodReader: admin,
-		pauser: lifecycle.NewPauser(c, finder), autoscalers: finder, metrics: &idle,
+	r := withTheOperatorsPauser(&Reconciler{Client: c, Scheme: scheme, Recorder: events.NewFakeRecorder(1000),
+		PodReader: admin, metrics: &idle,
 		engines: newEngineRegistry(func() forecaster { return &stubForecaster{} }),
-		clock:   func() time.Time { return now }, prometheus: signal.NewPrometheus(srv.URL)}
+		clock:   func() time.Time { return now }, prometheus: signal.NewPrometheus(srv.URL)}, c)
+	requirePauserOnItsClock(t, r, ns)
 	remember(r, mw)
 	key := client.ObjectKeyFromObject(mw)
 	check := func(at time.Time) *v1alpha1.ManagedWorkload {
