@@ -193,7 +193,11 @@ func (e *Engine) lastHourAhead(t time.Time) bool {
 	return e.lastHour > hourStart(t)+3600
 }
 
-// Observed reports whether the hour containing now has been observed.
+// Observed reports whether the hour containing now has been observed. It
+// answers only for the hour under way or the next one, as its callers ask
+// it: an hour more than one before the last observed is taken for a clock
+// gone wrong, and reported unobserved, so that Observe takes it rather than
+// refusing every hour until real time catches up.
 func (e *Engine) Observed(now time.Time) bool {
 	t := e.local(now)
 	return e.lastHour != 0 && !e.lastHourAhead(t) && hourStart(t) <= e.lastHour

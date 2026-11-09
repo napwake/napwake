@@ -114,6 +114,7 @@ The queue worker is woken by a Prometheus activity query instead. The public pre
 | Workload | `eager` (60) | `balanced` (75) | `cautious` (85) |
 |----------|--------------|-----------------|-----------------|
 | Busy on weekdays from 09:10 to 17:30, quiet nights and weekends | 8 / 14 | 8 / 14 | 8 / 14 |
+| The same, taken on before the operator had a Prometheus URL, which is set on its third day ([Learning from history](#learning-from-history)) | 3 / 3 | 3 / 3 | 3 / 3 |
 | The same, with people arriving and leaving up to 20 minutes either side and away one weekday in ten (the median of 20) | 8 / 14 | 8 / 14 | 8 / 14 |
 | The same, with people arriving and leaving up to an hour either side and away one weekday in four (the median of 20) | 8 / 29 | 9 / never | 10 / never |
 | The same hours every day, weekends included | 8 / 14 | 8 / 14 | 8 / 14 |
@@ -131,7 +132,7 @@ A test in the repo runs these, and fails if they drift from this table.
 | One it can't get right every day, as in the third row | A higher threshold waits for more evidence |
 | Always busy, or always idle | Acting changes nothing. One is never paused, and the other never woken or held awake by its forecast of no demand |
 | Any, before the forecast acts | Idle detection and wake on request work from the first hour. The first request of the morning wakes the workload, or with `ask` the first click |
-| Any, with Prometheus history | The forecast [learns from its history](#learning-from-history) first, so a few weeks of a steady pattern acts from the first day |
+| Any, with Prometheus history | The forecast [learns from its history](#learning-from-history) first, so a few weeks of a steady pattern acts from the first day. With a URL set within a week of Napwake taking the workload on, it acts from the day it's set |
 
 ## When it acts
 
@@ -273,6 +274,8 @@ Then it carries on live. A steady pattern acts from the first day. An irregular 
 | When it fails | The operator asks for one workload at a time, and waits up to 30 seconds. A failing query is tried twice more, two minutes apart, before the forecast learns live only |
 | A reconcile | Never held up. The forecast learns live meanwhile, and takes up what was learned once it's ready |
 | How often | Once per ManagedWorkload, when it's new. One that has learned live keeps what it learned. Deleting and creating it again starts it afresh, from history again |
+| A URL set after Napwake took the workload on | Within a week of take-on, the ManagedWorkload's creation, the operator reads the four weeks before the hour it was taken on in. The forecast learns them, then every hour it has learned live since, in order, requests included. It's as if it had started from them. Later than a week, it carries on live. By then it acts on what the history would have taught it |
+| The hours after take-on | Never read. Prometheus holds the hours Napwake paused the workload in, which read as quiet. Learned, they'd teach the forecast its own pauses |
 
 | What history can't tell | What it assumes |
 |-------------------------|-----------------|
@@ -285,11 +288,11 @@ Then it carries on live. A steady pattern acts from the first day. An irregular 
 
 | `history.reason` | Event | Meaning |
 |------------------|-------|---------|
-| `Learned` | `ForecastLearnedHistory` | Learned `hours` of history, `from` and `to`. The message says how much, such as `the forecast learned from 4 weeks of the workload's CPU history in Prometheus` |
+| `Learned` | `ForecastLearnedHistory` | Learned `hours` of history, `from` and `to`. The message says how much, such as `the forecast learned from 4 weeks of the workload's CPU history in Prometheus`. For a URL set after take-on, it adds `from before Napwake took it on, beneath the 72 hours it had learned live since` |
 | `NoHistory` | `ForecastLearningLive` | Prometheus has no CPU for its pods, as for a workload deployed with it. The forecast learns from now |
 | `NoCPURequests` | `ForecastHistoryUnavailable` (warning) | Its containers request no CPU, so there's nothing to measure its use against |
 | `QueryFailed` | `ForecastHistoryUnavailable` (warning) | Prometheus didn't answer three times. The message has its error |
-| `NoPrometheusURL` | none | The operator has no Prometheus URL, so the forecast learns live from the start |
+| `NoPrometheusURL` | none | The operator had no Prometheus URL when it took the workload on, so the forecast learned live from the start. With a URL set within a week of that, the history is learned then, and the reason becomes one of the above. Set later, the message says it came too late. If what was learned live can't be learned again on top of the history, it says why, with a `ForecastHistoryUnavailable` warning |
 
 [`kubectl napwake forecast`](/getting-started/kubectl-plugin/#replay-the-forecast) shows what the forecast would make of your workloads' history before you opt them in.
 

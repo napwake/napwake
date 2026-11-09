@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -65,6 +66,14 @@ const historyWindow = 4 * 7 * 24 * time.Hour
 // storage, so one that takes this long isn't answering.
 const historyQueryTimeout = 30 * time.Second
 
+// historyLateFor is how long after Napwake took a workload on without a
+// Prometheus URL a URL set since still has its forecast learn the history
+// from before: the week before its forecast acts live, through which it
+// keeps every hour it has learned, for forecast.Rebuild to learn them
+// again on top. A forecast that has learned live for longer has learned
+// what the history would have taught it.
+const historyLateFor = 7 * 24 * time.Hour
+
 // historyAttempts is how many times a read that failed is made before the
 // forecast learns live only, historyRetry apart.
 const (
@@ -93,10 +102,19 @@ func newHistoryReader(url string, selector discovery.Selector) (*discovery.Prome
 }
 
 // historySeed is what reading a workload's history came to: a forecast that
-// learned it, or why there's none.
+// learned it, the history from before a workload was taken on for the
+// forecast learning live to be rebuilt on, or why there's none.
 type historySeed struct {
 	engine  forecaster
 	history v1alpha1.PredictionHistory
+	// beneath is the history of a workload taken on at takenOn without a
+	// Prometheus URL, to be learned beneath what its forecast has learned
+	// live since, with its activity threshold, cpuThreshold, when the
+	// reconcile takes it up: rebuilt then, the forecast has every hour
+	// learned live up to that reconcile.
+	beneath      []forecast.Hour
+	takenOn      time.Time
+	cpuThreshold float64
 	// adopted says the workload's reconcile has taken the engine up.
 	adopted bool
 }
@@ -129,6 +147,9 @@ func (reg *engineRegistry) adoptSeed(uid types.UID, settings forecast.Settings) 
 		return historySeed{}, false, false
 	}
 	first = !seed.adopted
+	if first && seed.beneath != nil {
+		seed = reg.rebuild(uid, seed, settings)
+	}
 	if first && seed.engine != nil {
 		seed.engine.Configure(settings)
 		reg.engines[uid] = seed.engine
@@ -138,11 +159,64 @@ func (reg *engineRegistry) adoptSeed(uid types.UID, settings forecast.Settings) 
 	return seed, first, true
 }
 
-// needsHistory reports whether nothing has yet come of reading a
-// workload's history.
-func needsHistory(workload *v1alpha1.ManagedWorkload) bool {
-	return workload.DeletionTimestamp == nil &&
-		(workload.Status.Prediction == nil || workload.Status.Prediction.History == nil)
+// rebuild learns the seed's history beneath what the workload's forecast
+// has learned live, by forecast.Rebuild, for adoptSeed, whose lock it's
+// called with. A forecast that can't be rebuilt, as one that has learned
+// live for a week, goes on as it is, and the seed says why.
+func (reg *engineRegistry) rebuild(uid types.UID, seed historySeed, settings forecast.Settings) historySeed {
+	live, ok := reg.engines[uid]
+	if !ok {
+		live = reg.newEngine()
+	}
+	rebuilt, learned, err := rebuildBeneath(seed, live, settings)
+	if err != nil {
+		return historySeed{history: v1alpha1.PredictionHistory{Reason: HistoryNoPrometheusURL,
+			Message: fmt.Sprintf("%s. Its history couldn't be learned beneath what it has learned live since: %v",
+				noPrometheusURLMessage, err)}, adopted: seed.adopted}
+	}
+	seed.engine = rebuilt
+	seed.history.Hours = learned
+	seed.history.Message = fmt.Sprintf("the forecast learned from %s of the workload's CPU history in Prometheus, "+
+		"from before Napwake took it on, beneath the %d hours it had learned live since", historySpan(learned),
+		live.GetDataPoints())
+	return seed
+}
+
+func rebuildBeneath(seed historySeed, live forecaster, settings forecast.Settings) (*forecast.Engine, int, error) {
+	state, err := live.Export()
+	if err != nil {
+		return nil, 0, err
+	}
+	engine, err := forecast.ImportEngine(state, settings)
+	if err != nil {
+		return nil, 0, err
+	}
+	return forecast.Rebuild(seed.beneath, engine, seed.takenOn, seed.cpuThreshold)
+}
+
+// needsHistory reports whether the workload's history is yet to be read:
+// nothing has come of reading it, or it was taken on without a Prometheus
+// URL, and with one now, as url says, it's within historyLateFor of that at
+// now (lateForHistory).
+func needsHistory(workload *v1alpha1.ManagedWorkload, url bool, now time.Time) bool {
+	if workload.DeletionTimestamp != nil {
+		return false
+	}
+	if p := workload.Status.Prediction; p == nil || p.History == nil {
+		return true
+	}
+	return url && lateForHistory(workload, now)
+}
+
+// lateForHistory reports whether the workload was taken on without a
+// Prometheus URL less than historyLateFor before now. Its history is read
+// up to the hour Napwake took it on in, its ManagedWorkload's creation:
+// from then on, Prometheus holds the hours Napwake paused it in, which read
+// as quiet.
+func lateForHistory(workload *v1alpha1.ManagedWorkload, now time.Time) bool {
+	p := workload.Status.Prediction
+	return p != nil && p.History != nil && p.History.Reason == HistoryNoPrometheusURL &&
+		!workload.CreationTimestamp.IsZero() && now.Sub(workload.CreationTimestamp.Time) < historyLateFor
 }
 
 // noPrometheusURLMessage says why a workload's forecast learned live from
@@ -151,13 +225,18 @@ func needsHistory(workload *v1alpha1.ManagedWorkload) bool {
 const noPrometheusURLMessage = "when Napwake took it on, the operator had no --prometheus-url, so the forecast " +
 	"learned from live CPU from the start, rather than from the workload's last four weeks"
 
+// tooLateMessage is noPrometheusURLMessage once the operator has a URL,
+// set too late for the workload's forecast to learn its history.
+const tooLateMessage = noPrometheusURLMessage + ". The --prometheus-url set since came more than a week after, " +
+	"too late to learn them beneath what it had learned live"
+
 // takeUpHistory records in status what came of reading the workload's
 // history, and the first time, has its forecast take up what it learned.
 // Without a Prometheus to read, the forecast learns live from the start.
 func (r *Reconciler) takeUpHistory(workload *v1alpha1.ManagedWorkload, engine forecaster,
 	settings forecast.Settings) forecaster {
-	if !needsHistory(workload) {
-		sayNoURLInThePast(workload)
+	if !needsHistory(workload, r.history != nil, r.now()) {
+		sayNoURLInThePast(workload, r.history != nil)
 		return engine
 	}
 	if r.history == nil {
@@ -193,10 +272,19 @@ func (r *Reconciler) takeUpHistory(workload *v1alpha1.ManagedWorkload, engine fo
 }
 
 // sayNoURLInThePast rewrites a no-Prometheus-URL reason an earlier operator
-// wrote in the present tense, which turned false once a URL was set.
-func sayNoURLInThePast(workload *v1alpha1.ManagedWorkload) {
-	if p := workload.Status.Prediction; p != nil && p.History != nil && p.History.Reason == HistoryNoPrometheusURL {
-		p.History.Message = noPrometheusURLMessage
+// wrote in the present tense, which turned false once a URL was set, and
+// with a URL now, as url says, that it came too late to learn the history.
+// A reason that says the history couldn't be learned beneath the live
+// forecast stays as it is.
+func sayNoURLInThePast(workload *v1alpha1.ManagedWorkload, url bool) {
+	p := workload.Status.Prediction
+	if p == nil || p.History == nil || p.History.Reason != HistoryNoPrometheusURL ||
+		strings.HasPrefix(p.History.Message, noPrometheusURLMessage+". Its history couldn't") {
+		return
+	}
+	p.History.Message = noPrometheusURLMessage
+	if url {
+		p.History.Message = tooLateMessage
 	}
 }
 
@@ -242,7 +330,7 @@ func (l *historyLearner) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	if err := l.client.Get(ctx, req.NamespacedName, &workload); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
-	if !needsHistory(&workload) || l.engines.seeded(workload.UID) {
+	if !needsHistory(&workload, true, l.clock()) || l.engines.seeded(workload.UID) {
 		return ctrl.Result{}, nil
 	}
 	// A new workload is updated several times in its first minute, and
@@ -332,6 +420,12 @@ func (l *historyLearner) learn(ctx context.Context, workload *v1alpha1.ManagedWo
 	now := l.clock()
 	end := forecast.HourStart(now, l.timezone)
 	start := forecast.HourStart(now.Add(-historyWindow), l.timezone)
+	late := lateForHistory(workload, now)
+	if late {
+		takenOn := workload.CreationTimestamp.Time
+		end = forecast.HourStart(takenOn, l.timezone)
+		start = forecast.HourStart(takenOn.Add(-historyWindow), l.timezone)
+	}
 	queryCtx, cancel := context.WithTimeout(ctx, historyQueryTimeout)
 	defer cancel()
 	peaks, err := l.history.HourlyPeaks(queryCtx, discovery.WorkloadCPU{Namespace: workload.Namespace,
@@ -340,9 +434,19 @@ func (l *historyLearner) learn(ctx context.Context, workload *v1alpha1.ManagedWo
 		return historySeed{}, false, err
 	}
 	hours := historyHours(peaks, requested, end)
-	if len(hours) == 0 {
+	switch {
+	case len(hours) == 0 && late:
+		return historySeed{history: v1alpha1.PredictionHistory{Reason: HistoryNone,
+			Message: "Prometheus has no CPU history for the workload's pods from before Napwake took it on, so the " +
+				"forecast goes on learning live"}}, true, nil
+	case len(hours) == 0:
 		return historySeed{history: v1alpha1.PredictionHistory{Reason: HistoryNone,
 			Message: "Prometheus has no CPU history for the workload's pods, so the forecast learns from now"}}, true, nil
+	case late:
+		from, to := metav1.NewTime(hours[0].Start.UTC()), metav1.NewTime(end.UTC())
+		return historySeed{beneath: hours, takenOn: workload.CreationTimestamp.Time,
+			cpuThreshold: cpuThresholdFor(workload),
+			history:      v1alpha1.PredictionHistory{Reason: HistoryLearned, From: &from, To: &to}}, true, nil
 	}
 
 	engine := forecast.NewEngine(forecast.DefaultParams(),

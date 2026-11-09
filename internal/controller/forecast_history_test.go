@@ -399,3 +399,189 @@ func TestHistorySpan(t *testing.T) {
 		assert.Equal(t, want, historySpan(hours), "%d hours", hours)
 	}
 }
+
+// takenOnWithoutAURL is a workload Napwake took on at takenOn, with no
+// Prometheus URL then.
+func takenOnWithoutAURL(takenOn time.Time) *v1alpha1.ManagedWorkload {
+	workload := forecastWorkload()
+	workload.CreationTimestamp = metav1.NewTime(takenOn)
+	workload.Status.Prediction = &v1alpha1.PredictionStatus{History: &v1alpha1.PredictionHistory{
+		Reason: HistoryNoPrometheusURL, Message: noPrometheusURLMessage}}
+	return workload
+}
+
+// pausedSince is officePeaks for the four weeks before the hour takenOn
+// falls in, and nothing from then until end, as Prometheus has a workload
+// Napwake has kept at zero since it took it on.
+func pausedSince(takenOn, end time.Time) map[int64]float64 {
+	from := forecast.HourStart(takenOn, nil)
+	peaks := officePeaks(from)
+	for t := from; t.Before(end); t = t.Add(time.Hour) {
+		peaks[t.Unix()] = 0
+	}
+	return peaks
+}
+
+// A workload taken on without a Prometheus URL, within a week of a URL
+// being set, has its history read up to the hour Napwake took it on in,
+// and no later: from then on, Prometheus holds the hours Napwake paused it
+// in. Every hour learned is from before; the four weeks before it.
+func TestHistoryLearner_ReadsUpToTakeOnOnceAURLIsSetLater(t *testing.T) {
+	now := fixedTime.Add(20 * time.Minute)
+	takenOn := now.Add(-3*24*time.Hour - 25*time.Minute)
+	history := &stubHistory{peaks: pausedSince(takenOn, fixedTime)}
+	l, _ := newHistoryLearner(t, history, &stubMetrics{cpuPerReplica: 100}, historyTarget())
+	workload := takenOnWithoutAURL(takenOn)
+	require.NoError(t, l.client.Delete(context.Background(), forecastWorkload()))
+	require.NoError(t, l.client.Create(context.Background(), workload))
+	require.NoError(t, l.client.Status().Update(context.Background(), workload))
+
+	learnHistory(t, l, workload)
+
+	require.Len(t, history.ranges, 1)
+	takeOnHour := forecast.HourStart(takenOn, nil)
+	assert.True(t, takeOnHour.Add(-historyWindow).Equal(history.ranges[0][0]), "read from %s", history.ranges[0][0])
+	assert.True(t, takeOnHour.Equal(history.ranges[0][1]), "read up to %s", history.ranges[0][1])
+	seed, ok := l.engines.seeds[workload.UID]
+	require.True(t, ok)
+	require.NotEmpty(t, seed.beneath)
+	for _, h := range seed.beneath {
+		assert.True(t, h.Start.Before(takeOnHour), "the hour from %s is from before take-on", h.Start)
+	}
+	assert.Len(t, seed.beneath, int(historyWindow/time.Hour), "the four weeks before")
+	assert.True(t, seed.takenOn.Equal(takenOn))
+	assert.Equal(t, HistoryLearned, seed.history.Reason)
+	assert.True(t, takeOnHour.Equal(seed.history.To.Time))
+}
+
+// A URL set a week or more after Napwake took a workload on is too late:
+// its forecast has learned live what the history would have taught it.
+// Its history isn't read, and its status says why.
+func TestHistory_AURLSetAWeekAfterTakeOnIsTooLate(t *testing.T) {
+	now := fixedTime.Add(20 * time.Minute)
+	for _, tt := range []struct {
+		name string
+		age  time.Duration
+		read bool
+	}{
+		{name: "six days and 23 hours", age: historyLateFor - time.Hour, read: true},
+		{name: "a week", age: historyLateFor},
+		{name: "a month", age: 30 * 24 * time.Hour},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			workload := takenOnWithoutAURL(now.Add(-tt.age))
+			history := &stubHistory{peaks: pausedSince(now.Add(-tt.age), fixedTime)}
+			c := fakeClientBuilder(testScheme(t)).WithStatusSubresource(&v1alpha1.ManagedWorkload{}).
+				WithObjects(workload, historyTarget()).Build()
+			l := &historyLearner{client: c, history: history, metrics: &stubMetrics{cpuPerReplica: 100},
+				engines: realEngineRegistry(), timezone: time.UTC, clock: func() time.Time { return now }}
+
+			learnHistory(t, l, workload)
+
+			assert.Equal(t, tt.read, len(history.asked) == 1, "read")
+			if tt.read {
+				return
+			}
+			fr := newForecastReconciler(t, workload, c)
+			fr.now = now
+			fr.history = history
+			fr.reconcile(t, workload)
+			h := workload.Status.Prediction.History
+			assert.Equal(t, HistoryNoPrometheusURL, h.Reason)
+			assert.Equal(t, tooLateMessage, h.Message)
+		})
+	}
+}
+
+// Taken up, the history read is learned beneath what the forecast learned
+// live: the four weeks before take-on, then every hour it learned live, as
+// many as it had when the reconcile took the history up, those it learned
+// after the history was read included. Its status and an event, once, say
+// so, and it acts.
+func TestTakeUpHistory_RebuildsBeneathTheLiveForecast(t *testing.T) {
+	takenOn := fixedTime.Add(-3*24*time.Hour + 5*time.Minute)
+	workload := takenOnWithoutAURL(takenOn)
+	workload.Status.Activity = nil
+	fr := newForecastReconciler(t, workload, nil)
+	metrics := &stubMetrics{cpuPerReplica: 100}
+	fr.metrics = metrics
+	fr.Recorder = events.NewFakeRecorder(1000)
+	for fr.now = takenOn; fr.now.Before(fixedTime.Add(-30 * time.Minute)); fr.now = fr.now.Add(time.Minute) {
+		metrics.cpuMillis = 1
+		if fr.now.Weekday() != time.Saturday && fr.now.Weekday() != time.Sunday && fr.now.Hour() >= 9 &&
+			fr.now.Hour() < 17 {
+			metrics.cpuMillis = 40
+		}
+		fr.reconcile(t, workload)
+	}
+	live, err := fr.engines.getOrCreate(workload.UID, forecast.Settings{}, "")
+	require.NoError(t, err)
+	require.Less(t, live.GetPhase(), forecast.DailyActive, "three days live don't act")
+
+	recorder := events.NewFakeRecorder(50)
+	fr.Recorder = recorder
+	fr.history = &stubHistory{peaks: pausedSince(takenOn, fixedTime)}
+	l := &historyLearner{client: fr.Client, history: fr.history, metrics: &stubMetrics{cpuPerReplica: 100},
+		engines: fr.engines, timezone: time.UTC, clock: func() time.Time { return fr.now }}
+	require.NoError(t, fr.Create(context.Background(), historyTarget()))
+	fr.now = fixedTime.Add(-20 * time.Minute)
+	learnHistory(t, l, workload)
+	require.True(t, l.engines.seeded(workload.UID))
+
+	// An hour learned live after the history was read, before the
+	// reconcile takes it up.
+	_, err = live.Observe(1, fixedTime.Add(-10*time.Minute))
+	require.NoError(t, err)
+	learnedLive := live.GetDataPoints()
+	fr.now = fixedTime.Add(time.Minute)
+	fr.reconcile(t, workload)
+	fr.now = fixedTime.Add(2 * time.Minute)
+	fr.reconcile(t, workload)
+
+	p := workload.Status.Prediction
+	require.NotNil(t, p.History)
+	assert.Equal(t, HistoryLearned, p.History.Reason)
+	assert.Equal(t, int(historyWindow/time.Hour), p.History.Hours)
+	assert.Equal(t, fmt.Sprintf("the forecast learned from 4 weeks of the workload's CPU history in Prometheus, from "+
+		"before Napwake took it on, beneath the %d hours it had learned live since", learnedLive), p.History.Message)
+	assert.True(t, forecast.HourStart(takenOn, nil).Equal(p.History.To.Time))
+	assert.True(t, p.Acting, "%s", p.Message)
+	restored, err := forecast.ImportEngine(p.State, forecast.Settings{})
+	require.NoError(t, err)
+	assert.Equal(t, int(historyWindow/time.Hour)+learnedLive, restored.GetDataPoints(),
+		"the history, and every hour learned live, the one after the read included")
+	assert.Equal(t, 1, countEvents(recorder, ReasonForecastLearnedHistory), "announced once")
+}
+
+// A forecast whose live hours can't be learned again on top of its history,
+// as one that has observed for longer than its workload has been managed,
+// goes on as it is, and its status and a warning say why, once.
+func TestTakeUpHistory_ALiveForecastThatCantBeRebuiltGoesOn(t *testing.T) {
+	takenOn := fixedTime.Add(-3 * 24 * time.Hour)
+	workload := takenOnWithoutAURL(takenOn)
+	trained := forecast.NewEngine(forecast.DefaultParams(), forecast.Settings{})
+	_, err := trained.Learn(historyHours(officePeaks(fixedTime), 100, fixedTime), 10)
+	require.NoError(t, err)
+	state, err := trained.Export()
+	require.NoError(t, err)
+	workload.Status.Prediction.State = state
+	fr := newForecastReconciler(t, workload, nil)
+	recorder := events.NewFakeRecorder(20)
+	fr.Recorder = recorder
+	fr.history = &stubHistory{}
+	fr.engines.offerSeed(workload.UID, historySeed{beneath: historyHours(pausedSince(takenOn, fixedTime), 100,
+		forecast.HourStart(takenOn, nil)), takenOn: takenOn, cpuThreshold: 10,
+		history: v1alpha1.PredictionHistory{Reason: HistoryLearned}})
+
+	fr.reconcile(t, workload)
+	fr.now = fr.now.Add(time.Minute)
+	fr.reconcile(t, workload)
+
+	h := workload.Status.Prediction.History
+	assert.Equal(t, HistoryNoPrometheusURL, h.Reason)
+	assert.Contains(t, h.Message, "Its history couldn't be learned beneath what it has learned live since")
+	restored, err := forecast.ImportEngine(workload.Status.Prediction.State, forecast.Settings{})
+	require.NoError(t, err)
+	assert.Equal(t, trained.GetDataPoints(), restored.GetDataPoints(), "the live forecast goes on")
+	assert.Equal(t, 1, countEvents(recorder, ReasonForecastHistoryUnavailable), "a warning, once")
+}

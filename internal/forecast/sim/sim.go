@@ -38,6 +38,11 @@ import (
 // activity checks and a status flush.
 const LookGap = 7 * time.Minute
 
+// HistoryLateFor is how long after take-on a Prometheus URL set later still
+// has the forecast learn the history from before: the operator's
+// historyLateFor.
+const HistoryLateFor = 7 * 24 * time.Hour
+
 // StatusFlush is how often, at most, the operator writes what it has seen of
 // the hour under way to status when nothing else is written: its
 // statusFlushInterval. A restarted operator takes the hour up from there.
@@ -127,6 +132,12 @@ type Scenario struct {
 	HandWake time.Duration
 	// State is a forecast to start from, as exported, instead of a new one.
 	State string
+	// URLAt is how long after Start, when Napwake took the workload on with
+	// no Prometheus URL, the operator is given one: then the forecast learns
+	// the four weeks before Start, as Prometheus has them from Traffic,
+	// beneath what it has learned live, as the operator has it do within
+	// HistoryLateFor of take-on. Zero is never.
+	URLAt time.Duration
 }
 
 // WakeCause is what woke a paused workload.
@@ -306,6 +317,8 @@ type run struct {
 	// row its own use undid soon after, with BackOff.
 	pausedAt    time.Time
 	wrongPauses int32
+	// urlGiven says the operator has been given a Prometheus URL.
+	urlGiven bool
 }
 
 func newRun(sc Scenario) (*run, error) {
@@ -372,6 +385,9 @@ func (s *run) look(t time.Time) error {
 	s.account(t, use)
 	if t.Before(s.downUntil) {
 		return nil
+	}
+	if err := s.learnHistory(t); err != nil {
+		return err
 	}
 	if s.restarted {
 		s.restarted = false
@@ -586,6 +602,37 @@ func (s *run) judgePause(t time.Time, cause WakeCause) {
 	case cause == WokenByRequest || cause == WokenByPeople || cause == WokenByHand:
 		s.wrongPauses++
 	}
+}
+
+// learnHistory has the forecast learn the workload's history beneath what
+// it has learned live, once the operator has a Prometheus URL, as the
+// operator does: the four weeks of Traffic up to the hour of Start, the
+// busiest five-minute reading of each hour. A forecast that has learned live
+// for a week goes on as it is.
+func (s *run) learnHistory(t time.Time) error {
+	if s.urlGiven || s.sc.URLAt == 0 || t.Before(s.sc.Start.Add(s.sc.URLAt)) {
+		return nil
+	}
+	s.urlGiven = true
+	if t.Sub(s.sc.Start) >= HistoryLateFor {
+		return nil
+	}
+	loc := s.loc()
+	start := forecast.HourStart(s.sc.Start, loc)
+	history := Peaks(s.sc.Traffic, start.Add(-4*7*24*time.Hour), start, 5*time.Minute, loc)
+	rebuilt, _, err := forecast.Rebuild(history, s.engine, s.sc.Start, s.sc.Settings.CPUThreshold)
+	switch {
+	case errors.Is(err, forecast.ErrLearnedLiveTooLong):
+		return nil
+	case err != nil:
+		return fmt.Errorf("learning the history at %s: %w", t, err)
+	}
+	s.engine = rebuilt
+	if phase := s.engine.GetPhase(); phase != s.phase {
+		s.phase = phase
+		s.report.Phases = append(s.report.Phases, PhaseChange{At: t, Phase: phase})
+	}
+	return nil
 }
 
 // see adds a look to the hour under way and feeds the forecast an hour once
