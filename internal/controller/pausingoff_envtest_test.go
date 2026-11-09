@@ -96,7 +96,7 @@ func (e *switchEnv) reconciler(t *testing.T, pausingOff bool, clock func() time.
 	finder := autoscaler.NewFinder(c)
 	return &Reconciler{
 		Client: c, Scheme: testScheme(t), Recorder: events.NewFakeRecorder(1000),
-		pauser: lifecycle.NewPauser(c, finder), autoscalers: finder,
+		pauser: lifecycle.NewPauser(c, finder).WithClock(clock), autoscalers: finder,
 		metrics:    &stubMetrics{cpuPerReplica: 100, memoryPerReplica: 1 << 30, replicas: 3},
 		engines:    newEngineRegistry(func() forecaster { return &stubForecaster{} }),
 		clock:      clock,

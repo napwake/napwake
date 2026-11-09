@@ -139,7 +139,7 @@ func TestDryRun_AGapInWatchingDoesNotEndAWouldBePause(t *testing.T) {
 			r := newAutomationReconciler(t, workload, &stubForecaster{phase: forecast.Observing},
 				automationOpts{metrics: &metrics, pauser: &stubPauser{}})
 			now := fixedTime
-			r.clock = func() time.Time { return now }
+			r.clock = func() time.Time { return monotonic(now) }
 			if !tt.inMemory {
 				restarted(r, workload)
 			}
@@ -187,7 +187,7 @@ func TestDryRun_EstimateCountsThePauseUnderWay(t *testing.T) {
 		EstimatedFreed:   "$0.07",
 		Resources:        &v1alpha1.ResourceSnapshot{Replicas: 2, CPUMillis: 1000, MemoryBytes: gibibyte},
 	}
-	r := &Reconciler{clock: func() time.Time { return fixedTime }}
+	r := &Reconciler{clock: func() time.Time { return monotonic(fixedTime) }}
 
 	r.trackDryRun(workload)
 
@@ -223,7 +223,7 @@ func TestReconcile_DryRunEstimateGrowsWhileIdle(t *testing.T) {
 	r := newTestReconciler(t, workload, &stubPauser{})
 	r.metrics = &stubMetrics{cpuMillis: 5, cpuPerReplica: 1000, memoryPerReplica: gibibyte, replicas: 2}
 	now := fixedTime
-	r.clock = func() time.Time { return now }
+	r.clock = func() time.Time { return monotonic(now) }
 	written := func() *v1alpha1.ManagedWorkload {
 		_, err := r.Reconcile(context.Background(), reconcileFor("idle-app"))
 		require.NoError(t, err)
@@ -268,7 +268,7 @@ func TestDryRun_APauseThatBeganBeforeMeasuringIsNotCounted(t *testing.T) {
 // are and however small the workload: each one used to be rounded to the
 // cent as it was added, so a small workload never seemed worth pausing.
 func TestDryRun_ShortPausesOfSmallWorkloadsAddUp(t *testing.T) {
-	r := &Reconciler{clock: func() time.Time { return fixedTime }}
+	r := &Reconciler{clock: func() time.Time { return monotonic(fixedTime) }}
 	workload := automationWorkload(v1alpha1.PhaseIdle)
 	workload.Spec.DryRun = true
 	workload.Status.DryRun = measuring(fixedTime.Add(-24 * time.Hour))
@@ -451,7 +451,7 @@ func TestDryRun_WouldBePauseEndsWhenNapwakeLetsGo(t *testing.T) {
 }
 
 func TestTrackDryRun(t *testing.T) {
-	r := &Reconciler{clock: func() time.Time { return fixedTime }}
+	r := &Reconciler{clock: func() time.Time { return monotonic(fixedTime) }}
 	workload := automationWorkload(v1alpha1.PhaseRunning)
 
 	workload.Spec.DryRun = true

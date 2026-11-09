@@ -129,13 +129,14 @@ func (e *faultEnv) reconciler(t *testing.T, c client.Client) *Reconciler {
 	t.Helper()
 	c = client.WithFieldOwner(indexedClient{c}, v1alpha1.FieldManager)
 	finder := autoscaler.NewFinder(c)
-	return &Reconciler{
+	r := &Reconciler{
 		Client: c, Scheme: testScheme(t), Recorder: events.NewFakeRecorder(1000),
-		pauser: lifecycle.NewPauser(c, finder), autoscalers: finder,
-		metrics: &stubMetrics{cpuPerReplica: 100, memoryPerReplica: 1 << 30, replicas: 3},
+		autoscalers: finder, metrics: &stubMetrics{cpuPerReplica: 100, memoryPerReplica: 1 << 30, replicas: 3},
 		engines: newEngineRegistry(func() forecaster { return &stubForecaster{} }),
 		clock:   time.Now,
 	}
+	r.pauser = lifecycle.NewPauser(c, finder).WithClock(r.now)
+	return r
 }
 
 // settle stands in for the Deployment controller: the pods asked for are

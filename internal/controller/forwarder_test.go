@@ -462,9 +462,9 @@ func TestForwarder_RetiresOnceTheWorkloadsRoutesHaveDrained(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, doormanSlices(t, r), "the Service goes straight to the workload's pods")
 	assert.False(t, noForwarder(t, r), "kept while its routes drain")
-	assert.Equal(t, portDrain, recheck, "looked at again when they've drained")
+	assert.Equal(t, portDrain, toTheMillisecond(recheck), "looked at again when they've drained")
 
-	r.clock = func() time.Time { return fixedTime.Add(portDrain) }
+	r.clock = func() time.Time { return monotonic(fixedTime.Add(portDrain + requeueLag)) }
 	recheck, err = r.reconcileDoorman(ctx, w, appTarget())
 
 	require.NoError(t, err)
@@ -508,9 +508,9 @@ func TestForwarder_OutlastsTheRouteWhileTheWorkloadResumes(t *testing.T) {
 	assert.Empty(t, doormanSlices(t, r), "the Service goes to the workload's own Ready pod")
 	assert.False(t, noForwarder(t, r), "removed before its route drained")
 	assert.Positive(t, recheck)
-	assert.LessOrEqual(t, recheck, portDrain, "looked at again by the time it has drained")
+	assert.LessOrEqual(t, toTheMillisecond(recheck), portDrain, "looked at again by the time it has drained")
 
-	r.clock = func() time.Time { return fixedTime.Add(portDrain) }
+	r.clock = func() time.Time { return monotonic(fixedTime.Add(portDrain + requeueLag)) }
 	_, err = r.reconcileDoorman(ctx, w, appTarget())
 
 	require.NoError(t, err)
@@ -532,7 +532,7 @@ func TestForwarder_SlicesKeepTheirDoormanPortsClaimed(t *testing.T) {
 	slice := doormanSlices(t, r)[0]
 
 	var fresh portAllocator
-	fresh.merge(portsInUse{slices: []discoveryv1.EndpointSlice{slice}}, fixedTime)
+	fresh.merge(portsInUse{slices: []discoveryv1.EndpointSlice{slice}}, monotonic(fixedTime))
 
 	assert.Contains(t, fresh.claims, port, "claimed for the workload from its slice")
 	assert.NotContains(t, fresh.claims, int32(8080), "the forwarder's port is no doorman port")

@@ -97,6 +97,30 @@ func monotonic(t time.Time) time.Time {
 	return now.Add(t.Sub(now.Round(0)))
 }
 
+// requeueLag is how long after the wait it asked for a requeued check
+// reads the clock: the real clock goes on while a requeue waits, so it's
+// never early. A test that moves a monotonic clock to the very instant the
+// operator waits for could land a microsecond or two before it, which two
+// readings of the same instant differ by.
+const requeueLag = time.Millisecond
+
+// toTheMillisecond is d, a wait or a span between two readings of a
+// monotonic clock, to the millisecond, past the microsecond or two the
+// readings differ by.
+func toTheMillisecond(d time.Duration) time.Duration {
+	return d.Round(time.Millisecond)
+}
+
+// inUTC is times in UTC, as the tests write dates. A monotonic clock, like
+// time.Now(), reads in time.Local.
+func inUTC(times ...time.Time) []time.Time {
+	utc := make([]time.Time, len(times))
+	for i, t := range times {
+		utc[i] = t.UTC()
+	}
+	return utc
+}
+
 // forecastReconciler runs automation with the real forecast engine against
 // a fake API server, at a clock the test moves. The reconciler reads it as
 // it reads the real clock, monotonic readings and all.
