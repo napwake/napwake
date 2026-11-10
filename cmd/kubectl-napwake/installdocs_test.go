@@ -28,6 +28,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// changelogFile is the CHANGELOG, whose install block is read from the
+// release's own section.
+const changelogFile = "CHANGELOG.md"
+
 // The scan's install commands are the docs': each page's block that installs
 // with napwake-values.yaml runs them, at the chart's release, up to and
 // including helm install. A reader gets the same install wherever they copy
@@ -51,21 +55,18 @@ func TestInstallCommands_AreTheDocs(t *testing.T) {
 		"docs/src/content/docs/reference/helm-values.mdx",
 		"README.md",
 		"charts/napwake/README.md",
-		"CHANGELOG.md",
+		changelogFile,
 	} {
 		t.Run(file, func(t *testing.T) {
-			want := installCommands(release)
-			if file == "CHANGELOG.md" {
-				want = installCommands(target)
-			}
 			page, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(file)))
 			require.NoError(t, err)
-			text := string(page)
-			if file == "CHANGELOG.md" {
-				text = changelogSection(t, text, strings.TrimPrefix(target, "v"))
+			text, want := string(page), installCommands(release)
+			isChangelog := file == changelogFile
+			if isChangelog {
+				text, want = changelogSection(t, text, strings.TrimPrefix(target, "v")), installCommands(target)
 			}
 			blocks := helmInstallBlocks(text)
-			if file == "CHANGELOG.md" && len(blocks) == 0 {
+			if isChangelog && len(blocks) == 0 {
 				return
 			}
 			require.Len(t, blocks, 1, "one block installs with napwake-values.yaml")
