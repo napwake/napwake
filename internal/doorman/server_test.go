@@ -2189,55 +2189,51 @@ func TestAdmission_ProxiedConnectionsAreCappedPerSource(t *testing.T) {
 	assert.True(t, a.proxy(other, now))
 }
 
-// A proxied connection that carries nothing either way for proxyIdle is
-// closed, so half-open ones don't pile up. One that carries something in
-// either direction stays open.
-func TestServer_ClosesIdleProxiedConnections(t *testing.T) {
+// keptBound is how long, by the wall clock, a test watches a kept
+// connection for anything that would close it.
+const keptBound = 300 * time.Millisecond
+
+// A connection the doorman proxied while the workload woke, as a database
+// pool's is when it connects while its database wakes, is kept once the
+// route drains, however long, busy or quiet, until one end closes it. A
+// pool notices a connection the doorman closed only at its next query,
+// which fails: PostgREST answers it with a 503 (P86).
+func TestServer_KeepsAProxiedConnectionUntilAnEndClosesIt(t *testing.T) {
 	port := freePort(t)
-	s, _ := startServerWith(t, func(s *Server) {
-		s.proxyIdle, s.proxyCheck = 400*time.Millisecond, 20*time.Millisecond
-	}, pausedWorkload("api", port, time.Minute), readySlice(echoPort(t)))
-
-	active := dial(t, port)
-	idle := dial(t, port)
-	send(t, idle, "hello\n")
-	echoed(t, idle, "hello\n")
-	for range 8 {
-		send(t, active, "ping\n")
-		echoed(t, active, "ping\n")
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	closedWithin(t, idle)
-	send(t, active, "still\n")
-	echoed(t, active, "still\n")
-	assert.Eventually(t, func() bool { return proxiedCount(s) == 1 }, 5*time.Second, 10*time.Millisecond)
-}
-
-// Once the workload is awake and its route drains, the connections still
-// proxied through the doorman are closed after drainedLifetime, so callers
-// with long-lived connections reconnect to its pods directly.
-func TestServer_ClosesProxiedConnectionsOnceTheRouteDrains(t *testing.T) {
-	port := freePort(t)
-	s, c := startServerWith(t, func(s *Server) {
-		s.drainedLifetime, s.proxyCheck = time.Second, 20*time.Millisecond
-	}, pausedWorkload("api", port, time.Minute), readySlice(echoPort(t)))
+	clock := &testClock{now: time.Now()}
+	s, c := startServerWith(t, func(s *Server) { s.now = clock.Now }, pausedWorkload("api", port, time.Minute),
+		readySlice(echoPort(t)))
 
 	conn := dial(t, port)
-	send(t, conn, "hello\n")
-	echoed(t, conn, "hello\n")
-	time.Sleep(1500 * time.Millisecond)
-	send(t, conn, "routed\n")
-	echoed(t, conn, "routed\n")
-
+	send(t, conn, "connect\n")
+	echoed(t, conn, "connect\n")
 	removeRoute(t, s, c)
-	start := time.Now()
-	// A quarter of the lifetime, leaving the rest for a slow runner's pings.
-	for time.Since(start) < 250*time.Millisecond {
-		send(t, conn, "ping\n")
-		echoed(t, conn, "ping\n")
+	// By the wall's clock too, the route has drained a while.
+	time.Sleep(keptBound)
+
+	for minute := range 60 {
+		clock.Advance(time.Minute)
+		require.NoError(t, s.syncRoutes(context.Background(), context.Background()))
+		if minute%10 == 9 {
+			// The pool's next query, after ten quiet minutes.
+			send(t, conn, "query\n")
+			echoed(t, conn, "query\n")
+		}
 	}
-	closedWithin(t, conn)
+	// Anything that would close it has had its time: the route left an
+	// hour ago by the test's clock, and twice keptBound ago by the wall's.
+	time.Sleep(keptBound)
+	send(t, conn, "still\n")
+	echoed(t, conn, "still\n")
+	assert.Equal(t, 1, proxiedCount(s))
+	byRoute := opmetrics.DoormanRouteProxiedConnections.WithLabelValues("dev", "api", "api", "http")
+	assert.Equal(t, float64(1), testutil.ToFloat64(byRoute), "counted for its route")
+
+	require.NoError(t, conn.Close())
+	assert.Eventually(t, func() bool { return proxiedCount(s) == 0 }, 5*time.Second, 10*time.Millisecond,
+		"its client closing it ends it")
+	assert.False(t, opmetrics.DoormanRouteProxiedConnections.DeleteLabelValues("dev", "api", "api", "http"),
+		"and its route's series goes")
 }
 
 // A port given to another workload while its old route drains is served

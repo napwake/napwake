@@ -415,12 +415,11 @@ The caps stop a flood of connections exhausting the doorman, or waking workloads
 | What | Cap | Over the cap |
 |------|-----|--------------|
 | Connections held, per doorman pod | 2048. Per workload 256, per source IP 1024, per source IP for one workload 128 | Closed at once, with nothing sent |
-| Passed through at once, per doorman pod | 1024. Per source IP 512 | Held as if the workload weren't Ready, until a place frees or `maxWait` runs out |
+| Passed through at once, per doorman pod | 1024. Per source IP 512. A connection [kept](#connections-made-as-it-wakes) holds its place until it's closed | Held as if the workload weren't Ready, until a place frees or `maxWait` runs out |
 | Clicks on **Wake it**, with [`Ask`](#the-wake-it-button) | One wake a minute per workload, whichever doorman pod a click reaches | The asleep page, a `429`, asking to try again in a minute |
 | Wakes | Per source IP, a burst of 30, then one every 2 seconds. Overall, a burst of 200, then 10 a second. Only a request that would wake a paused workload counts, and one refused overall doesn't use its source's allowance | Browsers get the waking-up page, and the rest are held. The wake is retried every 2 seconds until allowed or `maxWait` runs out |
 | Bytes read from held callers | 1MiB per connection, 32MiB in all, each connection's first 8KiB not counted | A larger body waits in the network until the workload is up, or other held connections free some of the 32MiB |
-| A passed-through connection that carries nothing either way | 10 minutes | Closed, so a vanished caller frees its place. Pings keep it open, as with WebSockets and database pools |
-| Connections still passing through the doorman once the workload is awake and its route drains | 5 minutes | Closed, so long-lived callers reconnect to the pods directly |
+| How long a passed-through connection lasts | No cap | [Kept](#connections-made-as-it-wakes) until the caller or the workload closes it |
 
 The doorman reads what held callers send, so it can let go at once of one who gives up. The uncounted 8KiB keeps that working for ordinary requests while uploads fill the 32MiB. A caller who leaves partway through a larger body is let go once it's read.
 
@@ -462,6 +461,16 @@ A browser gets the waking-up page, or with [`Ask`](#asking-before-waking) first 
 | Held as the wake ends back at zero, before any pod is Ready, as an [HPA with `minReplicas: 0`](/guides/autoscalers/#when-the-hpa-scales-to-zero) can take it there | Closed at once, with no response. A `RequestNotServed` warning says why, and `napwake_doorman_wakes_total` counts it as `drained` |
 | Over a [limit](#limits) | Closed at once, or held while the wake is retried |
 | The workload [asks before waking](#asking-before-waking), for anything but a person's browser | A `503` saying it's asleep and how to wake it, until someone does |
+
+### Connections made as it wakes
+
+A connection the doorman passes to the woken pods stays through the doorman until the caller or the workload closes it, however long it's quiet, and after the workload's Service sends new connections to its pods again. A database pool that connects while its database wakes keeps its connections through the doorman. Closing one would fail the pool's next query on it, which some answer with an error, such as PostgREST's `503`. So the doorman sets no limit of its own. A pool's own maximum lifetime, 30 minutes for PostgREST's, moves its connections to the pods in time.
+
+| | |
+|---|---|
+| A caller or pod that vanishes without closing | Found by TCP keep-alive, after about 2 minutes and a half, and the connection is closed |
+| A doorman pod that stops, as in an upgrade | It closes what it still carries at the end of its 25-second grace period, as any proxy would |
+| Seeing them | `napwake_doorman_proxied_connections_by_route` counts them for each workload's Service and port ([Metrics](/reference/metrics/#doorman)) |
 
 Held connections reach the woken pod from the doorman's IP. Only connections that arrive while the workload is paused or waking, and some as it pauses, go through the doorman. It records the caller's address on the ManagedWorkload as `napwake.dev/last-request-from`, so Napwake can [learn](/concepts/dependencies/#learned-dependencies) which workload sent it.
 
