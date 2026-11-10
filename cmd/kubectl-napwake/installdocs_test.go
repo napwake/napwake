@@ -41,7 +41,9 @@ func TestInstallCommands_AreTheDocs(t *testing.T) {
 	release := "v" + string(version[1])
 	// The CHANGELOG names the release it's for, and a release candidate's
 	// bump leaves it alone, so its block installs that release: v0.2.0 at
-	// v0.2.0-rc.12.
+	// v0.2.0-rc.12. Only that release's section is read: an older one's
+	// block installs what it did then. And a release's summary needn't have
+	// one, as 0.2.1's links to the upgrade guide instead.
 	target, _, _ := strings.Cut(release, "-")
 
 	for _, file := range []string{
@@ -58,7 +60,14 @@ func TestInstallCommands_AreTheDocs(t *testing.T) {
 			}
 			page, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(file)))
 			require.NoError(t, err)
-			blocks := helmInstallBlocks(string(page))
+			text := string(page)
+			if file == "CHANGELOG.md" {
+				text = changelogSection(t, text, strings.TrimPrefix(target, "v"))
+			}
+			blocks := helmInstallBlocks(text)
+			if file == "CHANGELOG.md" && len(blocks) == 0 {
+				return
+			}
 			require.Len(t, blocks, 1, "one block installs with napwake-values.yaml")
 			commands := blocks[0]
 			if i := slices.IndexFunc(commands, func(c string) bool { return strings.HasPrefix(c, "helm install ") }); i >= 0 {
@@ -67,6 +76,19 @@ func TestInstallCommands_AreTheDocs(t *testing.T) {
 			assert.Equal(t, want, commands, "the block's commands, up to helm install")
 		})
 	}
+}
+
+// changelogSection is the text of the CHANGELOG's section for version, from
+// its heading to the next version's.
+func changelogSection(t *testing.T, changelog, version string) string {
+	t.Helper()
+	heading := regexp.MustCompile(`(?m)^## \[` + regexp.QuoteMeta(version) + `\] - .*$`).FindStringIndex(changelog)
+	require.NotNil(t, heading, "CHANGELOG.md has a section for %s", version)
+	section := changelog[heading[1]:]
+	if next := regexp.MustCompile(`(?m)^## \[`).FindStringIndex(section); next != nil {
+		section = section[:next[0]]
+	}
+	return section
 }
 
 var (
