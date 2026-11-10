@@ -51,7 +51,7 @@ Change `Europe/London` to your users' time zone. It defaults to UTC, which puts 
 
 ```bash
 printf '\ntimezone: Europe/London\n' >> napwake-values.yaml
-helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.0 \
+helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.1-rc.2 \
   --namespace napwake-system --create-namespace -f napwake-values.yaml
 kubectl get pods -n napwake-system
 ```
@@ -67,7 +67,7 @@ With [krew](https://krew.sigs.k8s.io/docs/user-guide/setup/install/):
 
 ```bash
 kubectl krew install --manifest-url \
-  https://github.com/napwake/napwake/releases/download/v0.2.0/krew-napwake.yaml
+  https://github.com/napwake/napwake/releases/download/v0.2.1-rc.2/krew-napwake.yaml
 ```
 
 Or [download it](https://docs.napwake.dev/getting-started/kubectl-plugin/#installation) for Linux, macOS or Windows.
@@ -171,7 +171,7 @@ Every flag is in the [kubectl plugin reference](https://docs.napwake.dev/referen
 
 ## How it's built
 
-Napwake is at 0.2.0. Its API is `napwake.dev/v1alpha1`, which may change before 1.0. It has no telemetry, usage reporting or update checks.
+Napwake is at 0.2.1-rc.2. Its API is `napwake.dev/v1alpha1`, which may change before 1.0. It has no telemetry, usage reporting or update checks.
 
 Code lands through pull requests. Each one runs the unit tests, and end-to-end tests on kind with Kubernetes 1.30 and 1.37. Napwake is also tested by hand on GKE Standard. EKS, AKS and GKE Autopilot aren't tested yet.
 
