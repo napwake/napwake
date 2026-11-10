@@ -27,6 +27,7 @@ import (
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -484,9 +485,13 @@ func (r *Reconciler) warnMalformedActivity(workload *v1alpha1.ManagedWorkload, t
 	sources := []struct {
 		what string
 		obj  client.Object
+		kind corev1.ObjectReference
 	}{
-		{what: "ManagedWorkload " + workload.Name, obj: workload},
-		{what: string(workload.Spec.Target.Kind) + " " + workload.Spec.Target.Name, obj: target},
+		{what: "ManagedWorkload " + workload.Name, obj: workload,
+			kind: corev1.ObjectReference{APIVersion: v1alpha1.GroupVersion.String(), Kind: "ManagedWorkload"}},
+		{what: string(workload.Spec.Target.Kind) + " " + workload.Spec.Target.Name, obj: target,
+			kind: corev1.ObjectReference{APIVersion: appsv1.SchemeGroupVersion.String(),
+				Kind: string(workload.Spec.Target.Kind)}},
 	}
 	for _, s := range sources {
 		if s.obj == nil {
@@ -500,12 +505,26 @@ func (r *Reconciler) warnMalformedActivity(workload *v1alpha1.ManagedWorkload, t
 				continue
 			}
 			if r.activityWarned.first(workload.UID, id, raw) {
-				r.emitEvent(workload, false, "Warning", ReasonInvalidActivityAnnotation, actionEvaluateIdle,
+				// Related to the annotation, or a warning about another, or
+				// about a new value on the target, would be folded into
+				// this one.
+				r.emitRelatedEvent(workload, annotationOn(s.obj, s.kind, key), false, "Warning",
+					ReasonInvalidActivityAnnotation, actionEvaluateIdle,
 					"%s on %s is %q, not an RFC 3339 time such as %s, so it's ignored: it neither keeps the workload "+
 						"awake nor wakes it", key, s.what, raw, r.now().UTC().Format(time.RFC3339))
 			}
 		}
 	}
+}
+
+// annotationOn refers to the annotation key on obj, of the kind given, as
+// it is now.
+func annotationOn(obj client.Object, kind corev1.ObjectReference, key string) *corev1.ObjectReference {
+	ref := kind
+	ref.Namespace, ref.Name, ref.UID, ref.ResourceVersion = obj.GetNamespace(), obj.GetName(), obj.GetUID(),
+		obj.GetResourceVersion()
+	ref.FieldPath = fmt.Sprintf("metadata.annotations['%s']", key)
+	return &ref
 }
 
 // wakeSource is what to record as the activity that woke a paused workload:

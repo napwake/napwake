@@ -173,6 +173,7 @@ type Reconciler struct {
 	doormanFamilies doormanFamilies
 	quietCPU        quietCPU
 	handBacks       handBackStamps
+	sentNotes       sentNotes
 	uids            workloadUIDs
 	graph           *workloadGraph
 	clock           func() time.Time
@@ -434,6 +435,7 @@ func (r *Reconciler) readWorkload(ctx context.Context, name types.NamespacedName
 		if uid, ok := r.uids.take(name); ok {
 			r.forgetWorkload(uid)
 		}
+		r.sentNotes.forget(name)
 		metrics.DeleteWorkload(name.Namespace, name.Name)
 		return false, nil
 	}
@@ -448,12 +450,15 @@ func (r *Reconciler) readWorkload(ctx context.Context, name types.NamespacedName
 			r.forgetWorkload(uid)
 			metrics.DeleteWorkload(name.Namespace, name.Name)
 		}
-		r.emitEvent(workload, false, "Warning", ReasonManagedByAnotherInstall, actionCheckInstall,
+		// Once, not on every reconcile: the other install's writes bring one
+		// each.
+		r.emitOnChange(workload, nil, "Warning", ReasonManagedByAnotherInstall, actionCheckInstall,
 			"the Napwake installed in %s manages this ManagedWorkload, so the one in %s leaves it alone; "+
 				"installs must watch different namespaces. If the one in %s is gone, remove the %s annotation",
 			owner, r.OperatorNamespace, owner, v1alpha1.AnnotationOperator)
 		return false, nil
 	}
+	r.sentNotes.clear(name, ReasonManagedByAnotherInstall+"/"+actionCheckInstall)
 	if replaced, ok := r.uids.see(name, workload.UID); ok {
 		r.forgetWorkload(replaced)
 	}
@@ -756,7 +761,9 @@ func (r *Reconciler) recoverPause(ctx context.Context, workload *v1alpha1.Manage
 // that can't be read is reported and treated as none.
 func (r *Reconciler) pauseRecordOn(ctx context.Context, workload *v1alpha1.ManagedWorkload,
 	target client.Object) (*v1alpha1.PauseStatus, error) {
+	lost := ReasonPauseRecordLost + "/" + actionPause
 	if _, ok := target.GetAnnotations()[v1alpha1.AnnotationPausedFrom]; !ok {
+		r.sentNotes.clear(client.ObjectKeyFromObject(workload), lost)
 		return nil, nil
 	}
 	live, ok := target.DeepCopyObject().(client.Object)
@@ -768,9 +775,14 @@ func (r *Reconciler) pauseRecordOn(ctx context.Context, workload *v1alpha1.Manag
 	}
 	pause, err := lifecycle.RecordOn(live)
 	if err != nil {
-		r.emitEvent(workload, false, "Warning", ReasonPauseRecordLost, actionPause, "%v", err)
+		// Related to the target the record is on, which changes with it,
+		// where the ManagedWorkload doesn't: a warning about a record
+		// that's wrong another way would be folded into this one. And once,
+		// not on every reconcile, while it can't be read.
+		r.emitOnChange(workload, live, "Warning", ReasonPauseRecordLost, actionPause, "%v", err)
 		return nil, nil
 	}
+	r.sentNotes.clear(client.ObjectKeyFromObject(workload), lost)
 	return pause, nil
 }
 

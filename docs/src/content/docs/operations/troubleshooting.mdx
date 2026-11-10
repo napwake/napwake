@@ -73,7 +73,7 @@ kubectl describe deployment <name> -n <namespace>
 
 ### An `InvalidSetting` warning
 
-A settings annotation on the workload or its namespace has a value Napwake can't read. The warning event is on the workload, and names the annotation, where it is, and what Napwake did instead:
+A settings annotation on the workload or its namespace has a value Napwake can't read. The warning event is on the workload, and names the annotation, where it is, and what Napwake did instead. One warning lists every value it can't read, separated by semicolons:
 
 ```
 napwake.dev/wake="Ask" on the workload isn't "request" or "ask", so the doorman asks before waking it, to be safe
@@ -494,7 +494,7 @@ kubectl get managedworkloads -n staging -o jsonpath='{range .items[*]}{.metadata
 
 ### A `ManagedByAnotherInstall` warning
 
-Two installs watch its namespace, and the other, in the namespace the event names, took this ManagedWorkload first. Give each install its own `watchNamespaces` ([More than one install](/getting-started/installation/#more-than-one-install)). If the other is gone, `kubectl annotate managedworkload <name> -n <namespace> napwake.dev/operator-` hands it over.
+Two installs watch its namespace, and the other, in the namespace the event names, took this ManagedWorkload first. It's sent once, as this install finds it, and again if the other install changes, or the operator restarts. Give each install its own `watchNamespaces` ([More than one install](/getting-started/installation/#more-than-one-install)). If the other is gone, `kubectl annotate managedworkload <name> -n <namespace> napwake.dev/operator-` hands it over.
 
 ### A paused workload's ManagedWorkload lost its status
 
@@ -502,7 +502,7 @@ It happens to one restored from a backup without status, or deleted without its 
 
 A `PauseRecovered` event means Napwake took the pause up again from the workload's `napwake.dev/paused-from` ([how](/concepts/lifecycle/#idempotency)). It's `Paused` again if still at zero, and wakes as usual. Leave that annotation alone, as Napwake removes it at hand-back.
 
-A `PauseRecordLost` warning means there was no record, or the annotation couldn't be read, as the message says. With no record anywhere, nothing was scaled, and the workload is `Running` again.
+A `PauseRecordLost` warning means there was no record, or the annotation couldn't be read, as the message says. With no record anywhere, nothing was scaled, and the workload is `Running` again. An annotation that can't be read is warned about once, and again if it changes, or the operator restarts.
 
 If its replicas are at zero anyway, Napwake takes it as scaled to zero outside Napwake, and leaves it. Scale it up yourself.
 

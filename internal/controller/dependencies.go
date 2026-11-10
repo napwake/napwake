@@ -603,7 +603,7 @@ func (r *Reconciler) stampDependencies(ctx context.Context, workload *v1alpha1.M
 
 	g, err := r.loadDependencyGraph(ctx)
 	if err != nil {
-		r.reportWakeFailure(ctx, workload, "its dependencies", err)
+		r.reportWakeFailure(ctx, workload, "its dependencies", nil, err)
 		return nil
 	}
 	stamped := map[types.UID]string{}
@@ -615,7 +615,7 @@ func (r *Reconciler) stampDependencies(ctx context.Context, workload *v1alpha1.M
 		}
 		value, err := r.stampActivity(ctx, dep.key)
 		if err != nil {
-			r.reportWakeFailure(ctx, workload, dep.key.String(), err)
+			r.reportWakeFailure(ctx, workload, dep.key.String(), dep.managedWorkload(), err)
 			continue
 		}
 		stamped[dep.uid] = value
@@ -627,10 +627,21 @@ func (r *Reconciler) stampDependencies(ctx context.Context, workload *v1alpha1.M
 // along with its dependent.
 const ReasonDependencyWakeFailed = "DependencyWakeFailed"
 
-func (r *Reconciler) reportWakeFailure(ctx context.Context, workload *v1alpha1.ManagedWorkload, what string, err error) {
+// managedWorkload is the node's ManagedWorkload, as an event's related
+// object names it.
+func (n *workloadNode) managedWorkload() *v1alpha1.ManagedWorkload {
+	return &v1alpha1.ManagedWorkload{ObjectMeta: metav1.ObjectMeta{Namespace: n.key.Namespace, Name: n.key.Name,
+		UID: n.uid}}
+}
+
+// reportWakeFailure warns that what, a dependency or all of them, couldn't
+// be woken. The warning is related to the dependency, or one for another
+// dependency, in the same wake, would be folded into it.
+func (r *Reconciler) reportWakeFailure(ctx context.Context, workload *v1alpha1.ManagedWorkload, what string,
+	dependency client.Object, err error) {
 	log.FromContext(ctx).Info("couldn't wake a dependency", "workload", workload.Name,
 		"namespace", workload.Namespace, "dependency", what, "error", err.Error())
-	r.emitEvent(workload, false, "Warning", ReasonDependencyWakeFailed, actionResume,
+	r.emitRelatedEvent(workload, dependency, false, "Warning", ReasonDependencyWakeFailed, actionResume,
 		"couldn't wake %s, so it may still be paused: %v", what, err)
 }
 
