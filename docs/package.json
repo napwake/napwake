@@ -17,7 +17,7 @@
     "@astrojs/starlight": "0.42.7",
     "@expressive-code/core": "0.44.3",
     "@expressive-code/plugin-line-numbers": "0.44.3",
-    "astro": "7.4.2",
+    "astro": "7.4.12",
     "katex": "0.19.1",
     "mermaid-isomorphic": "3.1.0",
     "playwright": "1.64.1",
