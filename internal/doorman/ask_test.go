@@ -935,6 +935,42 @@ func TestServer_CountsWhatItTurnsAwayBeforeThePauseHasATime(t *testing.T) {
 	assert.Empty(t, s.away, "and isn't kept for later")
 }
 
+// A request turned away on a route that doesn't yet have its pause's time,
+// as it paused or in the seconds before the next route sync, counts for
+// that pause even when the workload wakes before the next flush, which
+// finds no pause in status then: waking clears it (P88).
+func TestServer_CountsWhatItTurnedAwayAsItPausedOnceItWakes(t *testing.T) {
+	ctx := context.Background()
+	port := freePort(t)
+	w := askingWorkload(port)
+	began := time.Now().Add(-time.Minute).Truncate(time.Second).UTC()
+	w.Status.Phase = v1alpha1.PhasePausing
+	w.Status.Pause = &v1alpha1.PauseStatus{PreviousReplicas: 2, StartedAt: &metav1.Time{Time: began},
+		WakeAnnotations: &v1alpha1.WakeAnnotations{}}
+	s, c := newTestServer(t, nil, w)
+	s.awayFlush = time.Hour
+	run(t, s)
+
+	curl := "GET / HTTP/1.1\r\nHost: pr-42.preview.example.dev\r\nUser-Agent: curl/8.7.1\r\n\r\n"
+	resp, _ := click(t, port, curl)
+	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+
+	paused := metav1.NewTime(time.Now().Truncate(time.Second).UTC())
+	require.NoError(t, c.Get(ctx, apiKey, w))
+	w.Status.Phase, w.Status.Pause.PausedAt = v1alpha1.PhasePaused, &paused
+	require.NoError(t, c.Update(ctx, w))
+	require.NoError(t, s.syncRoutes(ctx, ctx))
+
+	require.NoError(t, c.Get(ctx, apiKey, w))
+	w.Status.Phase, w.Status.Pause = v1alpha1.PhaseRunning, nil
+	w.Status.TurnedAway = &v1alpha1.TurnedAway{PausedAt: paused}
+	require.NoError(t, c.Update(ctx, w))
+	s.flushTurnedAway(ctx)
+	got := turnedAwayOf(t, c)
+	assert.Equal(t, int64(1), got.Requests, "counted for the pause it was turned away from")
+	assert.True(t, got.PausedAt.Equal(&paused), "under that pause's time")
+}
+
 // A count is always written with the pause it counts, and one in the
 // annotation without a pause, or with one later than the workload's
 // current pause, as one edited by hand might be, is started again rather

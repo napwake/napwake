@@ -40,8 +40,9 @@ const turnedAwayFlush = time.Minute
 // awayCount is what this replica turned away from one workload since its
 // last flush, during the pause that began at began. pausedAt, when it
 // scaled the workload to zero, is what a count is written under; a request
-// turned away while the workload was still pausing has none yet, and it's
-// filled in at the flush.
+// turned away on a route that doesn't have it yet, as the workload paused
+// or before the next route sync, has none, and it's filled in by the first
+// route sync that does (timeTurnedAway) or at the flush.
 type awayCount struct {
 	began    time.Time
 	pausedAt time.Time
@@ -66,6 +67,23 @@ func (s *Server) turnedAway(rt route) {
 	}
 	c.requests++
 	s.away[rt.workload] = c
+}
+
+// timeTurnedAway gives a count without its pause's time the time claims
+// say, once they do, every RouteSyncInterval. Left to the flush, a minute
+// on, it may find the workload awake again, with no pause in its status to
+// take the time from, and the count dropped as if the pause had been called
+// off (P88). s.mu must be held.
+func (s *Server) timeTurnedAway(claims map[int32][]route) {
+	for _, rs := range claims {
+		for _, rt := range rs {
+			c, ok := s.away[rt.workload]
+			if ok && c.pausedAt.IsZero() && !rt.pausedAt.IsZero() && c.began.Equal(routeBegan(rt)) {
+				c.pausedAt = rt.pausedAt
+				s.away[rt.workload] = c
+			}
+		}
+	}
 }
 
 // routeBegan names a route's pause by when it began, or, for one that
