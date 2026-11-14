@@ -668,17 +668,25 @@ type Month struct {
 
 // MonthAtPace reads a workload's month at this month's pace. ok is false
 // while the record is last month's, and before a day is tracked, when the
-// operator writes "pending".
+// operator writes "pending". While what's saved can't be measured, as with
+// watchNamespaces, the operator writes "unknown" for it and SavingsUnknown
+// says why: the month is read with nothing saved, so its cost and what
+// pausing frees still count.
 func MonthAtPace(mw *v1alpha1.ManagedWorkload, now time.Time) (Month, bool) {
 	if !recordIsThisMonths(mw, now) {
 		return Month{}, false
 	}
 	c := mw.Status.Cost
 	var m Month
-	for _, f := range []struct {
+	type figure struct {
 		to    *float64
 		value string
-	}{{&m.Spent, c.ProjectedMonthlyCost}, {&m.Freed, c.ProjectedMonthlyFreed}, {&m.Saved, c.ProjectedMonthlySavings}} {
+	}
+	figures := []figure{{&m.Spent, c.ProjectedMonthlyCost}, {&m.Freed, c.ProjectedMonthlyFreed}}
+	if c.SavingsUnknown == "" {
+		figures = append(figures, figure{&m.Saved, c.ProjectedMonthlySavings})
+	}
+	for _, f := range figures {
 		amount, err := cost.ParseDollars(f.value)
 		if err != nil {
 			return Month{}, false

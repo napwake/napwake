@@ -814,7 +814,8 @@ func TestFreedAndSavedThisMonth(t *testing.T) {
 
 // A workload's month at this month's pace is the operator's projection of
 // it, read once there is one: not while it's pending, before a day is
-// tracked, and not from last month's record.
+// tracked, and not from last month's record. While what's saved can't be
+// measured, it's read with nothing saved.
 func TestMonthAtPace(t *testing.T) {
 	thisMonth := metav1.NewTime(scanTime.Add(-time.Hour))
 	lastMonth := metav1.NewTime(scanTime.AddDate(0, -1, 0))
@@ -823,6 +824,8 @@ func TestMonthAtPace(t *testing.T) {
 		return &v1alpha1.CostStatus{ProjectedMonthlyCost: spent, ProjectedMonthlyFreed: freed,
 			ProjectedMonthlySavings: saved, Tracked: tracked, LastAccumulatedAt: at}
 	}
+	unmeasured := projected("$10.00", "$30.00", "unknown", &thisMonth)
+	unmeasured.SavingsUnknown = "pods outside watchNamespaces aren't visible, so spare node capacity can't be measured"
 	tests := []struct {
 		name string
 		cost *v1alpha1.CostStatus
@@ -836,6 +839,8 @@ func TestMonthAtPace(t *testing.T) {
 		{name: "last month's", cost: projected("$7.45", "$24.54", "$23.20", &lastMonth)},
 		{name: "under a cent freed", cost: projected("$3.00", "<$0.01", "<$0.01", &thisMonth), ok: true,
 			want: Month{Spent: 3, Freed: 0.0025, Saved: 0.0025, Tracked: tracked.Duration}},
+		{name: "saved unknown, so nothing saved", cost: unmeasured, ok: true,
+			want: Month{Spent: 10, Freed: 30, Tracked: tracked.Duration}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

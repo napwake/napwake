@@ -1323,6 +1323,29 @@ func TestStatus_SavingsUnknown(t *testing.T) {
 	assert.Regexp(t, `deployment/a .* \$4\s+unknown\n`, out.String())
 }
 
+// With watchNamespaces the operator can't measure what comes off the bill,
+// and writes "unknown" for it. The month at this month's pace still counts
+// each workload's cost and what pausing frees, with nothing saved, and says
+// what's saved can't be measured. It stayed pending, every figure 0 (P87).
+func TestStatus_MonthAtPaceWhileSavingsUnknown(t *testing.T) {
+	a := statusWorkloadObj("shop", "a", v1alpha1.TargetKindDeployment, v1alpha1.PhasePaused, time.Hour)
+	a.Status.Cost = &v1alpha1.CostStatus{
+		LastAccumulatedAt:    &metav1.Time{Time: statusNow.Add(-time.Minute)},
+		Tracked:              metav1.Duration{Duration: 10 * 24 * time.Hour},
+		ProjectedMonthlyCost: "$10.00", ProjectedMonthlyFreed: "$30.00",
+		SavedThisMonth: "unknown", ProjectedMonthlySavings: "unknown",
+		SavingsUnknown: "pods outside watchNamespaces aren't visible, so spare node capacity can't be measured",
+	}
+
+	result, err := clusterStatus(context.Background(), newStatusClient(t, interceptor.Funcs{}, a), "shop",
+		statusOpts())
+	require.NoError(t, err)
+
+	require.NotNil(t, result.MonthAtPace)
+	assert.Equal(t, monthAtPace{Without: 40, Bill: 40, Freed: 30, With: 10, FreedPercent: 75, Days: 10,
+		State: monthSteady}, *result.MonthAtPace)
+}
+
 // The Your bill line comes from what status can see of the cluster's node
 // autoscaler.
 // A query in its grace after lost series, as after Prometheus restarts
