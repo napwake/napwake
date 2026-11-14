@@ -350,7 +350,8 @@ var unservedWarnings = map[string]unservedWarning{
 	unservedUnstamped: {action: "Stamp", why: "The doorman couldn't record the wake on the ManagedWorkload, so it " +
 		"may still be asleep. The doorman's log says why"},
 	unservedDrained: {action: "Hold", why: "The workload stopped being routed through the doorman before any of its " +
-		"pods was Ready. Something else, such as an HPA with minReplicas 0, may have taken it back to zero as it woke"},
+		"pods was Ready. Something else, such as an HPA with minReplicas 0, may have taken it back to zero as it woke. " +
+		"Or Napwake may have stopped routing it, as when wake on request is turned off or the workload is handed back"},
 }
 
 // warnKey is one series of RequestNotServed warnings: a workload's, for one

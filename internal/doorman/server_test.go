@@ -812,7 +812,8 @@ func TestServer_WarnsWhenAWakeEndsBackAtZero(t *testing.T) {
 	}
 	assert.Equal(t, "a request on Service api was closed after under a second. The workload stopped being routed "+
 		"through the doorman before any of its pods was Ready. Something else, such as an HPA with minReplicas 0, "+
-		"may have taken it back to zero as it woke", notServed(written())[0])
+		"may have taken it back to zero as it woke. Or Napwake may have stopped routing it, as when wake on request is "+
+		"turned off or the workload is handed back", notServed(written())[0])
 }
 
 // Each cause of a request not served is warned of apart, though they come
