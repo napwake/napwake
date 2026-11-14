@@ -14,7 +14,8 @@ import { pluginPrompt } from './src/plugins/prompt.mjs';
 import { mathPlugin, mermaidPlugin, basePlugin } from './src/plugins/markdown.mjs';
 import { napwakeDark, napwakeLight } from './src/code-themes.mjs';
 import { promql } from './src/promql.tmLanguage.mjs';
-import { readFileSync, cpSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, cpSync, mkdirSync, existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const env = (k, d) => (process.env[k] ?? '').trim() || d;
 const site = env('NAPWAKE_DOCS_SITE', 'https://docs.napwake.dev');
@@ -71,6 +72,30 @@ function katexAssets() {
     },
   };
 }
+
+// llms.txt and its two sets, made to stand alone once built: a model is often given the file away
+// from the site, so every link is absolute, and llms.txt leaves out the plugin's generic "## Notes".
+// The abridged set is getting started and the concepts (the plugin's `exclude`), so it says so.
+const llmsStandalone = () => ({
+  name: 'napwake-llms-txt',
+  hooks: {
+    'astro:build:done': ({ dir }) => {
+      const origin = new URL('/', site).href;
+      for (const name of ['llms.txt', 'llms-small.txt', 'llms-full.txt']) {
+        const file = fileURLToPath(new URL(name, dir));
+        if (!existsSync(file)) continue;
+        let text = readFileSync(file, 'utf8').replaceAll('](/', `](${origin}`);
+        if (name === 'llms.txt') {
+          text = text
+            .replace(/## Notes\n\n(?:- [^\n]*\n)+\n?/, '')
+            .replace(/: a compact version of the documentation for [^\n]*, with non-essential content removed/,
+              ': getting started and the concepts');
+        }
+        writeFileSync(file, text);
+      }
+    },
+  },
+});
 
 export default defineConfig({
   site,
@@ -177,10 +202,14 @@ export default defineConfig({
           ],
           promote: ['index*', 'getting-started/**'],
           demote: ['contributing'],
+          // llms-small.txt: getting started and the concepts. The guides, operations and reference
+          // are in llms-full.txt.
+          exclude: ['guides/**', 'operations/**', 'reference/**', 'contributing'],
           // drawings, the terminal's "$ " and heading anchors aren't text; Mermaid keeps its source
           customSelectors: { all: ['svg', '.nw-prompt', '.nw-term__prompt', '.nw-ref__link', '.nw-browser__bar', '.nw-day__axis', '.sl-anchor-link', '.nw-tools'] },
         }),
       ],
     }),
+    llmsStandalone(),
   ],
 });
