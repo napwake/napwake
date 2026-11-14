@@ -339,6 +339,6 @@ func autoscaledMessage(a autoscaler.Autoscaler) string {
 	if a.Max <= 1 {
 		resumes = "to 1 replica"
 	}
-	return fmt.Sprintf("%s, and to zero itself: Napwake leaves that zero to %s, and holds no requests there. "+
-		"While it runs, %s, and resumes it %s", scales, owner, pauses, resumes)
+	return fmt.Sprintf("%s, and to zero itself. Napwake leaves that zero to %s, and holds no requests there. "+
+		"While it runs, %s. Napwake resumes it %s", scales, owner, pauses, resumes)
 }
