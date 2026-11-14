@@ -48,7 +48,7 @@ An HPA with `minReplicas: 0` and an object or external metric can scale a worklo
 Its `Autoscaled` condition reads:
 
 ```text wrap
-HPA my-api scales it between 0 and 10 replicas, and to zero itself: Napwake leaves that zero to the HPA, and holds no requests there. While it runs, Napwake pauses it at zero, where the HPA stops scaling, and resumes it to between 1 and 10 replicas
+HPA my-api scales it between 0 and 10 replicas, and to zero itself. Napwake leaves that zero to the HPA, and holds no requests there. While it runs, Napwake pauses it at zero, where the HPA stops scaling. Napwake resumes it to between 1 and 10 replicas
 ```
 
 A ScaledObject's `minReplicaCount` is 0 unless it sets one, and its `Autoscaled` says the same of KEDA.

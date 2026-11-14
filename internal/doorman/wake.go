@@ -345,12 +345,13 @@ type unservedWarning struct {
 
 // unservedWarnings are the warnings, by cause.
 var unservedWarnings = map[string]unservedWarning{
-	unservedSlow:        {action: "Wake", why: "the workload wasn't Ready within maxWait; the wake continues"},
-	unservedUnreachable: {action: "Connect", why: "the workload's Ready pods couldn't be reached"},
-	unservedUnstamped: {action: "Stamp", why: "the doorman couldn't record the wake on the ManagedWorkload, so it " +
-		"may still be asleep; the doorman's log says why"},
-	unservedDrained: {action: "Hold", why: "the workload stopped being routed through the doorman before any of its " +
-		"pods was Ready, as when something else, such as an HPA with minReplicas 0, takes it back to zero as it wakes"},
+	unservedSlow:        {action: "Wake", why: "The workload wasn't Ready within maxWait. The wake continues"},
+	unservedUnreachable: {action: "Connect", why: "The workload's Ready pods couldn't be reached"},
+	unservedUnstamped: {action: "Stamp", why: "The doorman couldn't record the wake on the ManagedWorkload, so it " +
+		"may still be asleep. The doorman's log says why"},
+	unservedDrained: {action: "Hold", why: "The workload stopped being routed through the doorman before any of its " +
+		"pods was Ready. Something else, such as an HPA with minReplicas 0, may have taken it back to zero as it woke. " +
+		"Or Napwake may have stopped routing it, as when wake on request is turned off or the workload is handed back"},
 }
 
 // warnKey is one series of RequestNotServed warnings: a workload's, for one
@@ -391,5 +392,5 @@ func (s *Server) warnUnserved(ctx context.Context, rt route, cause string, waite
 		return
 	}
 	s.recorder.Eventf(&w, nil, "Warning", "RequestNotServed", warning.action,
-		"a request on Service %s was closed after %s: %s", rt.service, human.Duration(waited), warning.why)
+		"a request on Service %s was closed after %s. %s", rt.service, human.Duration(waited), warning.why)
 }

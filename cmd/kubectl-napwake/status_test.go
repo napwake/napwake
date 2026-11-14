@@ -1007,7 +1007,7 @@ func TestStatus_AWorkloadBeingLetGo(t *testing.T) {
 	out := runStatus(t, c, statusOpts())
 
 	assert.Contains(t, out, "Napwake manages 1 workload.\n  1 running\n  Letting go of shop/web, whose "+
-		"ManagedWorkload is being deleted: Napwake hands it back and stops managing it.\n")
+		"ManagedWorkload is being deleted. Napwake hands it back and stops managing it.\n")
 	assert.NotContains(t, out, "deployment/web", "not a row")
 	assert.NotContains(t, out, "pauses soon")
 	assert.NotContains(t, out, "Needs attention", "its problems are over")
@@ -1022,7 +1022,7 @@ func TestStatus_AWorkloadBeingLetGo(t *testing.T) {
 
 	page := buildStatusPage(result, 24*time.Hour, statusNow)
 	assert.Equal(t, "Napwake manages 1 workload: 1 running.", page.Summary)
-	assert.Contains(t, page.Notes, "Letting go of shop/web, whose ManagedWorkload is being deleted: Napwake "+
+	assert.Contains(t, page.Notes, "Letting go of shop/web, whose ManagedWorkload is being deleted. Napwake "+
 		"hands it back and stops managing it.")
 	require.Len(t, page.Workloads, 1)
 	assert.Equal(t, "deployment/api", page.Workloads[0].Workload)
@@ -1041,7 +1041,7 @@ func TestStatus_EveryWorkloadBeingLetGo(t *testing.T) {
 
 	assert.True(t, strings.HasPrefix(out, "staging (EKS us-east-1): Napwake manages no workloads here.\n"+
 		"Letting go of shop/a, shop/b, shop/c, shop/d, shop/e and 2 more, whose ManagedWorkloads are being "+
-		"deleted: Napwake hands them back and stops managing them.\n"), out)
+		"deleted. Napwake hands them back and stops managing them.\n"), out)
 }
 
 func TestStatus_NothingManaged(t *testing.T) {

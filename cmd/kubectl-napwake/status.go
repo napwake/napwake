@@ -294,7 +294,7 @@ func lettingGoLine(gone []lettingGo) string {
 	if n > 1 {
 		whose = "whose ManagedWorkloads are"
 	}
-	return fmt.Sprintf("Letting go of %s, %s being deleted: Napwake hands %s back and stops managing %s.",
+	return fmt.Sprintf("Letting go of %s, %s being deleted. Napwake hands %s back and stops managing %s.",
 		joinAnd(names), whose, pronounObject(n), pronounObject(n))
 }
 
