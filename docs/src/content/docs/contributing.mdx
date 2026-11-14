@@ -258,26 +258,26 @@ Do this first. A tag with a hyphen runs the whole workflow as a pre-release:
 
 | What | A release candidate |
 |---|---|
-| Tag | Has a hyphen, such as `v0.2.0-rc.1` |
+| Tag | Has a hyphen, such as `v0.3.0-rc.1` |
 | Published | Everything but `latest`. So the image, the chart and the GitHub release exist only for those who ask for that version |
 | Docs | Under `next`, with a banner saying it's a release candidate |
 | Notes | Its version's changelog section, which needn't be dated yet |
 | Branch | A throwaway one, so `main` keeps the release's version |
 
-Rehearse from a throwaway branch:
+Rehearse from a throwaway branch. `X.Y.Z` is the version you're releasing, and `N` is one more than its last candidate's, since a tag that's been pushed is never pushed again:
 
 ```bash
-git switch -c rehearse-v0.2.0-rc.1 main
-make release VERSION=0.2.0-rc.1
-git push origin v0.2.0-rc.1
+git switch -c rehearse-vX.Y.Z-rc.N main
+make release VERSION=X.Y.Z-rc.N
+git push origin vX.Y.Z-rc.N
 ```
 
-Once it succeeds, install it as the docs describe, with `--version 0.2.0-rc.1`, and check its signatures with the commands in [Security](/reference/security/#verifying-a-release). Then release from `main`:
+Once it succeeds, install it as the docs describe, with `--version X.Y.Z-rc.N`, and check its signatures with the commands in [Security](/reference/security/#verifying-a-release). Then release from `main`:
 
 ```bash
 git switch main
-make release VERSION=0.2.0
-git push origin main v0.2.0
+make release VERSION=X.Y.Z
+git push origin main vX.Y.Z
 ```
 
 ### The Homebrew tap
