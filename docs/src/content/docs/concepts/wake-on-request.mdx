@@ -62,7 +62,7 @@ The doorman works on TCP connections, not HTTP requests. Waking a workload wakes
 
 Ingress controllers, Gateway API implementations and cloud load balancers that read EndpointSlices reach the doorman the same way ([the ones checked](/reference/compatibility/)). A routed workload reports this:
 
-```
+```text
 WakeOnRequest=True   DoormanRouted   requests are held and wake the workload
 ```
 
@@ -212,7 +212,7 @@ For the cluster, set `defaults.wake: ask` ([The wake setting](#the-wake-setting)
 
 `WakeOnRequest` says the doorman asks:
 
-```
+```text
 WakeOnRequest=True   DoormanRouted   the doorman asks a person's browser before waking the workload, and turns away other requests
 ```
 

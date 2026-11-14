@@ -31,7 +31,7 @@ spec:
   idlePolicy:
     idleAfter: 1h        # default
     activity:
-      cpuThreshold: 10   # percent of CPU requests, 0.1 to 100; default
+      cpuThreshold: 10   # percent of CPU requests, 0.1 to 100, the default
 ```
 
 Write a threshold that isn't a whole number as a string, such as `cpuThreshold: "0.5"`. Kubernetes APIs write decimals that way. It suits a workload that idles at a fraction of a percent.
