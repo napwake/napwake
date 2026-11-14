@@ -231,6 +231,8 @@ Two scrapes are what a restart needs. Napwake doesn't know the scrape interval, 
 | Use case | PromQL |
 |----------|--------|
 | Requests through ingress-nginx | `sum(rate(nginx_ingress_controller_requests{exported_namespace="staging", exported_service="my-api"}[5m]))` |
+| Requests through Traefik | `sum(rate(traefik_service_requests_total{service="staging-my-api-80@kubernetes"}[5m]))` |
+| Requests through Envoy Gateway, for Gateway API | `sum(rate(envoy_cluster_upstream_rq_total{envoy_cluster_name="httproute/staging/my-api/rule/0"}[5m]))` |
 | Requests seen by the app | `sum(rate(http_requests_total{service="my-api"}[5m]))` |
 | Open WebSocket connections | `sum(websocket_connections{service="my-api"})` |
 | Messages waiting on a queue | `sum(rabbitmq_queue_messages{queue="tasks"})` |
@@ -239,6 +241,10 @@ Two scrapes are what a restart needs. Napwake doesn't know the scrape interval, 
 ingress-nginx labels each request with its namespace and Service. Scraped by the Prometheus Operator, which keeps `namespace` and `service` for the scrape target, they become `exported_namespace` and `exported_service`.
 
 Give both. Preview environments often share Service names, and another's traffic would keep this one awake.
+
+For an Ingress, Traefik names the Service `<namespace>-<name>-<port>@kubernetes`, with the port as the Ingress gives it: `80`, or a name such as `http`. The namespace is in the name, so one label is enough. Scraped by the Prometheus Operator through a ServiceMonitor, the label is `exported_service`.
+
+Gateway API has no metrics of its own, so each implementation names its own. Envoy Gateway counts by route, not by Service: `httproute/<namespace>/<route>/rule/<index>`, the HTTPRoute's namespace and name, and the rule's place in it, from 0.
 
 ingress-nginx is retired upstream, its repository archived, and it's still the controller Napwake's tests run on.
 
