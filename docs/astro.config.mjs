@@ -33,7 +33,7 @@ const llmsDetails = `Napwake pauses idle Kubernetes workloads in staging, previe
 
 It's for platform and infrastructure engineers who run non-production environments on their own Kubernetes clusters. Behind a VPN, SSO or an IP allowlist, a paused environment wakes on its first request. On the public internet, robots would wake it every few minutes, so set it to ask first. A browser then gets a Wake it button, and crawlers, scanners and API calls wake nothing. Tooling wakes it with an annotation, and the forecast learns when people come.
 
-In short: label a Deployment, StatefulSet or namespace \`napwake.dev/managed: "true"\`. Napwake pauses the workload, scaling it to zero, once nothing has been active for \`idleAfter\` (an hour by default): CPU above its threshold, a deploy, an activity annotation or a Prometheus query all count as activity. While it's paused, its Services are routed to the doorman, a proxy that holds the first request and wakes it. With \`autoResume\`, a forecast wakes it 15 minutes before an hour it expects to be busy. \`kubectl napwake scan\` shows what's idle with nothing installed in the cluster.
+In short: label a Deployment, StatefulSet or namespace \`napwake.dev/managed: "true"\`. Napwake pauses the workload, scaling it to zero, once nothing has been active for \`idleAfter\`, an hour by default. CPU above its threshold, a deploy, an activity annotation or a Prometheus query all count as activity. While it's paused, its Services are routed to the doorman, a proxy that holds the first request and wakes it. With \`autoResume\`, a forecast wakes it 15 minutes before an hour it expects to be busy. \`kubectl napwake scan\` shows what's idle with nothing installed in the cluster.
 
 Key pages, each as Markdown:
 
@@ -53,7 +53,7 @@ Key pages, each as Markdown:
 - [Helm values](${md('reference/helm-values')}): every value of the chart
 - [Troubleshooting](${md('operations/troubleshooting')}): common problems, and how to fix them
 
-Every page is also at its address with \`.md\` added. These docs name a workload's states paused, resuming and running; pictures and the home page call them asleep, waking up and awake.`;
+Every page is also at its address with \`.md\` added. These docs name a workload's states paused, resuming and running. Pictures and the home page call them asleep, waking up and awake.`;
 
 // KaTeX's stylesheet and its fonts, copied from the package into public/katex/ (git-ignored) for the
 // pages with maths; Head.astro links it there only.
