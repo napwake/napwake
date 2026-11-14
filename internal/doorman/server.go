@@ -511,6 +511,7 @@ func (s *Server) syncRoutes(ctx, connCtx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.forgetDeleted(exists)
+	s.timeTurnedAway(claims)
 	routes, conflicts := s.resolve(claims, now)
 	s.reportConflicts(ctx, conflicts)
 	s.routes = routes
