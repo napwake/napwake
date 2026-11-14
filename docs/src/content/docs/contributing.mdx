@@ -264,7 +264,7 @@ Do this first. A tag with a hyphen runs the whole workflow as a pre-release:
 | Notes | Its version's changelog section, which needn't be dated yet |
 | Branch | A throwaway one, so `main` keeps the release's version |
 
-Rehearse from a throwaway branch. `X.Y.Z` is the version you're releasing, and `N` is one more than its last candidate's, since a tag that's been pushed is never pushed again:
+Rehearse from a throwaway branch. `X.Y.Z` is the version you're releasing. `N` is one more than its last candidate's, because a pushed tag is never pushed again:
 
 ```bash
 git switch -c rehearse-vX.Y.Z-rc.N main

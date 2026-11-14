@@ -242,9 +242,9 @@ ingress-nginx labels each request with its namespace and Service. Scraped by the
 
 Give both. Preview environments often share Service names, and another's traffic would keep this one awake.
 
-For an Ingress, Traefik names the Service `<namespace>-<name>-<port>@kubernetes`, with the port as the Ingress gives it: `80`, or a name such as `http`. The namespace is in the name, so one label is enough. Scraped by the Prometheus Operator through a ServiceMonitor, the label is `exported_service`.
+For an Ingress, Traefik names the Service `<namespace>-<name>-<port>@kubernetes`. The port is as the Ingress gives it, such as `80` or `http`. The namespace is in the name, so one label is enough. Scraped by the Prometheus Operator through a ServiceMonitor, the label is `exported_service`.
 
-Gateway API has no metrics of its own, so each implementation names its own. Envoy Gateway counts by route, not by Service: `httproute/<namespace>/<route>/rule/<index>`, the HTTPRoute's namespace and name, and the rule's place in it, from 0.
+Gateway API has no metrics of its own, so each implementation names its own. Envoy Gateway counts requests by route. Its cluster name is `httproute/<namespace>/<route>/rule/<index>`, from the HTTPRoute's namespace and name and the rule's place in it, counting from 0.
 
 ingress-nginx is retired upstream, its repository archived, and it's still the controller Napwake's tests run on.
 
