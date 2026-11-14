@@ -810,9 +810,9 @@ func TestServer_WarnsWhenAWakeEndsBackAtZero(t *testing.T) {
 	if !assert.Eventually(t, func() bool { return len(notServed(written())) == 1 }, 5*time.Second, 10*time.Millisecond) {
 		t.Fatalf("want one RequestNotServed warning, have %q", notServed(written()))
 	}
-	assert.Equal(t, "a request on Service api was closed after under a second: the workload stopped being routed "+
-		"through the doorman before any of its pods was Ready, as when something else, such as an HPA with "+
-		"minReplicas 0, takes it back to zero as it wakes", notServed(written())[0])
+	assert.Equal(t, "a request on Service api was closed after under a second. The workload stopped being routed "+
+		"through the doorman before any of its pods was Ready. Something else, such as an HPA with minReplicas 0, "+
+		"may have taken it back to zero as it woke", notServed(written())[0])
 }
 
 // Each cause of a request not served is warned of apart, though they come
@@ -835,10 +835,10 @@ func TestServer_WarnsOfEachUnservedCauseApart(t *testing.T) {
 		t.Fatalf("want four RequestNotServed warnings, have %q", notServed(written()))
 	}
 	notes := strings.Join(notServed(written()), "\n")
-	assert.Contains(t, notes, "closed after 1 minute: the workload wasn't Ready within maxWait")
-	assert.Contains(t, notes, "closed after 2 minutes: the workload's Ready pods couldn't be reached")
-	assert.Contains(t, notes, "closed after 3 minutes: the doorman couldn't record the wake")
-	assert.Contains(t, notes, "closed after 3 seconds: the workload stopped being routed through the doorman")
+	assert.Contains(t, notes, "closed after 1 minute. The workload wasn't Ready within maxWait")
+	assert.Contains(t, notes, "closed after 2 minutes. The workload's Ready pods couldn't be reached")
+	assert.Contains(t, notes, "closed after 3 minutes. The doorman couldn't record the wake")
+	assert.Contains(t, notes, "closed after 3 seconds. The workload stopped being routed through the doorman")
 }
 
 // A held request whose wake couldn't be recorded, or whose woken pods
@@ -851,9 +851,9 @@ func TestServer_SaysWhyAHeldRequestWasntServed(t *testing.T) {
 		says string
 	}{
 		{name: "the stamp failed", wrap: failPatches(1000, nil),
-			says: "the doorman couldn't record the wake on the ManagedWorkload, so it may still be asleep"},
+			says: "The doorman couldn't record the wake on the ManagedWorkload, so it may still be asleep"},
 		{name: "the pods couldn't be reached", objs: []client.Object{readySlice(refusingPort(t))},
-			says: "the workload's Ready pods couldn't be reached"},
+			says: "The workload's Ready pods couldn't be reached"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
