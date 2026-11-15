@@ -307,15 +307,22 @@ func (h *heldConn) await(ctx, waitCtx context.Context, wakeErr error) (net.Conn,
 	for {
 		current := h.currentRoute(h.port, h.route)
 		addrs, changed, err := h.backends.get(waitCtx, key)
-		if len(addrs) > 0 {
+		switch {
+		case len(addrs) > 0:
 			upstream, dialErr := h.dial(waitCtx, addrs, changed)
 			if dialErr == nil {
 				return upstream, resultSuccess
 			}
 			proxyLimited = errors.Is(dialErr, errProxyLimited)
 			dialFailed = !proxyLimited && !errors.Is(dialErr, dialrace.ErrNoneLeft)
-		} else if current.draining() && err == nil {
-			return nil, resultDrained
+		case err == nil:
+			// With no pod Ready, what the last dial found no longer holds:
+			// a wait that ends now is a wake too slow, not pods that
+			// couldn't be reached or places that weren't free (P93).
+			dialFailed, proxyLimited = false, false
+			if current.draining() {
+				return nil, resultDrained
+			}
 		}
 		if wakeErr != nil && !current.draining() && h.now().Sub(lastWake) >= wakeRetryInterval {
 			lastWake = h.now()

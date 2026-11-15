@@ -23,6 +23,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -36,6 +37,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 )
@@ -439,4 +441,98 @@ func TestDialAny_ClosesAPodThatAnswersLate(t *testing.T) {
 	_ = latePeer.SetReadDeadline(time.Now().Add(5 * time.Second)) // refused once the other end is closed, as it should be
 	_, err = latePeer.Read(make([]byte, 1))
 	assert.ErrorIs(t, err, io.EOF, "the one that answered late is closed")
+}
+
+// A held connection whose dial to a Ready pod failed, or found no proxied
+// place free, and whose pod then left, has nothing Ready when maxWait runs
+// out. It's reported as a wake that was slow, in napwake_doorman_wakes_total
+// and RequestNotServed, as it would be had the dial never been made: what
+// the last dial found no longer holds once no pod is Ready (P93).
+func TestServer_AHoldWhosePodLeftTimesOut(t *testing.T) {
+	const maxWait = 2 * time.Second
+	refused := errors.New("connection refused")
+	tests := []struct {
+		name string
+		// limited says every proxied place is taken.
+		limited bool
+	}{
+		{name: "a dial failed"},
+		{name: "no proxied place was free", limited: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			port, pod := freePort(t), refusingPort(t)
+			podAddr := net.JoinHostPort("127.0.0.1", strconv.Itoa(int(pod)))
+			failed := make(chan struct{}, 16)
+			// listed has a value each time the doorman reads the pod
+			// listed Ready.
+			listed := make(chan struct{}, 16)
+			recorder, written := recordedEvents(t)
+			s, c := newTestServer(t, func(c client.WithWatch) client.WithWatch {
+				return interceptor.NewClient(c, interceptor.Funcs{
+					List: func(ctx context.Context, cl client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+						if err := cl.List(ctx, list, opts...); err != nil {
+							return err
+						}
+						if slices, ok := list.(*discoveryv1.EndpointSliceList); ok {
+							for _, slice := range slices.Items {
+								if len(slice.Endpoints) > 0 {
+									listed <- struct{}{}
+								}
+							}
+						}
+						return nil
+					},
+				})
+			}, pausedWorkload("api", port, maxWait))
+			s.recorder = recorder
+			s.pollEvery = time.Hour
+			s.dialPod = func(ctx context.Context, network, address string) (net.Conn, error) {
+				if address == podAddr {
+					failed <- struct{}{}
+					return nil, refused
+				}
+				var d net.Dialer
+				return d.DialContext(ctx, network, address)
+			}
+			if tt.limited {
+				l := defaultLimits
+				l.maxProxied = 1
+				s.admission = newAdmission(l)
+				require.True(t, s.admission.proxy(netip.MustParseAddr("10.244.0.99"), time.Now()),
+					"another connection takes the one proxied place")
+			}
+			run(t, s)
+			timedOut, errored, limited := wakes(resultTimeout), wakes(resultError), wakes(resultLimited)
+
+			conn := dial(t, port)
+			began := time.Now()
+			send(t, conn, "hello\n")
+			require.Eventually(t, func() bool { return lastRequest(t, c) != "" }, 5*time.Second, 20*time.Millisecond,
+				"the request is held for the wake")
+			endpointsChange(t, s, c, podSlice("api-real", "api-0", pod))
+			if tt.limited {
+				// Once the doorman has read the pod, its dial is refused a
+				// place whatever follows.
+				within(t, listed, "the doorman reading the pod")
+			} else {
+				within(t, failed, "the dial that fails")
+				// The dial has ended once its proxied place is given back.
+				require.Eventually(t, func() bool { return proxiedCount(s) == 0 }, 5*time.Second, 10*time.Millisecond)
+			}
+			endpointsChange(t, s, c, podSlice("api-real", "api-0", 0))
+			require.Less(t, time.Since(began), maxWait, "the pod left before maxWait ran out")
+
+			closedWithin(t, conn)
+			assert.Eventually(t, func() bool { return wakes(resultTimeout) == timedOut+1 }, 5*time.Second,
+				10*time.Millisecond, "counted as timeout")
+			assert.Equal(t, errored, wakes(resultError), "not as error")
+			assert.Equal(t, limited, wakes(resultLimited), "nor as limited")
+			if !assert.Eventually(t, func() bool { return len(notServed(written())) == 1 }, 5*time.Second,
+				10*time.Millisecond) {
+				t.Fatalf("want one RequestNotServed warning, have %q", notServed(written()))
+			}
+			assert.Contains(t, notServed(written())[0], "The workload wasn't Ready within maxWait")
+		})
+	}
 }
