@@ -101,11 +101,14 @@ func (d Dialer) DialAny(ctx context.Context, addrs []string, changed <-chan stru
 		}
 		select {
 		case res := <-r.results:
+			addr := r.inFlight[res.id].addr
 			delete(r.inFlight, res.id)
 			if res.err == nil {
 				return res.conn, nil
 			}
-			errs = append(errs, res.err)
+			// Named here, since a dial that ends with its context, as at
+			// the timeout, says nothing of where it was going.
+			errs = append(errs, fmt.Errorf("dialing %s: %w", addr, res.err))
 			next()
 		case <-stagger.C:
 			due = true
