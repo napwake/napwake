@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A request that reached the doorman in the second a workload paused could hang until its client gave up (P89). For a moment after the pause scales the workload to zero, its EndpointSlices can still list a pod that has gone. The doorman passed the connection to that pod, and waited 5 seconds for each such pod before reading the request. A client with a shorter timeout gave up first, and the doorman counted it as `ignored`. Now it gives up on a pod as soon as the pod leaves the EndpointSlices, and answers as it does for a paused workload. It holds the request and wakes the workload. For a workload that asks first, it shows a browser the asleep page, and answers anything else `503`, counted as turned away. A pod that doesn't answer within a quarter of a second has the next Ready pod tried beside it, and the first to answer gets the connection. The dial as a whole still gives up after 5 seconds.
+
 ## [0.2.1] - Unreleased
 
 0.2.1 fixes what the test cluster found running 0.2.0 and its candidates. It also fixes what an audit of Napwake's events and caches turned up.

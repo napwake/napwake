@@ -195,6 +195,10 @@ type Server struct {
 	// hand over a port they hold so no other test can take it first.
 	listen func(network, address string) (net.Listener, error)
 
+	// dialPod connects to a workload's pod: a net.Dialer's, but for tests,
+	// which stand in pods that have gone and never answer.
+	dialPod dialFunc
+
 	backends  *backends
 	admission *admission
 	apiReader client.Reader
@@ -262,6 +266,7 @@ func NewServer(c client.Client, recorder events.EventRecorder, opts Options) *Se
 		healthCheckAgents: healthCheckAgents(opts.HealthCheckAgents),
 		checkAPI:          opts.CheckAPI,
 		listen:            net.Listen,
+		dialPod:           (&net.Dialer{}).DialContext,
 		admission:         newAdmission(defaultLimits),
 		routes:            map[int32]route{},
 		drains:            map[int32]route{},
