@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- After an upgrade, both doormen could run on one node until they next restarted. The chart's default spread counted the doormen the upgrade was replacing. If that node went, every wake on request failed until they moved. The default spread, in the chart and `install.yaml`, now counts only the current revision's doormen (P90).
+
 ## [0.2.1] - Unreleased
 
 0.2.1 fixes what the test cluster found running 0.2.0 and its candidates. It also fixes what an audit of Napwake's events and caches turned up.

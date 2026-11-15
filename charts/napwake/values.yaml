@@ -191,9 +191,11 @@ doorman:
   # The doorman's own, not the operator's extraEnv.
   extraEnv: []
   # Empty spreads the replicas across nodes, where it can, with one soft
-  # constraint on kubernetes.io/hostname. Add a zone constraint here only
-  # where every node has topology.kubernetes.io/zone: a key some nodes lack
-  # stops the scheduler spreading for any constraint.
+  # constraint on kubernetes.io/hostname that counts only the current
+  # revision's, so an upgrade doesn't leave them on one node. Set
+  # matchLabelKeys: [pod-template-hash] on yours for the same. Add a zone
+  # constraint here only where every node has topology.kubernetes.io/zone: a
+  # key some nodes lack stops the scheduler spreading for any constraint.
   topologySpreadConstraints: []
   # The doorman caches ManagedWorkloads and the Services' EndpointSlices in
   # the watched namespaces, cut down to what it reads: about 1.3 KB a

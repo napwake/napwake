@@ -91,6 +91,8 @@ spec:
       # The 5s preStop sleep, then up to 25s for held and proxied
       # connections to finish, with room to exit before SIGKILL.
       terminationGracePeriodSeconds: 40
+      # Counts only the current revision's doormen: during a rolling update,
+      # counting the ones being replaced put both new ones on one node (P90).
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -99,6 +101,7 @@ spec:
           matchLabels:
             control-plane: doorman
             app.kubernetes.io/name: napwake
+        matchLabelKeys: [pod-template-hash]
 ---
 # Keeps one doorman serving through node drains.
 apiVersion: policy/v1
