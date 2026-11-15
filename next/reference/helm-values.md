@@ -6,14 +6,14 @@ Source: https://docs.napwake.dev/next/reference/helm-values/
 
 ```bash
 printf '\ntimezone: Europe/London\n' >> napwake-values.yaml
-helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.1-rc.2 \
+helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.1-rc.3 \
   --namespace napwake-system --create-namespace -f napwake-values.yaml
 ```
 
 Change `Europe/London` to your users’ [time zone](https://docs.napwake.dev/next/getting-started/installation/#time-zone). Any other value you set goes in `napwake-values.yaml` too. Install with it, and upgrade with it to [keep your settings](https://docs.napwake.dev/next/operations/upgrading/#keeping-your-settings).
 
 ```bash
-helm show values oci://ghcr.io/napwake/charts/napwake --version 0.2.1-rc.2
+helm show values oci://ghcr.io/napwake/charts/napwake --version 0.2.1-rc.3
 ```
 
 Every default.
@@ -24,11 +24,11 @@ Every default.
 
 * Chart version
 
-  `0.2.1-rc.2`, no `v`
+  `0.2.1-rc.3`, no `v`
 
 * Image tags
 
-  `v0.2.1-rc.2`, with a `v`
+  `v0.2.1-rc.3`, with a `v`
 
 What the schema catches
 
@@ -187,7 +187,7 @@ The names and labels the chart gives.
 | Value              | Default                                               | Description                                 |
 | ------------------ | ----------------------------------------------------- | ------------------------------------------- |
 | `image.repository` | `ghcr.io/napwake/napwake`                             | Container image repository                  |
-| `image.tag`        | `""`, the chart’s `appVersion`, such as `v0.2.1-rc.2` | Image tag, for the operator and the doorman |
+| `image.tag`        | `""`, the chart’s `appVersion`, such as `v0.2.1-rc.3` | Image tag, for the operator and the doorman |
 | `image.pullPolicy` | `IfNotPresent`                                        | Image pull policy                           |
 | `imagePullSecrets` | `[]`                                                  | Private registry credentials                |
 
@@ -207,7 +207,7 @@ For Argo CD, which ignores that, it also carries `argocd.argoproj.io/sync-option
 
 | Value             | Default                                   | Description                                                                                                                            |
 | ----------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `defaultsVersion` | the chart’s version, such as `0.2.1-rc.2` | Which chart version Helm’s defaults are from. Leave it. See [Keeping your settings](https://docs.napwake.dev/next/operations/upgrading/#keeping-your-settings) |
+| `defaultsVersion` | the chart’s version, such as `0.2.1-rc.3` | Which chart version Helm’s defaults are from. Leave it. See [Keeping your settings](https://docs.napwake.dev/next/operations/upgrading/#keeping-your-settings) |
 
 What it’s for
 
@@ -372,7 +372,7 @@ The doorman holds requests to paused workloads and wakes them ([Wake on request]
 
 The doorman’s memory, shutdown and rollouts
 
-* It caches ManagedWorkloads and the EndpointSlice controller’s EndpointSlices in watched namespaces, cut to what it reads. That’s about 1.3 KB a ManagedWorkload, 320 bytes a pod and 1.2 KB a Service, as measured with 50,000 of each. The running doorman takes two to three times what its caches hold, for the copies it makes as it works and what the garbage collector hasn’t freed yet. Held connections take up to 72Mi more under a flood. Connections passed through to a woken workload, which it [keeps until an end closes them](https://docs.napwake.dev/next/concepts/wake-on-request/#connections-made-as-it-wakes), take about 36 KB each, up to 36Mi at its cap of 1024.
+* It caches ManagedWorkloads and the EndpointSlice controller’s EndpointSlices in watched namespaces, cut to what it reads. That’s about 1.3 KB a ManagedWorkload, 320 bytes a pod and 1.2 KB a Service, as measured with 50,000 of each. The running doorman takes two to three times what its caches hold, for the copies it makes as it works and what the garbage collector hasn’t freed yet. Held connections take up to 72Mi more under a flood. Connections passed through to a woken workload take about 36 KB each, up to 36Mi at its cap of 1024. It [keeps them until an end closes them](https://docs.napwake.dev/next/concepts/wake-on-request/#connections-made-as-it-wakes).
 * On Kubernetes 1.30 and later, it sleeps 5 seconds before shutting down. So kube-proxy and load balancers stop sending new connections first.
 * Rollouts wait 5 seconds after a new pod is Ready (`minReadySeconds`) before stopping an old one. By then the operator has moved routes to it.
 
@@ -578,7 +578,7 @@ affinity:
 
 ```bash
 helm install napwake oci://ghcr.io/napwake/charts/napwake \
-  --version 0.2.1-rc.2 \
+  --version 0.2.1-rc.3 \
   -f values-ha.yaml \
   -n napwake-system --create-namespace
 ```

@@ -26,7 +26,7 @@ spec:
   idlePolicy:
     idleAfter: 1h        # default
     activity:
-      cpuThreshold: 10   # percent of CPU requests, 0.1 to 100; default
+      cpuThreshold: 10   # percent of CPU requests, 0.1 to 100, the default
 ```
 
 Write a threshold that isn’t a whole number as a string, such as `cpuThreshold: "0.5"`. Kubernetes APIs write decimals that way. It suits a workload that idles at a fraction of a percent.
@@ -213,13 +213,13 @@ The reasons, and what to do
 
 A target at zero isn’t an error, as no usage is real data. Nor are new pods, with no metrics until they run and for a scrape or two of metrics-server’s after.
 
-| Reason               | Status    | Means                                                                                                                                                                               | To do                                                                   |
-| -------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `NoReadyPods`        | `Unknown` | After a wake or rollout, none of the target’s pods is Ready yet. No warning                                                                                                         |                                                                         |
-| `AwaitingPodMetrics` | `Unknown` | Then, for up to 3 minutes, Ready pods without metrics yet. A wake starts the 3 minutes again, as its pods are Ready, even when the pods before its pause had waited too. No warning |                                                                         |
-| `NoPodMetrics`       | `False`   | Ready pods with no metrics for over 3 minutes. One warning event says so                                                                                                            | Check metrics-server is installed and reports them (`kubectl top pods`) |
-| `NoCPURequests`      | `False`   | The running pods, or with none the pod template, request no CPU for its containers. Utilisation can’t be measured                                                                   | Set CPU requests, or a default in the namespace’s LimitRange            |
-| `MetricsUnavailable` | `False`   | The Metrics API failed, or didn’t answer in 2 seconds. The message has the error                                                                                                    |                                                                         |
+| Reason               | Status    | Means                                                                                                                                                                                  | To do                                                                   |
+| -------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `NoReadyPods`        | `Unknown` | After a wake or rollout, none of the target’s pods is Ready yet. No warning                                                                                                            |                                                                         |
+| `AwaitingPodMetrics` | `Unknown` | Then, for up to 3 minutes, Ready pods without metrics yet. A wake starts the 3 minutes again when its pods are Ready. Minutes its pods waited before the pause don’t count. No warning |                                                                         |
+| `NoPodMetrics`       | `False`   | Ready pods with no metrics for over 3 minutes. One warning event says so                                                                                                               | Check metrics-server is installed and reports them (`kubectl top pods`) |
+| `NoCPURequests`      | `False`   | The running pods, or with none the pod template, request no CPU for its containers. Utilisation can’t be measured                                                                      | Set CPU requests, or a default in the namespace’s LimitRange            |
+| `MetricsUnavailable` | `False`   | The Metrics API failed, or didn’t answer in 2 seconds. The message has the error                                                                                                       |                                                                         |
 
 After a `MetricsUnavailable`, the API isn’t read again for a minute. So every workload’s check fails at once, instead of waiting out a timeout.
 

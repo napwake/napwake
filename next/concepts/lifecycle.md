@@ -107,7 +107,7 @@ A ManagedWorkload’s conditions report what the operator found, such as what ho
 
 ## Events
 
-Each user-visible change emits one event, as it happens, shown by `kubectl describe`. The phases above show as [`IdleDetected`](https://docs.napwake.dev/next/reference/conditions-and-events/#event-idledetected), [`Paused`](https://docs.napwake.dev/next/reference/conditions-and-events/#event-paused) and [`Resumed`](https://docs.napwake.dev/next/reference/conditions-and-events/#event-resumed), and what woke it as one reason for each cause, such as [`WokenByRequest`](https://docs.napwake.dev/next/reference/conditions-and-events/#event-wokenbyrequest) for a request. [Conditions and events](https://docs.napwake.dev/next/reference/conditions-and-events/#events) lists every event, by what it’s about.
+Each user-visible change emits one event, as it happens, shown by `kubectl describe`. The phases above show as [`IdleDetected`](https://docs.napwake.dev/next/reference/conditions-and-events/#event-idledetected), [`Paused`](https://docs.napwake.dev/next/reference/conditions-and-events/#event-paused) and [`Resumed`](https://docs.napwake.dev/next/reference/conditions-and-events/#event-resumed). What woke it shows as a reason for each cause, such as [`WokenByRequest`](https://docs.napwake.dev/next/reference/conditions-and-events/#event-wokenbyrequest) for a request. [Conditions and events](https://docs.napwake.dev/next/reference/conditions-and-events/#events) lists every event, by what it’s about.
 
 Next
 

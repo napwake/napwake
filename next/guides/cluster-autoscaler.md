@@ -124,7 +124,7 @@ Every 10 minutes, the operator looks for what scales the nodes. It logs what it 
           - key: kubernetes.io/arch
             operator: In
             values: ["amd64"]
-        # Maximum time a node can live, regardless of utilization, so nodes
+        # Maximum time a node can live, regardless of utilisation, so nodes
         # pick up new images. In v1 it's here, not under disruption.
         expireAfter: 720h
     disruption:

@@ -20,7 +20,7 @@ Source: https://docs.napwake.dev/next/getting-started/scan/
 
   ```bash
   kubectl krew install --manifest-url \
-    https://github.com/napwake/napwake/releases/download/v0.2.1-rc.2/krew-napwake.yaml
+    https://github.com/napwake/napwake/releases/download/v0.2.1-rc.3/krew-napwake.yaml
   ```
 
   To upgrade it later, see the [plugin page](https://docs.napwake.dev/next/getting-started/kubectl-plugin/#installation).
@@ -32,7 +32,7 @@ Source: https://docs.napwake.dev/next/getting-started/scan/
   ```bash
   os=$(uname -s | tr '[:upper:]' '[:lower:]')
   arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
-  curl -fLO "https://github.com/napwake/napwake/releases/download/v0.2.1-rc.2/kubectl-napwake-${os}-${arch}.tar.gz"
+  curl -fLO "https://github.com/napwake/napwake/releases/download/v0.2.1-rc.3/kubectl-napwake-${os}-${arch}.tar.gz"
   tar xzf "kubectl-napwake-${os}-${arch}.tar.gz"
   sudo install "kubectl-napwake-${os}-${arch}" /usr/local/bin/kubectl-napwake
   ```

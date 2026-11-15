@@ -51,7 +51,7 @@ spec:
 
 A dependency held awake says why:
 
-```plaintext
+```text
 HeldByDependents=True   kept awake for preview-42/api, preview-43/api
 ```
 
@@ -67,7 +67,7 @@ dependsOn:
 
 The dependent stays in `Resuming`, not scaled up:
 
-```plaintext
+```text
 WaitingForDependencies=True   waiting for preview-42/statefulset/postgres (0 ready)
 ```
 
@@ -95,7 +95,7 @@ WaitingForDependencies=True   waiting for preview-42/statefulset/postgres (0 rea
 
 Past the limit, the condition reads:
 
-```plaintext
+```text
 WaitingForDependencies=False   not waiting for preview-42/statefulset/postgres (it isn't Ready after 10 minutes)
 ```
 
@@ -137,7 +137,7 @@ kubectl annotate namespace shared napwake.dev/dependents-from="preview-42, previ
 
 A dependency that isn’t allowed reads:
 
-```plaintext
+```text
 DependencyNotAllowed=True   not in a namespace that allows dependents from preview-42 with napwake.dev/dependents-from, so not held or woken: shared/statefulset/postgres
 ```
 
@@ -169,13 +169,13 @@ learnedDependencies:
 
 Opt the dependency in too, to have them paused and woken together:
 
-```plaintext
+```text
 api: depends on preview-42/postgres (PGHOST), which isn't managed by Napwake, so it isn't woken with api: opt it in to have them paused and woken together
 ```
 
 Once Napwake takes it on, another event says so:
 
-```plaintext
+```text
 api: depends on preview-42/postgres (PGHOST), now managed by Napwake, so woken and held with it
 ```
 

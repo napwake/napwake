@@ -63,7 +63,7 @@ The rest answer narrower questions. Every flag, JSON field, exit status and perm
 
   ```bash
   kubectl krew install --manifest-url \
-    https://github.com/napwake/napwake/releases/download/v0.2.1-rc.2/krew-napwake.yaml
+    https://github.com/napwake/napwake/releases/download/v0.2.1-rc.3/krew-napwake.yaml
   kubectl napwake version
   ```
 
@@ -78,13 +78,13 @@ The rest answer narrower questions. Every flag, JSON field, exit status and perm
   ```bash
   os=$(uname -s | tr '[:upper:]' '[:lower:]')
   arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
-  curl -fLO "https://github.com/napwake/napwake/releases/download/v0.2.1-rc.2/kubectl-napwake-${os}-${arch}.tar.gz"
+  curl -fLO "https://github.com/napwake/napwake/releases/download/v0.2.1-rc.3/kubectl-napwake-${os}-${arch}.tar.gz"
   tar xzf "kubectl-napwake-${os}-${arch}.tar.gz"
   sudo install "kubectl-napwake-${os}-${arch}" /usr/local/bin/kubectl-napwake
   kubectl napwake version
   ```
 
-  On Windows, download `kubectl-napwake-windows-amd64.tar.gz` from the [release](https://github.com/napwake/napwake/releases/tag/v0.2.1-rc.2) and extract it with `tar xzf`. Rename `kubectl-napwake-windows-amd64.exe` to `kubectl-napwake.exe`, in a folder on your `PATH`. To check an archive came from the release workflow, see [Verifying a release](https://docs.napwake.dev/next/reference/security/#verifying-a-release).
+  On Windows, download `kubectl-napwake-windows-amd64.tar.gz` from the [release](https://github.com/napwake/napwake/releases/tag/v0.2.1-rc.3) and extract it with `tar xzf`. Rename `kubectl-napwake-windows-amd64.exe` to `kubectl-napwake.exe`, in a folder on your `PATH`. To check an archive came from the release workflow, see [Verifying a release](https://docs.napwake.dev/next/reference/security/#verifying-a-release).
 
 * Source
 
@@ -130,7 +130,7 @@ History: the last 7 days, from monitoring/prometheus-operated
   Not counted: 4 scaled to zero by hand and 1 without CPU history to replay.
 
   NAMESPACE    WORKLOAD               STATE                BECAUSE                                                  COST/MO   FREED THIS MONTH   SAVED   COULD SLEEP   WAKES   COULD FREE/MO
-  preview-42   statefulset/postgres   idle (unmanaged)     CPU 0.3% of its request; last deployed 23 days ago   $140      -                  -       167h          0       $139
+  preview-42   statefulset/postgres   idle (unmanaged)     CPU 0.3% of its request; last deployed 23 days ago       $140      -                  -       167h          0       $139
   preview-7    deployment/api         idle (dry-run)       no activity for 5h; measuring since Oct 1                $96       -                  -       41h           4       $40
   preview-3    deployment/web         paused (live)        paused 3h ago                                            $48       $12                $9      -             -       -
   preview-9    deployment/demo        paused (unmanaged)   scaled to zero, not by Napwake                           $0        -                  -       -             -       -
