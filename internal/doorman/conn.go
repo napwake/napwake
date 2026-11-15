@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/dialrace"
 	opmetrics "github.com/napwake/napwake/internal/metrics"
 )
 
@@ -312,7 +313,7 @@ func (h *heldConn) await(ctx, waitCtx context.Context, wakeErr error) (net.Conn,
 				return upstream, resultSuccess
 			}
 			proxyLimited = errors.Is(dialErr, errProxyLimited)
-			dialFailed = !proxyLimited && !errors.Is(dialErr, errNoneReady)
+			dialFailed = !proxyLimited && !errors.Is(dialErr, dialrace.ErrNoneLeft)
 		} else if current.draining() && err == nil {
 			return nil, resultDrained
 		}
@@ -367,7 +368,7 @@ func (h *heldConn) passThrough(ctx context.Context) (net.Conn, string) {
 		return upstream, resultSuccess
 	case errors.Is(err, errProxyLimited):
 		return nil, resultLimited
-	case errors.Is(err, errNoneReady):
+	case errors.Is(err, dialrace.ErrNoneLeft):
 		return nil, resultRefused
 	default:
 		return nil, resultError
@@ -376,8 +377,8 @@ func (h *heldConn) passThrough(ctx context.Context) (net.Conn, string) {
 
 // dial connects to one of addrs, the Ready addresses the backends listed
 // with changed, once a proxied place is free for the connection: it fails
-// with errProxyLimited if none is, and with errNoneReady if the endpoints
-// change to list none as it dials.
+// with errProxyLimited if none is, and with dialrace.ErrNoneLeft if the
+// endpoints change to list none as it dials.
 func (h *heldConn) dial(ctx context.Context, addrs []string, changed <-chan struct{}) (net.Conn, error) {
 	if !h.admission.proxy(h.from, h.now()) {
 		return nil, errProxyLimited

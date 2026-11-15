@@ -43,8 +43,8 @@ import (
 // answerBound is how soon the doorman must answer once a pod that never
 // answers has left the Service's endpoints, or once it has a live pod
 // beside it: far more than giving it up and answering takes, a few
-// milliseconds, or than dialStagger, and far less than the dialTimeout such
-// a pod cost a caller before (P89).
+// milliseconds, or than dialrace.Stagger, and far less than the dialTimeout
+// such a pod cost a caller before (P89).
 const answerBound = time.Second
 
 // unanswered dials as the doorman does, except the dials silent picks, by
@@ -279,9 +279,9 @@ func TestServer_StopsWaitingOnAPodThatLeaves(t *testing.T) {
 }
 
 // A workload's pods can include one that has gone but is still listed
-// Ready, which never answers. Tried first, it costs a caller dialStagger,
-// not dialTimeout: the next pod is tried beside it, and the connection goes
-// to the first to answer (P89).
+// Ready, which never answers. Tried first, it costs a caller
+// dialrace.Stagger, not dialTimeout: the next pod is tried beside it, and
+// the connection goes to the first to answer (P89).
 func TestServer_PassesAConnectionOnPastAPodThatNeverAnswers(t *testing.T) {
 	const request = "GET /orders HTTP/1.1\r\nHost: api\r\nUser-Agent: curl/8.7.1\r\n\r\n"
 	paused := func(port int32) *v1alpha1.ManagedWorkload { return pausedWorkload("api", port, time.Minute) }

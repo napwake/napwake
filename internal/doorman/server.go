@@ -37,6 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/napwake/napwake/internal/dialrace"
 	opmetrics "github.com/napwake/napwake/internal/metrics"
 )
 
@@ -197,7 +198,7 @@ type Server struct {
 
 	// dialPod connects to a workload's pod: a net.Dialer's, but for tests,
 	// which stand in pods that have gone and never answer.
-	dialPod dialFunc
+	dialPod dialrace.DialFunc
 
 	backends  *backends
 	admission *admission
