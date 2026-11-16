@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"strings"
 	"time"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
@@ -166,6 +167,12 @@ func buildStatusPage(result statusResult, since time.Duration, now time.Time) st
 	}
 	if result.Note != "" {
 		page.Notes = append(page.Notes, result.Note)
+	}
+	for _, wl := range result.Workloads {
+		if wl.ControllerOwned != "" {
+			_, name, _ := strings.Cut(wl.Target, "/")
+			page.Notes = append(page.Notes, wl.Namespace+"/"+name+": "+oneLine(wl.ControllerOwned))
+		}
 	}
 
 	if result.NodesNotScalingDown {

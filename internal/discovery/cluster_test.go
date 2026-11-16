@@ -714,6 +714,37 @@ func TestScanCluster_ReplicasFromGit(t *testing.T) {
 	assert.NotContains(t, notes, "argo-told")
 }
 
+// A Deployment or StatefulSet a controller of its own owns, as an operator
+// owns what it makes, is noted before anyone opts it in, naming the owner:
+// if it sets the replicas, it will undo each pause. An owner that isn't
+// its controller, and no owner, aren't.
+func TestScanCluster_ControllerOwned(t *testing.T) {
+	ownedBy := func(kind, name string, controller bool) []metav1.OwnerReference {
+		return []metav1.OwnerReference{{APIVersion: "example.com/v1", Kind: kind, Name: name, UID: types.UID("uid-" + name),
+			Controller: ptr.To(controller)}}
+	}
+	chat := makeDeployment("chat", testNamespace, 1, "100m", "128Mi", nil)
+	chat.OwnerReferences = ownedBy("Mattermost", "chat", true)
+	logs := database("logs", testNamespace)
+	logs.OwnerReferences = ownedBy("Elasticsearch", "search", true)
+	shared := makeDeployment("shared", testNamespace, 1, "100m", "128Mi", nil)
+	shared.OwnerReferences = ownedBy("Bundle", "tools", false)
+	plain := makeDeployment("plain", testNamespace, 1, "100m", "128Mi", nil)
+
+	c := fake.NewClientBuilder().WithScheme(newScheme()).WithRuntimeObjects(chat, logs, shared, plain).Build()
+	report, err := NewScanner(c, c).ScanCluster(context.Background(), scanOptions(testNamespace))
+	require.NoError(t, err)
+
+	got := byName(report)
+	assert.Equal(t, "Mattermost chat", got["chat"].ControlledBy)
+	assert.Equal(t, "Elasticsearch search", got["logs"].ControlledBy)
+	assert.Empty(t, got["shared"].ControlledBy, "an owner that isn't its controller")
+	assert.Empty(t, got["plain"].ControlledBy)
+	assert.Contains(t, report.Notes, "2 workloads are owned by a controller, which would undo each pause if it sets "+
+		"their replicas: "+testNamespace+"/chat (Mattermost chat), "+testNamespace+"/logs (Elasticsearch search). "+
+		"See https://docs.napwake.dev/guides/managed-workload/#scaled-up-outside-napwake")
+}
+
 // A workload in a protected namespace is shown, but never counted as what
 // pausing could save.
 func TestScanCluster_ProtectedNamespace(t *testing.T) {

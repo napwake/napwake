@@ -430,6 +430,19 @@ func TestNextFor_WhatKeepsItUp(t *testing.T) {
 			undoneBy(w, "Argo CD", 2*time.Hour)
 			w.Status.Phase = v1alpha1.PhaseIdle
 		}, want: "pauses now"},
+		{name: "idle, after its last two pauses were undone at once", mutate: func(w *v1alpha1.ManagedWorkload) {
+			undoneAtOnce(w, 2, 10*time.Minute)
+			w.Status.Phase = v1alpha1.PhaseIdle
+		}, want: "pauses at 13:50 UTC (after its pause was undone)"},
+		{name: "its clock runs out before Napwake pauses again after a pause undone at once",
+			mutate: func(w *v1alpha1.ManagedWorkload) {
+				undoneAtOnce(w, 1, 10*time.Minute)
+				w.Status.Activity = activity(v1alpha1.ActivitySourceScaledUp, 10*time.Minute, 20*time.Minute)
+			}, want: "pauses at 12:50 UTC (after its pause was undone)"},
+		{name: "the wait after a pause undone at once is over", mutate: func(w *v1alpha1.ManagedWorkload) {
+			undoneAtOnce(w, 1, 2*time.Hour)
+			w.Status.Phase = v1alpha1.PhaseIdle
+		}, want: "pauses now"},
 		{name: "the forecast holds it before the hour after a GitOps conflict", mutate: func(w *v1alpha1.ManagedWorkload) {
 			undoneBy(w, "Argo CD", 10*time.Minute)
 			w.Status.Conditions = append(w.Status.Conditions,
@@ -491,6 +504,16 @@ func undoneBy(w *v1alpha1.ManagedWorkload, tool string, ago time.Duration) {
 	w.Status.LastScaledUp = &v1alpha1.ScaledUp{At: *before(ago), By: "argocd-controller", GitOps: tool, Replicas: 2}
 	w.Status.Conditions = []metav1.Condition{condition("GitOpsConflict", metav1.ConditionTrue, "PauseUndone",
 		tool+" set the replicas from Git, undoing the pause")}
+}
+
+// undoneAtOnce has the workload's last pause undone at once, the last of
+// undone in a row, ago, as the operator reports it, leaving its clock run
+// out.
+func undoneAtOnce(w *v1alpha1.ManagedWorkload, undone int32, ago time.Duration) {
+	w.Status.Activity = activity(v1alpha1.ActivitySourceScaledUp, 2*time.Hour, -time.Hour)
+	w.Status.LastScaledUp = &v1alpha1.ScaledUp{At: *before(ago), By: "mattermost-operator", Replicas: 2, Undone: undone}
+	w.Status.Conditions = []metav1.Condition{condition("PauseUndone", metav1.ConditionTrue, "ReplicasSetBack",
+		"mattermost-operator set the replicas back 3 seconds after the pause, undoing it")}
 }
 
 // A GitOps conflict needs attention while the tool would still undo a
@@ -866,6 +889,43 @@ func TestStatus_IngressTimeoutShort(t *testing.T) {
 
 	out = runStatus(t, newStatusClient(t, interceptor.Funcs{}, covered), statusOpts())
 	assert.NotContains(t, out, "Behind ingress-nginx", "nothing to say of timeouts at maxWait")
+}
+
+// A pause undone at once needs attention, as a GitOps conflict does, and
+// NEXT says when Napwake pauses it again. A controller owner is a note:
+// it undoes pauses only if it sets the replicas.
+func TestStatus_PauseUndoneAndControllerOwned(t *testing.T) {
+	const owns = "Mattermost chat controls it, so if that sets its replicas, it will undo each pause"
+	chat := statusWorkloadObj("shop", "chat", v1alpha1.TargetKindDeployment, v1alpha1.PhaseIdle, time.Minute)
+	undoneAtOnce(chat, 1, 10*time.Minute)
+	chat.Status.Conditions = append(chat.Status.Conditions,
+		condition("ControllerOwned", metav1.ConditionTrue, "ControllerReference", owns))
+	jobs := statusWorkloadObj("shop", "jobs", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, time.Hour)
+	jobs.Status.Activity = activity(v1alpha1.ActivitySourceCPU, 10*time.Minute, 50*time.Minute)
+	jobs.Status.Conditions = []metav1.Condition{
+		condition("ControllerOwned", metav1.ConditionTrue, "ControllerReference", owns)}
+	c := newStatusClient(t, interceptor.Funcs{}, chat, jobs)
+
+	out := runStatus(t, c, statusOpts())
+
+	assert.Contains(t, out, "Needs attention:\n  shop/chat   PauseUndone   mattermost-operator set the replicas back 3 "+
+		"seconds after the pause, undoing it\n")
+	assert.Contains(t, out, "pauses at 12:50 UTC (after its pause was undone)")
+	assert.Contains(t, out, "\nOwned by a controller:\n"+
+		"  shop/chat   "+owns+"\n"+
+		"  shop/jobs   "+owns+"\n")
+	assert.NotContains(t, out, "ControllerOwned", "not a problem")
+
+	result, err := clusterStatus(context.Background(), c, "shop", statusOpts())
+	require.NoError(t, err)
+	require.Len(t, result.Problems, 1)
+	assert.Equal(t, "PauseUndone", result.Problems[0].Type)
+	require.Len(t, result.Workloads, 2)
+	assert.Equal(t, owns, result.Workloads[1].ControllerOwned)
+	page := buildStatusPage(result, 24*time.Hour, statusNow)
+	assert.Contains(t, page.Notes, "shop/jobs: "+owns)
+	require.Len(t, page.Attention, 1)
+	assert.Equal(t, "PauseUndone", page.Attention[0].Type)
 }
 
 // A workload deliberately labelled napwake.dev/ignore needs nobody's
