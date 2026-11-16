@@ -1116,7 +1116,7 @@ func (r *Reconciler) reconcileIdleClock(ctx context.Context, workload *v1alpha1.
 	if dryRun {
 		return &ctrl.Result{RequeueAfter: activityCheckInterval}, nil
 	}
-	if until, held := gitOpsHold(workload, now); held {
+	if until, held := pauseHold(workload, now); held {
 		return &ctrl.Result{RequeueAfter: until.Sub(now)}, nil
 	}
 	return r.handlePause(ctx, workload, target, nil)
@@ -1132,8 +1132,8 @@ type quietHours struct {
 // forward, with idlePolicy.pauseEarly: by forecast.PauseEarly, from the
 // activity clock, and only when a request would wake it once paused, so a
 // wrong forecast costs a request a wake, never an answer. An active-until
-// hold keeps it awake; awake dependents, the GitOps back-off and dry-run
-// apply after, as to any pause the clock decides. A check that fails
+// hold keeps it awake; awake dependents, the hold after an undone pause and
+// dry-run apply after, as to any pause the clock decides. A check that fails
 // leaves the pause to the clock.
 func (r *Reconciler) pauseEarly(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object,
 	engine forecaster, obs activityObservation) (quietHours, bool) {
