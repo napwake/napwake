@@ -152,6 +152,7 @@ Fix the value. [Settings annotations](/reference/labels-annotations/#settings-an
     | `PrometheusAvailable=False` | A query fails, or no `--prometheus-url` |
     | `Protected=True` | `ProtectedNamespace`, `NapwakeComponent` (Napwake's own), or `PVCsDeletedOnScaleDown`, for a StatefulSet whose `persistentVolumeClaimRetentionPolicy.whenScaled: Delete` would lose its PVCs. Set `whenScaled: Retain` |
     | `GitOpsConflict=True` | A GitOps tool undid the last pause. Napwake retries after an hour |
+    | `PauseUndone=True` | Something else set the replicas back at once, such as an operator that owns it. Napwake retries after an hour, doubling with each pause undone, to at most 24 ([A pause undone at once](/guides/managed-workload/#a-pause-undone-at-once)) |
 
 6. Check whether its dependents hold it awake:
 
@@ -322,7 +323,7 @@ The events say what woke it:
 | `WokeByActivity` | An activity annotation changed, or a Prometheus activity query shows activity. A tool refreshing `napwake.dev/last-activity` on a timer, not on real use, wakes it each time |
 | `WokenByDependent` | A dependent woke, which the event names. See what woke that one |
 | `AutoResume` | The forecast expected demand |
-| `ScaledUp` | Scaled up outside Napwake, by what the event and `status.lastScaledUp` name. A GitOps tool also sets `GitOpsConflict=True`. It sets the replicas from Git, undoing every pause until told to leave them ([GitOps tools](/guides/gitops/)) |
+| `ScaledUp` | Scaled up outside Napwake, by what the event and `status.lastScaledUp` name. A GitOps tool also sets `GitOpsConflict=True`. It sets the replicas from Git, undoing every pause until told to leave them ([GitOps tools](/guides/gitops/)). An operator that owns it, or anything else that sets them back at once, sets `PauseUndone=True`, and Napwake waits longer each time ([A pause undone at once](/guides/managed-workload/#a-pause-undone-at-once)) |
 
 The doorman already ignores connections that close without sending anything, and common probes and scrapers ([What wakes a workload](/concepts/wake-on-request/#what-wakes-a-workload-and-what-doesnt)).
 

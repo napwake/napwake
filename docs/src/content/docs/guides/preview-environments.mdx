@@ -273,7 +273,7 @@ A ManagedWorkload from the label is named after its workload, such as `web`. Wak
 
 A deploy that leaves the replicas to Napwake, as each tab above sets up, doesn't wake a paused preview. Its new pods start at the next wake.
 
-One that sets `replicas` scales the preview up, which wakes it as a scale-up from outside. Under Flux, that's a `GitOpsConflict`, and the next pause waits an hour ([GitOps tools](/guides/gitops/)).
+One that sets `replicas` scales the preview up, which wakes it as a scale-up from outside. Under Flux, that's a `GitOpsConflict`, and the next pause waits an hour ([GitOps tools](/guides/gitops/)). Any other deploy that sets them within 5 minutes of a pause is a `PauseUndone`, and the next pause waits an hour too ([A pause undone at once](/guides/managed-workload/#a-pause-undone-at-once)).
 
 To have it up for whoever reviews each push, wake it from the workflow that deploys it. Then wait until it's Running. In GitHub Actions:
 
