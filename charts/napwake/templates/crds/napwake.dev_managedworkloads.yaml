@@ -1019,6 +1019,19 @@ spec:
                   replicas:
                     format: int32
                     type: integer
+                  undone:
+                    description: |-
+                      Undone counts the pauses in a row undone at once by something other
+                      than a GitOps tool, as the PauseUndone condition reports them: their
+                      replicas were set back within 5 minutes of the scale to zero, or at
+                      any time while the target has a controller owner, such as an
+                      operator that sets them. Napwake waits an hour after the first to
+                      pause again, doubling with each after it, to at most 24 hours. A
+                      pause that holds that long sets it back to zero, and removes the
+                      condition.
+                    format: int32
+                    minimum: 0
+                    type: integer
                 required:
                 - at
                 - by
