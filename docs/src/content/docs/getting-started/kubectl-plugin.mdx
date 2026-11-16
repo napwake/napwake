@@ -42,7 +42,7 @@ brew install napwake/tap/kubectl-napwake
 kubectl napwake version
 ```
 
-Homebrew installs the newest release, or the newest release candidate until the first stable release. `brew upgrade` keeps it current. For this version of the docs exactly, use Krew or a download.
+Homebrew installs the newest release, or the newest release candidate until the first stable release. `brew upgrade` keeps it current. For this version of the docs exactly, use a download.
 
 </TabItem>
 <TabItem label="Krew">
@@ -50,14 +50,13 @@ Homebrew installs the newest release, or the newest release candidate until the 
 With [krew](https://krew.sigs.k8s.io/docs/user-guide/setup/install/), kubectl's plugin manager, installed:
 
 ```bash
-kubectl krew install --manifest-url \
-  https://github.com/napwake/napwake/releases/download/v0.2.0/krew-napwake.yaml
+kubectl krew install napwake
 kubectl napwake version
 ```
 
-Krew installs it on Linux and macOS (amd64 and arm64) and Windows (amd64).
+Krew installs it on Linux and macOS (amd64 and arm64) and Windows (amd64). It installs the newest release in [krew-index](https://github.com/kubernetes-sigs/krew-index/blob/master/plugins/napwake.yaml), which a release reaches soon after it's out. `kubectl krew upgrade` keeps it current.
 
-`kubectl krew upgrade` doesn't upgrade a plugin installed from a manifest URL. For a later release, run `kubectl krew uninstall napwake`, then install that release's manifest. Once the plugin is accepted into the [krew-index](https://github.com/kubernetes-sigs/krew-index), `kubectl krew install napwake` will install it, and `kubectl krew upgrade` upgrade it.
+Installed from a release's manifest URL, as these docs had it before 0.2.1, the plugin isn't upgraded by `kubectl krew upgrade`. Run `kubectl krew uninstall napwake` once, then install it as above.
 
 </TabItem>
 <TabItem label="Download">
