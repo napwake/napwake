@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.1] - Unreleased
+## [0.2.1] - 2026-11-16
 
 0.2.1 fixes what the test cluster found running 0.2.0 and its candidates. It also fixes what an audit of Napwake's events and caches turned up.
 
