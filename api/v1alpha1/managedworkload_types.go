@@ -647,7 +647,7 @@ type ScaledUp struct {
 	// any time while the target has a controller owner, such as an
 	// operator that sets them. Napwake waits an hour after the first to
 	// pause again, doubling with each after it, to at most 24 hours. A
-	// pause that holds that long sets it back to zero, and removes the
+	// pause that holds an hour sets it back to zero, and removes the
 	// condition.
 	// +optional
 	// +kubebuilder:validation:Minimum=0

@@ -255,7 +255,7 @@ func undoneMessage(w *v1alpha1.ManagedWorkload) string {
 // whoever undoes it: PauseUndone and a warning name who did it, how soon,
 // and the owner, and Napwake holds off an hour after the scale-up, then 2,
 // doubling with each pause in a row undone, before pausing again. A pause
-// that holds for its hold time ends it.
+// that holds an hour ends it.
 func TestPauseUndone_ByTheOwnerIsHeldOffDoubling(t *testing.T) {
 	env := startUndoneEnv(t)
 	tc := env.create(t, "owned", true)
@@ -293,21 +293,23 @@ func TestPauseUndone_ByTheOwnerIsHeldOffDoubling(t *testing.T) {
 		tc.pausesAt(t, scaledUp.Add(2*time.Hour))
 	})
 
-	t.Run("a pause that holds for its hold time clears both", func(t *testing.T) {
+	// An hour, whatever the count: a workload in daily use is woken before a
+	// pause holds the longer waits, which would leave the report standing.
+	t.Run("a pause that holds an hour clears both", func(t *testing.T) {
 		w := tc.pause(t)
 		pausedAt := w.Status.Pause.PausedAt.Time
-		tc.now = pausedAt.Add(2*time.Hour - time.Second)
+		tc.now = pausedAt.Add(time.Hour - time.Second)
 		w = tc.reconcile(t)
 		require.Equal(t, v1alpha1.PhasePaused, w.Status.Phase)
-		require.True(t, meta.IsStatusConditionTrue(w.Status.Conditions, "PauseUndone"), "not before 2 hours")
+		require.True(t, meta.IsStatusConditionTrue(w.Status.Conditions, "PauseUndone"), "not before an hour")
 		require.Equal(t, int32(2), w.Status.LastScaledUp.Undone)
 
-		tc.now = pausedAt.Add(2*time.Hour + requeueLag)
+		tc.now = pausedAt.Add(time.Hour + requeueLag)
 		w = tc.reconcile(t)
 		require.Equal(t, v1alpha1.PhasePaused, w.Status.Phase)
 		assert.Nil(t, meta.FindStatusCondition(w.Status.Conditions, "PauseUndone"))
 		assert.Zero(t, w.Status.LastScaledUp.Undone)
-		tc.warned(t, "Normal", "PauseUndoneResolved", "a pause held for 2 hours, so its replicas are left to Napwake now")
+		tc.warned(t, "Normal", "PauseUndoneResolved", "a pause held for an hour, so its replicas are left to Napwake now")
 	})
 }
 

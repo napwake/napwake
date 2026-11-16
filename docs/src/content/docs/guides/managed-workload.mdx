@@ -128,7 +128,7 @@ Each pause undone in a row doubles the wait, so the pods restart a few times a d
 | 5 | 16 hours |
 | 6 or more | 24 hours |
 
-A pause that holds that long clears the condition and the count, with a `PauseUndoneResolved` event. A scale-up that isn't one, such as `kubectl scale`, leaves both. [`kubectl napwake status`](/getting-started/kubectl-plugin/#see-what-napwake-is-doing) lists it under Needs attention, and NEXT shows `pauses at 15:00 UTC (after its pause was undone)`.
+A pause that holds an hour clears the condition and the count, with a `PauseUndoneResolved` event. A scale-up that isn't one, such as `kubectl scale`, leaves both. [`kubectl napwake status`](/getting-started/kubectl-plugin/#see-what-napwake-is-doing) lists it under Needs attention, and NEXT shows `pauses at 15:00 UTC (after its pause was undone)`.
 
 To stop it, take the workload out of Napwake:
 

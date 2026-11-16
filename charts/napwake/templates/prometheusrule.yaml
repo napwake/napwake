@@ -133,7 +133,9 @@ spec:
         A counter's series starts at its first count, which increase()
         doesn't see, so one younger than the window counts from zero.
         Napwake pauses again an hour after a GitOps tool undoes a pause,
-        so a tool undoing every one does it about once an hour.
+        so a tool undoing every one does it about once an hour. After
+        anything else undoes one at once, it waits an hour, then 2, then
+        4, so that reaches 3 within 6 hours too.
         */}}
         - alert: NapwakePausesUndone
           expr: |
@@ -146,7 +148,7 @@ spec:
             severity: warning
           annotations:
             summary: "Pauses of {{ "{{" }} $labels.workload {{ "}}" }} keep being undone"
-            description: "Something scaled paused workload {{ "{{" }} $labels.namespace {{ "}}" }}/{{ "{{" }} $labels.workload {{ "}}" }} back up at least 3 times in 6 hours, so pausing it saves little. Its status.lastScaledUp names what did it. A GitOps tool needs to leave the replicas to Napwake (https://docs.napwake.dev/guides/gitops/)."
+            description: "Something scaled paused workload {{ "{{" }} $labels.namespace {{ "}}" }}/{{ "{{" }} $labels.workload {{ "}}" }} back up at least 3 times in 6 hours, so pausing it saves little. Its status.lastScaledUp names what did it. Its GitOpsConflict or PauseUndone condition says what to do (https://docs.napwake.dev/guides/managed-workload/#scaled-up-outside-napwake)."
         - alert: NapwakeActivityUnreadable
           expr: max by (namespace, workload, source) (napwake_activity_unreadable) == 1
           for: 30m

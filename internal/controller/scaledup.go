@@ -332,8 +332,7 @@ func scaledUpBy(w gitops.Writer) string {
 // undoneHolds are how long Napwake waits to pause a workload again after
 // its last pause was undone, by the condition that reports it, or zero
 // without it: an hour after a GitOps tool, and for anything else, longer
-// for each pause in a row it undid. Each is timed from the scale-up, and a
-// pause made after it that holds as long shows it's over.
+// for each pause in a row it undid. Each is timed from the scale-up.
 type undoneHolds struct {
 	gitOps, undone time.Duration
 }
@@ -366,18 +365,16 @@ func pauseHold(workload *v1alpha1.ManagedWorkload, now time.Time) (time.Time, bo
 }
 
 // undoneResolved is what a pause that held cleared: a GitOps conflict, with
-// the tool it was with, and a pause undone at once, with how long the pause
-// had to hold.
+// the tool it was with, and a pause undone at once.
 type undoneResolved struct {
-	gitOps     bool
-	tool       string
-	undone     bool
-	undoneHold time.Duration
+	gitOps bool
+	tool   string
+	undone bool
 }
 
 // clearUndoneIfHeld clears the conflict, and a pause undone at once, once a
-// pause made after it has held for as long as Napwake waited to pause
-// again: whatever undid it now leaves the replicas alone.
+// pause made after it has held an hour: whatever undid it now leaves the
+// replicas alone.
 func (r *Reconciler) clearUndoneIfHeld(ctx context.Context, workload *v1alpha1.ManagedWorkload) error {
 	resolved := r.clearUndone(workload)
 	if !resolved.gitOps && !resolved.undone {
@@ -391,26 +388,28 @@ func (r *Reconciler) clearUndoneIfHeld(ctx context.Context, workload *v1alpha1.M
 }
 
 // clearUndone removes GitOpsConflict and PauseUndone, and the count of
-// pauses undone, once the workload's pause has held for as long as Napwake
-// waited to pause again, which shows it's over, and returns what it
-// cleared. Scaling up clears the pause, so any pause since began after the
-// scale-up that undid the last.
+// pauses undone, once the workload's pause has held an hour, which shows
+// it's over, and returns what it cleared. An hour, not as long as Napwake
+// waited to pause again: a workload in daily use is woken before a pause
+// holds the longer waits, which would leave PauseUndone, and its count,
+// long after whatever undid the pauses stopped. Scaling up clears the
+// pause, so any pause since began after the scale-up that undid the last.
 func (r *Reconciler) clearUndone(workload *v1alpha1.ManagedWorkload) undoneResolved {
 	holds := undoneHoldsOf(workload)
 	pause := workload.Status.Pause
-	if holds == (undoneHolds{}) || pause == nil || pause.PausedAt == nil {
+	if holds == (undoneHolds{}) || pause == nil || pause.PausedAt == nil ||
+		r.now().Sub(pause.PausedAt.Time) < gitOpsRetryAfter {
 		return undoneResolved{}
 	}
-	held := r.now().Sub(pause.PausedAt.Time)
 	var resolved undoneResolved
-	if holds.gitOps > 0 && held >= holds.gitOps {
+	if holds.gitOps > 0 {
 		meta.RemoveStatusCondition(&workload.Status.Conditions, conditionGitOpsConflict)
 		resolved.gitOps, resolved.tool = true, workload.Status.LastScaledUp.GitOps
 	}
-	if holds.undone > 0 && held >= holds.undone {
+	if holds.undone > 0 {
 		meta.RemoveStatusCondition(&workload.Status.Conditions, conditionPauseUndone)
 		workload.Status.LastScaledUp.Undone = 0
-		resolved.undone, resolved.undoneHold = true, holds.undone
+		resolved.undone = true
 	}
 	return resolved
 }
@@ -422,7 +421,7 @@ func (r *Reconciler) announceUndoneResolved(workload *v1alpha1.ManagedWorkload, 
 	}
 	if resolved.undone {
 		r.emitEvent(workload, false, "Normal", ReasonPauseUndoneResolved, actionCheckReplicas,
-			"a pause held for %s, so its replicas are left to Napwake now", human.Duration(resolved.undoneHold))
+			"a pause held for an hour, so its replicas are left to Napwake now")
 	}
 }
 

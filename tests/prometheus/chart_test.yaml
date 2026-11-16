@@ -369,14 +369,14 @@ tests:
               workload: web
             exp_annotations:
               summary: Pauses of web keep being undone
-              description: Something scaled paused workload preview/web back up at least 3 times in 6 hours, so pausing it saves little. Its status.lastScaledUp names what did it. A GitOps tool needs to leave the replicas to Napwake (https://docs.napwake.dev/guides/gitops/).
+              description: Something scaled paused workload preview/web back up at least 3 times in 6 hours, so pausing it saves little. Its status.lastScaledUp names what did it. Its GitOpsConflict or PauseUndone condition says what to do (https://docs.napwake.dev/guides/managed-workload/#scaled-up-outside-napwake).
           - exp_labels:
               severity: warning
               namespace: preview
               workload: api
             exp_annotations:
               summary: Pauses of api keep being undone
-              description: Something scaled paused workload preview/api back up at least 3 times in 6 hours, so pausing it saves little. Its status.lastScaledUp names what did it. A GitOps tool needs to leave the replicas to Napwake (https://docs.napwake.dev/guides/gitops/).
+              description: Something scaled paused workload preview/api back up at least 3 times in 6 hours, so pausing it saves little. Its status.lastScaledUp names what did it. Its GitOpsConflict or PauseUndone condition says what to do (https://docs.napwake.dev/guides/managed-workload/#scaled-up-outside-napwake).
 
   - name: activity Napwake can't read for half an hour
     interval: 1m
