@@ -253,26 +253,26 @@ Do this first. A tag with a hyphen runs the whole workflow as a pre-release:
 
 | What      | A release candidate                                                                                                   |
 | --------- | --------------------------------------------------------------------------------------------------------------------- |
-| Tag       | Has a hyphen, such as `v0.2.0-rc.1`                                                                                   |
+| Tag       | Has a hyphen, such as `v0.3.0-rc.1`                                                                                   |
 | Published | Everything but `latest`. So the image, the chart and the GitHub release exist only for those who ask for that version |
 | Docs      | Under `next`, with a banner saying it’s a release candidate                                                           |
 | Notes     | Its version’s changelog section, which needn’t be dated yet                                                           |
 | Branch    | A throwaway one, so `main` keeps the release’s version                                                                |
 
-Rehearse from a throwaway branch:
+Rehearse from a throwaway branch. `X.Y.Z` is the version you’re releasing. `N` is one more than its last candidate’s, because a pushed tag is never pushed again:
 
 ```bash
-git switch -c rehearse-v0.2.0-rc.1 main
-make release VERSION=0.2.0-rc.1
-git push origin v0.2.0-rc.1
+git switch -c rehearse-vX.Y.Z-rc.N main
+make release VERSION=X.Y.Z-rc.N
+git push origin vX.Y.Z-rc.N
 ```
 
-Once it succeeds, install it as the docs describe, with `--version 0.2.0-rc.1`, and check its signatures with the commands in [Security](https://docs.napwake.dev/0.2/reference/security/#verifying-a-release). Then release from `main`:
+Once it succeeds, install it as the docs describe, with `--version X.Y.Z-rc.N`, and check its signatures with the commands in [Security](https://docs.napwake.dev/0.2/reference/security/#verifying-a-release). Then release from `main`:
 
 ```bash
 git switch main
-make release VERSION=0.2.0
-git push origin main v0.2.0
+make release VERSION=X.Y.Z
+git push origin main vX.Y.Z
 ```
 
 ### The Homebrew tap
@@ -303,23 +303,15 @@ brew untap napwake/local
 
 ### Krew
 
-Each release carries a krew manifest, `krew-napwake.yaml`, which the release workflow writes with `hack/krew-manifest.sh` and checks with krew’s `validate-krew-manifest`. Until the plugin is in [krew-index](https://github.com/kubernetes-sigs/krew-index), the docs install it from that manifest’s URL. Once 0.2.0 is released, submit it to krew-index:
+The plugin is in [krew-index](https://github.com/kubernetes-sigs/krew-index/blob/master/plugins/napwake.yaml) from 0.2.0, so the docs install it with `kubectl krew install napwake`. Each release carries a krew manifest, `krew-napwake.yaml`, which the release workflow writes with `hack/krew-manifest.sh` and checks with krew’s `validate-krew-manifest`.
 
-1. Check the release’s manifest installs on every platform. This needs [krew](https://krew.sigs.k8s.io/docs/user-guide/setup/install/).
+A release reaches krew-index by a pull request there, which sets `plugins/napwake.yaml`’s `version`, `uri`s and `sha256`s to those in the release’s `krew-napwake.yaml`. In a fork of krew-index:
 
-   ```bash
-   gh release download v0.2.0 -R napwake/napwake -p krew-napwake.yaml
-   go install sigs.k8s.io/krew/cmd/validate-krew-manifest@v0.5.0
-   validate-krew-manifest -manifest krew-napwake.yaml
-   ```
+```bash
+gh release download "$TAG" -R napwake/napwake -p krew-napwake.yaml -O plugins/napwake.yaml
+```
 
-2. Fork [kubernetes-sigs/krew-index](https://github.com/kubernetes-sigs/krew-index), add the manifest as `plugins/napwake.yaml`, and open a pull request. Krew’s maintainers review a new plugin by hand, against their [naming guide](https://krew.sigs.k8s.io/docs/developer-guide/develop/naming-guide/) and [best practices](https://krew.sigs.k8s.io/docs/developer-guide/develop/best-practices/).
-
-3. Once it’s merged, change the README’s and the [plugin page’s](https://docs.napwake.dev/0.2/getting-started/kubectl-plugin/#installation) Krew instructions to `kubectl krew install napwake`, without a manifest URL.
-
-For each later release, open a pull request to krew-index. It sets `plugins/napwake.yaml`’s `version`, `uri`s and `sha256`s to those in the release’s `krew-napwake.yaml`.
-
-One that changes only those is tested and merged automatically. [krew-release-bot](https://github.com/rajatjindal/krew-release-bot) can open it from the release workflow.
+One that changes only those is tested and merged automatically. [krew-release-bot](https://github.com/rajatjindal/krew-release-bot) can open it from the release workflow. Until it’s merged, `kubectl krew install napwake` installs the release before, so the install smoke test also installs the release’s own manifest.
 
 ### The docs site
 

@@ -17,7 +17,7 @@ Install from the OCI registry, with no `helm repo` to add. Change `Europe/London
 
 ```bash
 printf '\ntimezone: Europe/London\n' >> napwake-values.yaml
-helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.0 \
+helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.1 \
   --namespace napwake-system --create-namespace -f napwake-values.yaml
 ```
 
@@ -45,7 +45,7 @@ Check any install this way.
 
 Keep the file and upgrade with it. An upgrade given `--set` alone drops your other values ([Keeping your settings](https://docs.napwake.dev/0.2/operations/upgrading/#keeping-your-settings)). The chart installs and upgrades the ManagedWorkload CRD.
 
-The chart’s version has no `v`. Its image’s tag has one, such as `v0.2.0`. [Helm values](https://docs.napwake.dev/0.2/reference/helm-values/) lists every value.
+The chart’s version has no `v`. Its image’s tag has one, such as `v0.2.1`. [Helm values](https://docs.napwake.dev/0.2/reference/helm-values/) lists every value.
 
 ### On EKS Fargate
 
@@ -57,10 +57,10 @@ napwake-values.yaml
 resources:
   limits:
     cpu: 500m
-    memory: 512Mi
+    memory: 1280Mi
   requests:
     cpu: 500m
-    memory: 512Mi
+    memory: 1280Mi
 
 
 doorman:
@@ -104,7 +104,7 @@ The chart is only in an OCI registry, which Argo CD and Flux name differently. C
     source:
       repoURL: ghcr.io/napwake/charts
       chart: napwake
-      targetRevision: 0.2.0
+      targetRevision: 0.2.1
       helm:
         valuesObject:
           timezone: Europe/London
@@ -135,7 +135,7 @@ The chart is only in an OCI registry, which Argo CD and Flux name differently. C
     interval: 1h
     url: oci://ghcr.io/napwake/charts/napwake
     ref:
-      tag: 0.2.0
+      tag: 0.2.1
     layerSelector:
       mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
       operation: copy
@@ -219,7 +219,7 @@ All three install the CRD, RBAC, the operator (`deployment/napwake-controller-ma
 * install.yaml
 
   ```bash
-  kubectl apply -f https://github.com/napwake/napwake/releases/download/v0.2.0/install.yaml
+  kubectl apply -f https://github.com/napwake/napwake/releases/download/v0.2.1/install.yaml
   ```
 
   `install.yaml` is the Kustomize manifests in one file. Set your users’ [time zone](https://docs.napwake.dev/0.2/getting-started/installation/#time-zone) on the operator:
@@ -239,7 +239,7 @@ All three install the CRD, RBAC, the operator (`deployment/napwake-controller-ma
   apiVersion: kustomize.config.k8s.io/v1beta1
   kind: Kustomization
   resources:
-    - https://github.com/napwake/napwake//config/default?ref=v0.2.0
+    - https://github.com/napwake/napwake//config/default?ref=v0.2.1
   patches:
     - target:
         kind: Deployment
@@ -287,7 +287,7 @@ All three install the CRD, RBAC, the operator (`deployment/napwake-controller-ma
 Two more bases, pinned to the same release, add what these chart values turn on. Add them to your kustomization’s `resources`, or apply one alone:
 
 ```bash
-kubectl apply -k "https://github.com/napwake/napwake//config/prometheus?ref=v0.2.0"
+kubectl apply -k "https://github.com/napwake/napwake//config/prometheus?ref=v0.2.1"
 ```
 
 From a clone:
@@ -299,8 +299,8 @@ kubectl apply -k config/network-policy
 
 | Base                                                                   | Adds                                                                                                                                                                                                                                                  | Chart values                                                       |
 | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `https://github.com/napwake/napwake//config/prometheus?ref=v0.2.0`     | ServiceMonitors for the operator and the doorman, and the [alerting rules](https://docs.napwake.dev/0.2/operations/monitoring/#alerting-rules). Needs the Prometheus Operator’s CRDs, and your Prometheus [allowed to read the metrics](https://docs.napwake.dev/0.2/operations/monitoring/#scraping) | `metrics.serviceMonitor.enabled`, `metrics.prometheusRule.enabled` |
-| `https://github.com/napwake/napwake//config/network-policy?ref=v0.2.0` | NetworkPolicies. Only namespaces labelled `metrics: enabled` may scrape the operator and the doorman. The doorman’s routing ports (TCP 20000-29999) stay open to every caller of a paused workload’s Services                                         | `networkPolicy.enabled`                                            |
+| `https://github.com/napwake/napwake//config/prometheus?ref=v0.2.1`     | ServiceMonitors for the operator and the doorman, and the [alerting rules](https://docs.napwake.dev/0.2/operations/monitoring/#alerting-rules). Needs the Prometheus Operator’s CRDs, and your Prometheus [allowed to read the metrics](https://docs.napwake.dev/0.2/operations/monitoring/#scraping) | `metrics.serviceMonitor.enabled`, `metrics.prometheusRule.enabled` |
+| `https://github.com/napwake/napwake//config/network-policy?ref=v0.2.1` | NetworkPolicies. Only namespaces labelled `metrics: enabled` may scrape the operator and the doorman. The doorman’s routing ports (TCP 20000-29999) stay open to every caller of a paused workload’s Services                                         | `networkPolicy.enabled`                                            |
 
 ## Time zone
 
@@ -324,7 +324,7 @@ timezone: America/New_York
 
 ```bash
 helm upgrade napwake oci://ghcr.io/napwake/charts/napwake \
-  --version 0.2.0 \
+  --version 0.2.1 \
   --namespace napwake-system \
   -f napwake-values.yaml
 ```
@@ -425,7 +425,7 @@ No Helm prints it for a revision written by a Helm before 3.18. Such a revision 
 What a refused uninstall leaves, and Argo CD
 
 * The release is marked `uninstalling`, which `helm list` shows only with `-a`, though everything still runs. Uninstalling again, once the ManagedWorkloads are gone, finishes it.
-* Until then, if no revision is `deployed`, `helm upgrade` fails with `has no deployed releases`. To keep Napwake, mark the release deployed again ([After a refusal](https://docs.napwake.dev/0.2/operations/troubleshooting/#after-a-refusal-the-release-isnt-deployed)). With no `deployed` revision, run `helm rollback napwake <revision>`, with the last revision `helm history napwake` lists. With one, as after a refused upgrade, run an upgrade with `--reuse-values` alone instead.
+* Until then, if no revision is `deployed`, `helm upgrade` fails with `has no deployed releases`. To keep Napwake, mark the release deployed again ([After a refusal](https://docs.napwake.dev/0.2/operations/troubleshooting/#after-a-refusal-the-release-isnt-deployed)). With no `deployed` revision, run `helm rollback napwake <revision>`, with the last revision `helm history napwake` lists. With one, as after an upgrade the upgrade guard’s hook refused, run an upgrade with `--reuse-values` alone instead.
 * `--no-hooks` skips the guard, and `guard.uninstall: false` drops it. [Guards](https://docs.napwake.dev/0.2/reference/helm-values/#guards) has what it counts and runs.
 * Argo CD 3.3 and later runs the guard as a PreDelete hook. Deleting the Application while ManagedWorkloads are left is blocked, with a `DeletionError` condition. Argo CD retries the hook until they’re gone.
 * To delete the Application anyway, set `guard.uninstall: false` in Git and sync first.

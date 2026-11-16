@@ -19,11 +19,10 @@ Source: https://docs.napwake.dev/0.2/getting-started/scan/
   With [krew](https://krew.sigs.k8s.io/docs/user-guide/setup/install/) installed, on Linux, macOS or Windows:
 
   ```bash
-  kubectl krew install --manifest-url \
-    https://github.com/napwake/napwake/releases/download/v0.2.0/krew-napwake.yaml
+  kubectl krew install napwake
   ```
 
-  To upgrade it later, see the [plugin page](https://docs.napwake.dev/0.2/getting-started/kubectl-plugin/#installation).
+  `kubectl krew upgrade` keeps it current, unless you installed it from a manifest URL before: see the [plugin page](https://docs.napwake.dev/0.2/getting-started/kubectl-plugin/#installation).
 
 * Download
 
@@ -32,7 +31,7 @@ Source: https://docs.napwake.dev/0.2/getting-started/scan/
   ```bash
   os=$(uname -s | tr '[:upper:]' '[:lower:]')
   arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
-  curl -fLO "https://github.com/napwake/napwake/releases/download/v0.2.0/kubectl-napwake-${os}-${arch}.tar.gz"
+  curl -fLO "https://github.com/napwake/napwake/releases/download/v0.2.1/kubectl-napwake-${os}-${arch}.tar.gz"
   tar xzf "kubectl-napwake-${os}-${arch}.tar.gz"
   sudo install "kubectl-napwake-${os}-${arch}" /usr/local/bin/kubectl-napwake
   ```

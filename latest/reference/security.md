@@ -25,7 +25,9 @@ Each power Napwake has, and what limits it. [Data and access](https://docs.napwa
 
 ## What it talks to
 
-Nothing leaves the cluster unless `prometheus.url` points outside it, such as at a hosted Prometheus. Then the operator’s queries go there, with workload names in them. There’s no telemetry, usage reporting or update checks. Inside the cluster, these are the connections.
+Nothing leaves the cluster unless `prometheus.url` points outside it, such as at a hosted Prometheus. Then the operator’s queries go there, with workload names in them. There’s no telemetry, usage reporting or update checks.
+
+Inside the cluster, these are the connections.
 
 | From                                                                                                            | To                                                                          | Why                                                                                          |
 | --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
@@ -87,7 +89,7 @@ The signatures are made with cosign 3, so verify them with cosign 3 or later.
   Its signature, an SBOM for each platform, and build provenance. The SBOMs, a few megabytes, are saved to `sbom.intoto.jsonl`:
 
   ```bash
-  IMAGE=ghcr.io/napwake/napwake:v0.2.0
+  IMAGE=ghcr.io/napwake/napwake:v0.2.1
   cosign verify $IMAGE \
     --certificate-identity-regexp '^https://github.com/napwake/napwake/.github/workflows/release.yml@refs/tags/v' \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com
@@ -102,7 +104,7 @@ The signatures are made with cosign 3, so verify them with cosign 3 or later.
 * Helm chart
 
   ```bash
-  cosign verify ghcr.io/napwake/charts/napwake:0.2.0 \
+  cosign verify ghcr.io/napwake/charts/napwake:0.2.1 \
     --certificate-identity-regexp '^https://github.com/napwake/napwake/.github/workflows/release.yml@refs/tags/v' \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com
   ```

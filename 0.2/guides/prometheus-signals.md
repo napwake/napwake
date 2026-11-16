@@ -80,6 +80,8 @@ Any result above zero keeps the workload awake, and [wakes it](https://docs.napw
 
    Queries add to CPU, deploys and activity annotations, the other activity sources. Any one keeps the workload awake.
 
+   This one needs ingress-nginx’s metrics, which are off by default. Turn them on with `--enable-metrics=true`, or `controller.metrics.enabled: true` in its chart.
+
    There’s no annotation for queries. On a ManagedWorkload created from the `napwake.dev/managed` label, add them to its `spec.idlePolicy.activity.prometheus`. The opt-in controller keeps them when it updates the rest from the annotations.
 
 3. Test the same query in Prometheus.
@@ -231,17 +233,23 @@ Two scrapes are what a restart needs. Napwake doesn’t know the scrape interval
 
 ## Example queries
 
-| Use case                       | PromQL                                                                                                      |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| Requests through ingress-nginx | `sum(rate(nginx_ingress_controller_requests{exported_namespace="staging", exported_service="my-api"}[5m]))` |
-| Requests seen by the app       | `sum(rate(http_requests_total{service="my-api"}[5m]))`                                                      |
-| Open WebSocket connections     | `sum(websocket_connections{service="my-api"})`                                                              |
-| Messages waiting on a queue    | `sum(rabbitmq_queue_messages{queue="tasks"})`                                                               |
-| Kafka consumer lag             | `sum(kafka_consumer_lag{group="worker"})`                                                                   |
+| Use case                                        | PromQL                                                                                                      |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Requests through ingress-nginx                  | `sum(rate(nginx_ingress_controller_requests{exported_namespace="staging", exported_service="my-api"}[5m]))` |
+| Requests through Traefik                        | `sum(rate(traefik_service_requests_total{service="staging-my-api-80@kubernetes"}[5m]))`                     |
+| Requests through Envoy Gateway, for Gateway API | `sum(rate(envoy_cluster_upstream_rq_total{envoy_cluster_name="httproute/staging/my-api/rule/0"}[5m]))`      |
+| Requests seen by the app                        | `sum(rate(http_requests_total{service="my-api"}[5m]))`                                                      |
+| Open WebSocket connections                      | `sum(websocket_connections{service="my-api"})`                                                              |
+| Messages waiting on a queue                     | `sum(rabbitmq_queue_messages{queue="tasks"})`                                                               |
+| Kafka consumer lag                              | `sum(kafka_consumer_lag{group="worker"})`                                                                   |
 
 ingress-nginx labels each request with its namespace and Service. Scraped by the Prometheus Operator, which keeps `namespace` and `service` for the scrape target, they become `exported_namespace` and `exported_service`.
 
 Give both. Preview environments often share Service names, and another’s traffic would keep this one awake.
+
+For an Ingress, Traefik names the Service `<namespace>-<name>-<port>@kubernetes`. The port is as the Ingress gives it, such as `80` or `http`. The namespace is in the name, so one label is enough. Scraped by the Prometheus Operator through a ServiceMonitor, the label is `exported_service`.
+
+Gateway API has no metrics of its own, so each implementation names its own. Envoy Gateway counts requests by route. Its cluster name is `httproute/<namespace>/<route>/rule/<index>`, from the HTTPRoute’s namespace and name and the rule’s place in it, counting from 0.
 
 ingress-nginx is retired upstream, its repository archived, and it’s still the controller Napwake’s tests run on.
 

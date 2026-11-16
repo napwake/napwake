@@ -35,22 +35,23 @@ spec:
 
 ## The rules
 
-| Rule                                                                  |                                                                                                                                                                                                                                                                                                                                                     |
-| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A dependency doesn’t pause while anything that depends on it is awake | Its own clock keeps running meanwhile                                                                                                                                                                                                                                                                                                               |
-| The last dependent pauses                                             | The dependency pauses on its next check, if its own clock has run out                                                                                                                                                                                                                                                                               |
-| A dependent that’s waking holds it too                                | Paused, with a wake already asked for: a request the doorman holds for it, an [activity annotation](https://docs.napwake.dev/latest/concepts/idle-detection/#activity-annotations) on its ManagedWorkload or its workload, or a wake request, set since its pause. So the dependency doesn’t start to pause as the dependent wakes                                          |
-| The dependents are read again before it pauses                        | From the API server, which can have a wake, or a dependency just learned, that the operator’s cache hasn’t seen yet. Not in dry-run, where nothing pauses. Once more just before it’s scaled to zero, after the doorman’s takeover. A dependent awake then, such as one that learned it depends on it since, calls the pause off (`PauseCancelled`) |
-| Waking a workload wakes its dependencies                              | Before it resumes, Napwake sets `napwake.dev/last-activity` on each dependency’s ManagedWorkload, the usual [activity annotation](https://docs.napwake.dev/latest/concepts/idle-detection/#activity-annotations) wake                                                                                                                                                       |
-| Seeing it                                                             | `kubectl describe` shows it                                                                                                                                                                                                                                                                                                                         |
-| It chains                                                             | If Postgres depends on something, that wakes too                                                                                                                                                                                                                                                                                                    |
-| Everything wakes at once                                              | By default, so a chain doesn’t add up to cold starts in a row                                                                                                                                                                                                                                                                                       |
-| Waking a dependency never holds up its dependent                      | The dependent wakes, or is handed back or deleted, regardless                                                                                                                                                                                                                                                                                       |
-| A dependency can’t be woken                                           | As when a policy engine won’t let Napwake annotate its ManagedWorkload. The dependent gets a `DependencyWakeFailed` warning event                                                                                                                                                                                                                   |
+| Rule                                                                                                     |                                                                                                                                                                                                                                                                                                                                                     |
+| -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A dependency doesn’t pause while anything that depends on it is awake                                    | Its own clock keeps running meanwhile                                                                                                                                                                                                                                                                                                               |
+| The last dependent pauses                                                                                | The dependency pauses on its next check, if its own clock has run out                                                                                                                                                                                                                                                                               |
+| A dependent that’s waking holds it too                                                                   | Paused, with a wake already asked for: a request the doorman holds for it, an [activity annotation](https://docs.napwake.dev/latest/concepts/idle-detection/#activity-annotations) on its ManagedWorkload or its workload, or a wake request, set since its pause. So the dependency doesn’t start to pause as the dependent wakes                                          |
+| The dependents are read again before it pauses                                                           | From the API server, which can have a wake, or a dependency just learned, that the operator’s cache hasn’t seen yet. Not in dry-run, where nothing pauses. Once more just before it’s scaled to zero, after the doorman’s takeover. A dependent awake then, such as one that learned it depends on it since, calls the pause off (`PauseCancelled`) |
+| Waking a workload wakes its dependencies                                                                 | Before it resumes, Napwake sets `napwake.dev/last-activity` on each dependency’s ManagedWorkload, the usual [activity annotation](https://docs.napwake.dev/latest/concepts/idle-detection/#activity-annotations) wake. A `WokenByDependent` event on the dependency names the dependent                                                                                     |
+| Seeing it                                                                                                | `kubectl describe` shows it                                                                                                                                                                                                                                                                                                                         |
+| It chains                                                                                                | If Postgres depends on something, that wakes too                                                                                                                                                                                                                                                                                                    |
+| Everything wakes at once                                                                                 | By default, so a chain doesn’t add up to cold starts in a row                                                                                                                                                                                                                                                                                       |
+| Waking a dependency never holds up its dependent                                                         | The dependent wakes, or is handed back or deleted, regardless                                                                                                                                                                                                                                                                                       |
+| A dependency can’t be woken                                                                              | As when a policy engine won’t let Napwake annotate its ManagedWorkload. The dependent gets a `DependencyWakeFailed` warning event                                                                                                                                                                                                                   |
+| A dependency’s [forecast](https://docs.napwake.dev/latest/concepts/forecasting/#what-an-hour-records) learns its dependents’ use | An hour a dependent holding it is in use is an hour the dependency is in use, whatever its own CPU. A dependent’s wake, which stamps it, isn’t. So woken ahead by the forecast or by the morning’s first request, a dependency learns the same hours                                                                                                |
 
 A dependency held awake says why:
 
-```plaintext
+```text
 HeldByDependents=True   kept awake for preview-42/api, preview-43/api
 ```
 
@@ -66,7 +67,7 @@ dependsOn:
 
 The dependent stays in `Resuming`, not scaled up:
 
-```plaintext
+```text
 WaitingForDependencies=True   waiting for preview-42/statefulset/postgres (0 ready)
 ```
 
@@ -94,7 +95,7 @@ WaitingForDependencies=True   waiting for preview-42/statefulset/postgres (0 rea
 
 Past the limit, the condition reads:
 
-```plaintext
+```text
 WaitingForDependencies=False   not waiting for preview-42/statefulset/postgres (it isn't Ready after 10 minutes)
 ```
 
@@ -136,7 +137,7 @@ kubectl annotate namespace shared napwake.dev/dependents-from="preview-42, previ
 
 A dependency that isn’t allowed reads:
 
-```plaintext
+```text
 DependencyNotAllowed=True   not in a namespace that allows dependents from preview-42 with napwake.dev/dependents-from, so not held or woken: shared/statefulset/postgres
 ```
 
@@ -168,13 +169,13 @@ learnedDependencies:
 
 Opt the dependency in too, to have them paused and woken together:
 
-```plaintext
+```text
 api: depends on preview-42/postgres (PGHOST), which isn't managed by Napwake, so it isn't woken with api: opt it in to have them paused and woken together
 ```
 
 Once Napwake takes it on, another event says so:
 
-```plaintext
+```text
 api: depends on preview-42/postgres (PGHOST), now managed by Napwake, so woken and held with it
 ```
 

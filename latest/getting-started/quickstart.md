@@ -98,7 +98,7 @@ Napwake creates a ManagedWorkload for it:
 kubectl get managedworkloads -n dev
 ```
 
-```plaintext
+```text
 NAME     PHASE     FREED   SAVED   WOULD FREE   AGE
 my-api   Running   $0.00   $0.00   $0.00        10s
 ```

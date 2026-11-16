@@ -55,21 +55,20 @@ The rest answer narrower questions. Every flag, JSON field, exit status and perm
   kubectl napwake version
   ```
 
-  Homebrew installs the newest release, or the newest release candidate until the first stable release. `brew upgrade` keeps it current. For this version of the docs exactly, use Krew or a download.
+  Homebrew installs the newest release, or the newest release candidate until the first stable release. `brew upgrade` keeps it current. For this version of the docs exactly, use a download.
 
 * Krew
 
   With [krew](https://krew.sigs.k8s.io/docs/user-guide/setup/install/), kubectl’s plugin manager, installed:
 
   ```bash
-  kubectl krew install --manifest-url \
-    https://github.com/napwake/napwake/releases/download/v0.2.0/krew-napwake.yaml
+  kubectl krew install napwake
   kubectl napwake version
   ```
 
-  Krew installs it on Linux and macOS (amd64 and arm64) and Windows (amd64).
+  Krew installs it on Linux and macOS (amd64 and arm64) and Windows (amd64). It installs the newest release [krew-index](https://github.com/kubernetes-sigs/krew-index/blob/master/plugins/napwake.yaml) has, and each release reaches it soon after it’s out. `kubectl krew upgrade` keeps it current.
 
-  `kubectl krew upgrade` doesn’t upgrade a plugin installed from a manifest URL. For a later release, run `kubectl krew uninstall napwake`, then install that release’s manifest. Once the plugin is accepted into the [krew-index](https://github.com/kubernetes-sigs/krew-index), `kubectl krew install napwake` will install it, and `kubectl krew upgrade` upgrade it.
+  If you installed it from a release’s manifest URL, as these docs said before 0.2.1, `kubectl krew upgrade` won’t upgrade it. Run `kubectl krew uninstall napwake` once, then install it as above.
 
 * Download
 
@@ -78,13 +77,13 @@ The rest answer narrower questions. Every flag, JSON field, exit status and perm
   ```bash
   os=$(uname -s | tr '[:upper:]' '[:lower:]')
   arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
-  curl -fLO "https://github.com/napwake/napwake/releases/download/v0.2.0/kubectl-napwake-${os}-${arch}.tar.gz"
+  curl -fLO "https://github.com/napwake/napwake/releases/download/v0.2.1/kubectl-napwake-${os}-${arch}.tar.gz"
   tar xzf "kubectl-napwake-${os}-${arch}.tar.gz"
   sudo install "kubectl-napwake-${os}-${arch}" /usr/local/bin/kubectl-napwake
   kubectl napwake version
   ```
 
-  On Windows, download `kubectl-napwake-windows-amd64.tar.gz` from the [release](https://github.com/napwake/napwake/releases/tag/v0.2.0) and extract it with `tar xzf`. Rename `kubectl-napwake-windows-amd64.exe` to `kubectl-napwake.exe`, in a folder on your `PATH`. To check an archive came from the release workflow, see [Verifying a release](https://docs.napwake.dev/0.2/reference/security/#verifying-a-release).
+  On Windows, download `kubectl-napwake-windows-amd64.tar.gz` from the [release](https://github.com/napwake/napwake/releases/tag/v0.2.1) and extract it with `tar xzf`. Rename `kubectl-napwake-windows-amd64.exe` to `kubectl-napwake.exe`, in a folder on your `PATH`. To check an archive came from the release workflow, see [Verifying a release](https://docs.napwake.dev/0.2/reference/security/#verifying-a-release).
 
 * Source
 
@@ -130,7 +129,7 @@ History: the last 7 days, from monitoring/prometheus-operated
   Not counted: 4 scaled to zero by hand and 1 without CPU history to replay.
 
   NAMESPACE    WORKLOAD               STATE                BECAUSE                                                  COST/MO   FREED THIS MONTH   SAVED   COULD SLEEP   WAKES   COULD FREE/MO
-  preview-42   statefulset/postgres   idle (unmanaged)     CPU 0.3% of its request; last deployed 23 days ago   $140      -                  -       167h          0       $139
+  preview-42   statefulset/postgres   idle (unmanaged)     CPU 0.3% of its request; last deployed 23 days ago       $140      -                  -       167h          0       $139
   preview-7    deployment/api         idle (dry-run)       no activity for 5h; measuring since Oct 1                $96       -                  -       41h           4       $40
   preview-3    deployment/web         paused (live)        paused 3h ago                                            $48       $12                $9      -             -       -
   preview-9    deployment/demo        paused (unmanaged)   scaled to zero, not by Napwake                           $0        -                  -       -             -       -
@@ -226,8 +225,8 @@ kubectl napwake scan --open=false
 | `--namespace` `-n` | all you can read | Namespace to scan. Repeat for several                                                                                                                                                 |
 | `--output` `-o`    | `table`          | `table`, `json` or `yaml`                                                                                                                                                             |
 | `--window`         | `7d`             | Prometheus history to replay, such as `7d` or `36h`, up to `366d`. `0` judges from CPU now                                                                                            |
-| `--cpu-price`      | `0.031`          | Your price per vCPU-hour, in dollars, zero or more, for every workload. Unset, each node is priced at its type’s list price, and one with none at AWS on-demand in us-east-1          |
-| `--memory-price`   | `0.004`          | Your price per GiB-hour of memory, in dollars, zero or more, for every workload. Unset, each node is priced at its type’s list price, and one with none at AWS on-demand in us-east-1 |
+| `--cpu-price`      | list prices      | Your price per vCPU-hour, in dollars, zero or more, for every workload. Unset, each node is priced at its type’s list price, and one with none at AWS on-demand in us-east-1          |
+| `--memory-price`   | list prices      | Your price per GiB-hour of memory, in dollars, zero or more, for every workload. Unset, each node is priced at its type’s list price, and one with none at AWS on-demand in us-east-1 |
 
 The [`scan` reference](https://docs.napwake.dev/0.2/reference/cli/#scan) has every flag, JSON field, exit status and permission. It also says how the scan judges idle, reads history and prices workloads.
 
@@ -404,6 +403,7 @@ Doors need a UTF-8 locale. They aren’t drawn in Chinese, Japanese or Korean on
 | `Pausing is off`                            | First, and atop the `--html` page, while [pausing is off](https://docs.napwake.dev/0.2/guides/pause/#stop-all-pausing-now) for their install. Those workloads show in dry-run                                                                                                                                      |
 | `Pausing is off for 2 of these workloads`   | The same, when only some are off, as with [more than one install](https://docs.napwake.dev/0.2/getting-started/installation/#more-than-one-install)                                                                                                                                                                |
 | Summary                                     | How many workloads are in each phase                                                                                                                                                                                                                                                       |
+| `Letting go of`                             | The workloads whose ManagedWorkload is being deleted, which Napwake [hands back](https://docs.napwake.dev/0.2/guides/pause/#when-napwake-lets-go). They aren’t rows, and aren’t counted. Their hand-back is in Recent pauses and wakes                                                                             |
 | Summary, dry-run                            | How many are in dry-run, with what pausing them would have freed since the first started measuring                                                                                                                                                                                         |
 | That figure                                 | What dry-run measured (`status.dryRun.estimatedFreed`), the would-be pause under way included                                                                                                                                                                                              |
 | `Your bill:`                                | From the node autoscaler [`nodes`](https://docs.napwake.dev/0.2/reference/cli/#nodes-autoscaler) finds, as `scan` says it                                                                                                                                                                                          |

@@ -6,14 +6,14 @@ Source: https://docs.napwake.dev/0.2/reference/helm-values/
 
 ```bash
 printf '\ntimezone: Europe/London\n' >> napwake-values.yaml
-helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.0 \
+helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.1 \
   --namespace napwake-system --create-namespace -f napwake-values.yaml
 ```
 
 Change `Europe/London` to your users’ [time zone](https://docs.napwake.dev/0.2/getting-started/installation/#time-zone). Any other value you set goes in `napwake-values.yaml` too. Install with it, and upgrade with it to [keep your settings](https://docs.napwake.dev/0.2/operations/upgrading/#keeping-your-settings).
 
 ```bash
-helm show values oci://ghcr.io/napwake/charts/napwake --version 0.2.0
+helm show values oci://ghcr.io/napwake/charts/napwake --version 0.2.1
 ```
 
 Every default.
@@ -24,11 +24,11 @@ Every default.
 
 * Chart version
 
-  `0.2.0`, no `v`
+  `0.2.1`, no `v`
 
 * Image tags
 
-  `v0.2.0`, with a `v`
+  `v0.2.1`, with a `v`
 
 What the schema catches
 
@@ -187,7 +187,7 @@ The names and labels the chart gives.
 | Value              | Default                                          | Description                                 |
 | ------------------ | ------------------------------------------------ | ------------------------------------------- |
 | `image.repository` | `ghcr.io/napwake/napwake`                        | Container image repository                  |
-| `image.tag`        | `""`, the chart’s `appVersion`, such as `v0.2.0` | Image tag, for the operator and the doorman |
+| `image.tag`        | `""`, the chart’s `appVersion`, such as `v0.2.1` | Image tag, for the operator and the doorman |
 | `image.pullPolicy` | `IfNotPresent`                                   | Image pull policy                           |
 | `imagePullSecrets` | `[]`                                             | Private registry credentials                |
 
@@ -207,7 +207,7 @@ For Argo CD, which ignores that, it also carries `argocd.argoproj.io/sync-option
 
 | Value             | Default                              | Description                                                                                                                           |
 | ----------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `defaultsVersion` | the chart’s version, such as `0.2.0` | Which chart version Helm’s defaults are from. Leave it. See [Keeping your settings](https://docs.napwake.dev/0.2/operations/upgrading/#keeping-your-settings) |
+| `defaultsVersion` | the chart’s version, such as `0.2.1` | Which chart version Helm’s defaults are from. Leave it. See [Keeping your settings](https://docs.napwake.dev/0.2/operations/upgrading/#keeping-your-settings) |
 
 What it’s for
 
@@ -229,24 +229,35 @@ Values that are there stay, `false`, `0` and `""` included. With its own default
 
 ## Resources
 
-| Value                       | Default | Description                                                         |
-| --------------------------- | ------- | ------------------------------------------------------------------- |
-| `resources.requests.cpu`    | `10m`   | CPU request                                                         |
-| `resources.requests.memory` | `128Mi` | Memory request                                                      |
-| `resources.limits.cpu`      | `500m`  | CPU limit                                                           |
-| `resources.limits.memory`   | `512Mi` | Memory limit. Raise it on clusters with many thousands of workloads |
+| Value                       | Default  | Description                                                                                                                                                                                                                                                             |
+| --------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `resources.requests.cpu`    | `10m`    | CPU request                                                                                                                                                                                                                                                             |
+| `resources.requests.memory` | `128Mi`  | Memory request                                                                                                                                                                                                                                                          |
+| `resources.limits.cpu`      | `500m`   | CPU limit                                                                                                                                                                                                                                                               |
+| `resources.limits.memory`   | `1280Mi` | Memory limit, enough for some 10,000 ManagedWorkloads with a pod and a Service each, or 100,000 pods behind 10,000 Deployments, with a fifth to spare. Raise it beyond, by about 75Mi for each 1,000 more workloads, or 90Mi for each 1,000 more Deployments of 10 pods |
 
 What the operator keeps in memory
 
-Its memory grows with the cluster.
+Its memory grows with the cluster, managed or not.
 
-| Objects                                                                                  | Held                                                                                                                                 |
-| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| ManagedWorkloads, Deployments, StatefulSets, Services, Ingresses, PVCs, HPAs, Namespaces | Cached, only the watched namespaces’ with `watchNamespaces`                                                                          |
-| Nodes                                                                                    | Cached without image lists                                                                                                           |
-| Pods                                                                                     | Cached only as spare capacity needs, if bound to a node and not finished, as node, phase and requests. Measured at about 2.7 KB each |
-| The EndpointSlices it writes, the doorman Service’s                                      | Cached                                                                                                                               |
-| Other EndpointSlices, ConfigMaps, KEDA ScaledObjects                                     | Read when needed, not cached                                                                                                         |
+| Objects                                                                                  | Held                                                                                                                                   |
+| ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| ManagedWorkloads, Deployments, StatefulSets, Services, Ingresses, PVCs, HPAs, Namespaces | Cached, only the watched namespaces’ with `watchNamespaces`                                                                            |
+| Deployments and StatefulSets                                                             | With only what the operator reads of their pod templates. Measured at about 9.6 KB each for a chart’s with a service mesh, 14 KB whole |
+| Nodes                                                                                    | Cached without image lists                                                                                                             |
+| Pods                                                                                     | Cached only as spare capacity needs, if bound to a node and not finished, as node, phase and requests. Measured at about 2.3 KB each   |
+| The EndpointSlices it writes, the doorman Service’s                                      | Cached                                                                                                                                 |
+| Other EndpointSlices, ConfigMaps, KEDA ScaledObjects                                     | Read when needed, not cached                                                                                                           |
+
+Measured on the operator binary as the chart runs it, at its peak resident memory, with ManagedWorkloads that have weeks of forecasts behind them:
+
+| Cluster                                                                     | Peak    |
+| --------------------------------------------------------------------------- | ------- |
+| 1,000 ManagedWorkloads, each with a Deployment, a pod and a Service         | 139 MiB |
+| 5,000 of them                                                               | 430 MiB |
+| 10,000 of them                                                              | 790 MiB |
+| 40,000 pods, behind 4,000 Deployments and Services, 1,000 of them managed   | 438 MiB |
+| 100,000 pods, behind 10,000 Deployments and Services, 1,000 of them managed | 954 MiB |
 
 Go’s garbage collector, in the operator and the doorman, gets a soft limit of 90% of the memory limit. That leaves the rest for memory outside its heap.
 
@@ -352,7 +363,7 @@ The doorman holds requests to paused workloads and wakes them ([Wake on request]
 | `doorman.resources.requests.cpu`                 | `10m`   | CPU request                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `doorman.resources.requests.memory`              | `64Mi`  | Memory request                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `doorman.resources.limits.cpu`                   | `500m`  | CPU limit                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `doorman.resources.limits.memory`                | `256Mi` | Memory limit, enough for some 5,000 ManagedWorkloads with a pod and a Service each, or 50,000 pods each behind a Service of its own. Raise it beyond                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `doorman.resources.limits.memory`                | `256Mi` | Memory limit, enough for some 10,000 ManagedWorkloads with a pod and a Service each, or 50,000 pods each behind a Service of its own. Raise it beyond                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `doorman.negForwarder.enabled`                   | `false` | Optional, for GKE. Routes paused workloads’ Services behind container-native load balancing (NEGs), as a GKE Ingress’s or Gateway’s are. They go through a forwarder Deployment the operator runs in the workload’s namespace while it’s paused. So requests through the load balancer wake them. Grants the operator `create` and `delete` on Deployments ([RBAC](https://docs.napwake.dev/0.2/reference/helm-values/#rbac)), adds a headless Service `<fullname>-doorman-pods`, and needs `doorman.enabled`. See [GKE NEGs](https://docs.napwake.dev/0.2/concepts/wake-on-request/#gke-container-native-load-balancing-negs)                                        |
 | `doorman.negForwarder.replicas`                  | `2`     | Pods per forwarder, spread across nodes so one stays while a node drains                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `doorman.negForwarder.resources.requests.cpu`    | `10m`   | CPU request, per pod                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
@@ -361,7 +372,7 @@ The doorman holds requests to paused workloads and wakes them ([Wake on request]
 
 The doorman’s memory, shutdown and rollouts
 
-* It caches ManagedWorkloads and the EndpointSlice controller’s EndpointSlices in watched namespaces, cut to what it reads. That’s about 9.4 KB a ManagedWorkload, 320 bytes a pod and 1.2 KB a Service, as measured with 50,000 of each. The running doorman takes two to three times what its caches hold, for the copies it makes as it works and what the garbage collector hasn’t freed yet. Held connections take up to 72Mi more under a flood.
+* It caches ManagedWorkloads and the EndpointSlice controller’s EndpointSlices in watched namespaces, cut to what it reads. That’s about 1.3 KB a ManagedWorkload, 320 bytes a pod and 1.2 KB a Service, as measured with 50,000 of each. The running doorman takes two to three times what its caches hold, for the copies it makes as it works and what the garbage collector hasn’t freed yet. Held connections take up to 72Mi more under a flood. Connections passed through to a woken workload take about 36 KB each, up to 36Mi at its cap of 1024. It [keeps them until an end closes them](https://docs.napwake.dev/0.2/concepts/wake-on-request/#connections-made-as-it-wakes).
 * On Kubernetes 1.30 and later, it sleeps 5 seconds before shutting down. So kube-proxy and load balancers stop sending new connections first.
 * Rollouts wait 5 seconds after a new pod is Ready (`minReadySeconds`) before stopping an old one. By then the operator has moved routes to it.
 
@@ -400,17 +411,17 @@ The operator’s ServiceAccount. The doorman always gets its own, `<fullname>-do
 
 Without the operator, every ManagedWorkload is stuck on its finalizer, which only the operator runs. A paused workload also stays at 0 replicas, its Services routed to the doorman. The guards stop Helm first.
 
-| Value                     | Default                              | Description                                                                                                                                                                                                                                                                                                                                 |
-| ------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `guard.uninstall`         | `true`                               | Refuse `helm uninstall` while ManagedWorkloads are left, through a pre-delete hook Job, `<fullname>-uninstall-guard`. Argo CD 3.3 and later runs it as PreDelete, blocking Application deletion too. Earlier versions skip it ([uninstall](https://docs.napwake.dev/0.2/getting-started/installation/#uninstall))                                                   |
-| `guard.upgrade`           | `true`                               | Refuse `helm upgrade` or `helm rollback` to a `watchNamespaces` leaving out namespaces with managed workloads. It’s a pre-upgrade and pre-rollback hook Job, `<fullname>-upgrade-guard`, only with `watchNamespaces` set. Argo CD runs it as PreSync, before every sync ([narrowing](https://docs.napwake.dev/0.2/operations/upgrading/#narrowing-watchnamespaces)) |
-| `guard.nodeSelector`      | `{}`                                 | The hooks’ node selector. Empty uses the operator’s                                                                                                                                                                                                                                                                                         |
-| `guard.tolerations`       | `[]`                                 | Empty uses the operator’s                                                                                                                                                                                                                                                                                                                   |
-| `guard.affinity`          | `{}`                                 | Empty uses the operator’s                                                                                                                                                                                                                                                                                                                   |
-| `guard.priorityClassName` | `""`                                 | Empty uses the operator’s                                                                                                                                                                                                                                                                                                                   |
-| `guard.podAnnotations`    | `{}`                                 | Over `sidecar.istio.io/inject: "false"` and `linkerd.io/inject: disabled`                                                                                                                                                                                                                                                                   |
-| `guard.podLabels`         | `{}`                                 | Over `sidecar.istio.io/inject: "false"`. Can’t replace the chart’s labels                                                                                                                                                                                                                                                                   |
-| `guard.resources`         | 10m/64Mi requests, 100m/128Mi limits | The hooks’ resources                                                                                                                                                                                                                                                                                                                        |
+| Value                     | Default                              | Description                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `guard.uninstall`         | `true`                               | Refuse `helm uninstall` while ManagedWorkloads are left, through a pre-delete hook Job, `<fullname>-uninstall-guard`. Argo CD 3.3 and later runs it as PreDelete, blocking Application deletion too. Earlier versions skip it ([uninstall](https://docs.napwake.dev/0.2/getting-started/installation/#uninstall))                                                                                                                                                         |
+| `guard.upgrade`           | `true`                               | Refuse `helm upgrade` or `helm rollback` to a `watchNamespaces` leaving out namespaces with managed workloads. `helm upgrade` refuses as it renders the chart, so Helm records no revision. Then a pre-upgrade and pre-rollback hook Job, `<fullname>-upgrade-guard`, checks again. Both only with `watchNamespaces` set. Argo CD runs the hook as PreSync, before every sync ([narrowing](https://docs.napwake.dev/0.2/operations/upgrading/#narrowing-watchnamespaces)) |
+| `guard.nodeSelector`      | `{}`                                 | The hooks’ node selector. Empty uses the operator’s                                                                                                                                                                                                                                                                                                                                                                                               |
+| `guard.tolerations`       | `[]`                                 | Empty uses the operator’s                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `guard.affinity`          | `{}`                                 | Empty uses the operator’s                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `guard.priorityClassName` | `""`                                 | Empty uses the operator’s                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `guard.podAnnotations`    | `{}`                                 | Over `sidecar.istio.io/inject: "false"` and `linkerd.io/inject: disabled`                                                                                                                                                                                                                                                                                                                                                                         |
+| `guard.podLabels`         | `{}`                                 | Over `sidecar.istio.io/inject: "false"`. Can’t replace the chart’s labels                                                                                                                                                                                                                                                                                                                                                                         |
+| `guard.resources`         | 10m/64Mi requests, 100m/128Mi limits | The hooks’ resources                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 How the guards work
 
@@ -431,6 +442,8 @@ Helm stops before changing anything and prints the list.
 * Mesh sidecars are kept out, since a running sidecar would keep the Job from finishing.
 * Their pods carry `control-plane: uninstall-guard` or `control-plane: upgrade-guard`, so the operator’s Service and NetworkPolicy don’t select them.
 * `--no-hooks` skips both.
+* Before the upgrade guard’s hook, `helm upgrade` refuses what it would refuse at once, as it renders the chart, so Helm records no failed revision. With your access, it reads the operator’s Deployment, then the ManagedWorkloads in the namespaces the upgrade leaves out. `--no-hooks` doesn’t skip that. `guard.upgrade: false` drops it.
+* A `helm rollback` doesn’t render the chart, and Argo CD renders it with no cluster to look in, so only the hook guards those.
 
 ## Pod scheduling
 
@@ -565,7 +578,7 @@ affinity:
 
 ```bash
 helm install napwake oci://ghcr.io/napwake/charts/napwake \
-  --version 0.2.0 \
+  --version 0.2.1 \
   -f values-ha.yaml \
   -n napwake-system --create-namespace
 ```

@@ -23,6 +23,7 @@ Every 10 minutes, the operator looks for what scales the nodes. It logs what it 
 | EKS Auto Mode      | Nodes labelled `eks.amazonaws.com/compute-type: auto`                                                                                |
 | Cluster Autoscaler | The `cluster-autoscaler-status` ConfigMap it writes in `kube-system`. Self-managed, or run for you by GKE Standard and AKS           |
 | GKE Autopilot      | That ConfigMap, and nodes named `gk3-`                                                                                               |
+| EKS Fargate        | Every node labelled `eks.amazonaws.com/compute-type: fargate`. With EC2 nodes too, what scales those counts                          |
 | `none`             | Nothing, anywhere. The operator logs that pausing won’t save until something scales nodes down                                       |
 | `unknown`          | Nothing, but it couldn’t look everywhere. A `watchNamespaces` install can’t read that ConfigMap in `kube-system`                     |
 
@@ -123,7 +124,7 @@ Every 10 minutes, the operator looks for what scales the nodes. It logs what it 
           - key: kubernetes.io/arch
             operator: In
             values: ["amd64"]
-        # Maximum time a node can live, regardless of utilization, so nodes
+        # Maximum time a node can live, regardless of utilisation, so nodes
         # pick up new images. In v1 it's here, not under disruption.
         expireAfter: 720h
     disruption:
