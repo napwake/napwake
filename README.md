@@ -66,8 +66,7 @@ The chart installs the operator and the doorman, as the Deployments `napwake` an
 With [krew](https://krew.sigs.k8s.io/docs/user-guide/setup/install/):
 
 ```bash
-kubectl krew install --manifest-url \
-  https://github.com/napwake/napwake/releases/download/v0.2.0/krew-napwake.yaml
+kubectl krew install napwake
 ```
 
 Or [download it](https://docs.napwake.dev/getting-started/kubectl-plugin/#installation) for Linux, macOS or Windows.
