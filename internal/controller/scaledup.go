@@ -165,7 +165,7 @@ func undoneSoFar(workload *v1alpha1.ManagedWorkload) int32 {
 	return s.Undone
 }
 
-const scaledUpGuide = "https://docs.napwake.dev/guides/managed-workload/#scaled-up-outside-napwake"
+const scaledUpGuide = "https://docs.napwake.dev/guides/managed-workload/#a-pause-undone-at-once"
 
 // pauseUndoneMessage says, in a line, who set the replicas back and how
 // soon after the pause, the target's controller owner, when Napwake pauses
@@ -175,13 +175,13 @@ func pauseUndoneMessage(by string, owner *metav1.OwnerReference, pausedAt *metav
 	if pausedAt != nil {
 		soon = " " + human.Duration(at.Sub(pausedAt.Time))
 	}
-	controls := ""
+	controls, setter := "", by
 	if owner != nil {
-		controls = fmt.Sprintf(" %s %s controls the workload.", owner.Kind, owner.Name)
+		controls, setter = fmt.Sprintf(" %s/%s controls the workload.", owner.Kind, owner.Name), "its owner"
 	}
-	return fmt.Sprintf("%s set the replicas back%s after the pause, undoing it.%s Napwake pauses it again from %s. "+
-		"To stop it, opt the workload out, or have its replicas left to Napwake: %s", by, soon, controls,
-		again.UTC().Format("15:04 UTC"), scaledUpGuide)
+	return fmt.Sprintf("%s set the replicas back%s after the pause, undoing it.%s Napwake can pause it again from %s. "+
+		"To stop this, opt the workload out, or have %s leave the replicas alone: %s", by, soon, controls,
+		again.UTC().Format("15:04 UTC"), setter, scaledUpGuide)
 }
 
 const gitOpsGuide = "https://docs.napwake.dev/guides/gitops/"
@@ -421,7 +421,7 @@ func (r *Reconciler) announceUndoneResolved(workload *v1alpha1.ManagedWorkload, 
 	}
 	if resolved.undone {
 		r.emitEvent(workload, false, "Normal", ReasonPauseUndoneResolved, actionCheckReplicas,
-			"a pause held for an hour, so its replicas are left to Napwake now")
+			"a pause held for an hour, so its pauses aren't being undone any more")
 	}
 }
 
@@ -435,7 +435,7 @@ func (r *Reconciler) reportControllerOwner(workload *v1alpha1.ManagedWorkload, t
 		return
 	}
 	r.setCondition(workload, conditionControllerOwned, metav1.ConditionTrue, "ControllerReference",
-		fmt.Sprintf("%s %s controls it, so if that sets its replicas, it will undo each pause", owner.Kind, owner.Name))
+		fmt.Sprintf("%s/%s controls it. If that sets the replicas, it will undo each pause", owner.Kind, owner.Name))
 }
 
 const conditionAutoscaled = "Autoscaled"

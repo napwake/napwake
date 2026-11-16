@@ -114,7 +114,7 @@ An operator that owns a workload and sets its replicas, such as mattermost-opera
 The workload still wakes, as for any scale-up. A `PauseUndone` condition and warning event say who, how soon, its owner, and when Napwake pauses it again:
 
 ```text
-PauseUndone=True   mattermost-operator set the replicas back 3 seconds after the pause, undoing it. Mattermost chat controls the workload. Napwake pauses it again from 15:00 UTC. To stop it, opt the workload out, or have its replicas left to Napwake: https://docs.napwake.dev/guides/managed-workload/#scaled-up-outside-napwake
+PauseUndone=True   mattermost-operator set the replicas back 3 seconds after the pause, undoing it. Mattermost/chat controls the workload. Napwake can pause it again from 15:00 UTC. To stop this, opt the workload out, or have its owner leave the replicas alone: https://docs.napwake.dev/guides/managed-workload/#a-pause-undone-at-once
 ```
 
 Each pause undone in a row doubles the wait, so the pods restart a few times a day at most:
@@ -128,17 +128,17 @@ Each pause undone in a row doubles the wait, so the pods restart a few times a d
 | 5 | 16 hours |
 | 6 or more | 24 hours |
 
-A pause that holds an hour clears the condition and the count, with a `PauseUndoneResolved` event. A scale-up that isn't one, such as `kubectl scale`, leaves both. [`kubectl napwake status`](/getting-started/kubectl-plugin/#see-what-napwake-is-doing) lists it under Needs attention, and NEXT shows `pauses at 15:00 UTC (after its pause was undone)`.
+A pause that holds an hour clears the condition and the count, with a `PauseUndoneResolved` event. A scale-up that doesn't count, such as `kubectl scale`, leaves both. [`kubectl napwake status`](/getting-started/kubectl-plugin/#see-what-napwake-is-doing) lists it under Needs attention, and NEXT shows `pauses at 15:00 UTC (after its pause was undone)`.
 
 To stop it, take the workload out of Napwake:
 
 | It's opted in by | Do this |
 |---|---|
 | A ManagedWorkload you wrote | Delete the ManagedWorkload |
-| A label, on it or its namespace | Label it `napwake.dev/ignore: "true"` through its owner, such as in the labels its custom resource gives what it makes. A label put on by hand goes at the owner's next write |
+| A label, on it or its namespace | Label it `napwake.dev/ignore: "true"` through its owner, such as in the labels its custom resource sets on the Deployment. A label put on by hand goes at the owner's next write |
 | Its namespace's label, with an owner that can't label it | Narrow the opt-in. Remove the namespace's label, and label the workloads you want one by one ([Opting in](/guides/opt-in/)) |
 
-An owner told to leave the replicas alone, where it can be, stops undoing pauses too.
+If the owner can be told to leave the replicas alone, that stops it too.
 
 Before any pause, a `ControllerOwned` condition names the workload's controller owner. `kubectl napwake status` and [`kubectl napwake scan`](/getting-started/scan/) note it. An owner that leaves the replicas alone never undoes a pause.
 

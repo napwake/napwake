@@ -1644,8 +1644,8 @@ func TestScan_NotesAControllerOwner(t *testing.T) {
 	require.NoError(t, writeScan(&out, result, scanOptions{output: "table"}))
 
 	assert.Contains(t, out.String(), "\n  - 1 workload is owned by a controller, which would undo each pause if it sets "+
-		"its replicas: chat/chat (Mattermost chat). See "+
-		"https://docs.napwake.dev/guides/managed-workload/#scaled-up-outside-napwake\n")
+		"the replicas: chat/chat (Mattermost/chat). See "+
+		"https://docs.napwake.dev/guides/managed-workload/#a-pause-undone-at-once\n")
 	require.Len(t, result.Workloads, 1)
-	assert.Equal(t, "Mattermost chat", result.Workloads[0].ControlledBy, "in -o json as controlledBy")
+	assert.Equal(t, "Mattermost/chat", result.Workloads[0].ControlledBy, "in -o json as controlledBy")
 }

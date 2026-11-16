@@ -832,7 +832,7 @@ Under the table, each workload a controller owns, such as an operator's custom r
 
 ```text
 Owned by a controller:
-  chat/chat   Mattermost chat controls it, so if that sets its replicas, it will undo each pause
+  chat/chat   Mattermost/chat controls it. If that sets the replicas, it will undo each pause
 ```
 
 It's a note, not a problem. An owner undoes pauses only if it sets the replicas, and then `PauseUndone` lists it under Needs attention. `-o json` has it as `controllerOwned`, and the `--html` page in its notes ([A pause undone at once](/guides/managed-workload/#a-pause-undone-at-once)).

@@ -590,18 +590,18 @@ func TestWakeOnScaleUp_UndoneAtOnce(t *testing.T) {
 		gitOps    bool
 	}{
 		{name: "by its owner", by: "stand-in-operator", owned: true, pausedAgo: 3 * time.Second, undone: 1,
-			want: "stand-in-operator set the replicas back 3 seconds after the pause, undoing it. Mattermost chat " +
-				"controls the workload. Napwake pauses it again from 13:00 UTC. To stop it, opt the workload out, or " +
-				"have its replicas left to Napwake: " + scaledUpGuide},
+			want: "stand-in-operator set the replicas back 3 seconds after the pause, undoing it. Mattermost/chat " +
+				"controls the workload. Napwake can pause it again from 13:00 UTC. To stop this, opt the workload " +
+				"out, or have its owner leave the replicas alone: " + scaledUpGuide},
 		{name: "within 5 minutes, no owner", by: "deploy-script", pausedAgo: 4 * time.Minute, undone: 1,
-			want: "deploy-script set the replicas back 4 minutes after the pause, undoing it. Napwake pauses it " +
-				"again from 13:00 UTC. To stop it, opt the workload out, or have its replicas left to Napwake: " +
-				scaledUpGuide},
+			want: "deploy-script set the replicas back 4 minutes after the pause, undoing it. Napwake can pause it " +
+				"again from 13:00 UTC. To stop this, opt the workload out, or have deploy-script leave the replicas " +
+				"alone: " + scaledUpGuide},
 		{name: "the fourth in a row", before: 3, by: "stand-in-operator", owned: true, pausedAgo: 3 * time.Second,
 			undone: 4,
-			want: "stand-in-operator set the replicas back 3 seconds after the pause, undoing it. Mattermost chat " +
-				"controls the workload. Napwake pauses it again from 20:00 UTC. To stop it, opt the workload out, or " +
-				"have its replicas left to Napwake: " + scaledUpGuide},
+			want: "stand-in-operator set the replicas back 3 seconds after the pause, undoing it. Mattermost/chat " +
+				"controls the workload. Napwake can pause it again from 20:00 UTC. To stop this, opt the workload " +
+				"out, or have its owner leave the replicas alone: " + scaledUpGuide},
 		{name: "a GitOps tool, on an owned target", by: "argocd-controller", owned: true, pausedAgo: 3 * time.Second,
 			gitOps: true},
 		{name: "a write after 5 minutes, in a run, keeps its count", before: 3, by: "kubectl-edit",

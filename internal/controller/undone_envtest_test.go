@@ -268,9 +268,9 @@ func TestPauseUndone_ByTheOwnerIsHeldOffDoubling(t *testing.T) {
 	scaledUp := w.Status.LastScaledUp.At.Time
 	assert.Equal(t, standIn, w.Status.LastScaledUp.By)
 	assert.Equal(t, int32(1), w.Status.LastScaledUp.Undone)
-	first := standIn + " set the replicas back 3 seconds after the pause, undoing it. Mattermost chat controls the " +
-		"workload. Napwake pauses it again from 11:00 UTC. To stop it, opt the workload out, or have its replicas " +
-		"left to Napwake: " + scaledUpGuide
+	first := standIn + " set the replicas back 3 seconds after the pause, undoing it. Mattermost/chat controls the " +
+		"workload. Napwake can pause it again from 11:00 UTC. To stop this, opt the workload out, or have its owner " +
+		"leave the replicas alone: " + scaledUpGuide
 	assert.Equal(t, first, undoneMessage(w), "PauseUndone, with conditions %v", conditionTypes(w))
 	tc.warned(t, "Warning", "PauseUndone", first)
 	tc.warned(t, "Normal", ReasonScaledUp, "scaled up to 1 replicas by "+standIn+" outside Napwake; counted as activity")
@@ -285,9 +285,9 @@ func TestPauseUndone_ByTheOwnerIsHeldOffDoubling(t *testing.T) {
 		w := tc.awake(t)
 		scaledUp = w.Status.LastScaledUp.At.Time
 		assert.Equal(t, int32(2), w.Status.LastScaledUp.Undone)
-		second := standIn + " set the replicas back 3 seconds after the pause, undoing it. Mattermost chat controls " +
-			"the workload. Napwake pauses it again from 13:00 UTC. To stop it, opt the workload out, or have its " +
-			"replicas left to Napwake: " + scaledUpGuide
+		second := standIn + " set the replicas back 3 seconds after the pause, undoing it. Mattermost/chat controls " +
+			"the workload. Napwake can pause it again from 13:00 UTC. To stop this, opt the workload out, or have its " +
+			"owner leave the replicas alone: " + scaledUpGuide
 		assert.Equal(t, second, undoneMessage(w))
 		tc.warned(t, "Warning", "PauseUndone", second)
 		tc.pausesAt(t, scaledUp.Add(2*time.Hour))
@@ -309,7 +309,7 @@ func TestPauseUndone_ByTheOwnerIsHeldOffDoubling(t *testing.T) {
 		require.Equal(t, v1alpha1.PhasePaused, w.Status.Phase)
 		assert.Nil(t, meta.FindStatusCondition(w.Status.Conditions, "PauseUndone"))
 		assert.Zero(t, w.Status.LastScaledUp.Undone)
-		tc.warned(t, "Normal", "PauseUndoneResolved", "a pause held for an hour, so its replicas are left to Napwake now")
+		tc.warned(t, "Normal", "PauseUndoneResolved", "a pause held for an hour, so its pauses aren't being undone any more")
 	})
 }
 
@@ -375,7 +375,7 @@ func TestControllerOwned_SetAndDropped(t *testing.T) {
 	c := meta.FindStatusCondition(w.Status.Conditions, "ControllerOwned")
 	require.NotNil(t, c, "ControllerOwned, with conditions %v", conditionTypes(w))
 	assert.Equal(t, metav1.ConditionTrue, c.Status)
-	assert.Equal(t, "Mattermost chat controls it, so if that sets its replicas, it will undo each pause", c.Message)
+	assert.Equal(t, "Mattermost/chat controls it. If that sets the replicas, it will undo each pause", c.Message)
 
 	d := (&faultEnv{ctx: tc.ctx, admin: tc.admin}).deployment(t, tc.key)
 	d.OwnerReferences = nil

@@ -895,7 +895,7 @@ func TestStatus_IngressTimeoutShort(t *testing.T) {
 // NEXT says when Napwake pauses it again. A controller owner is a note:
 // it undoes pauses only if it sets the replicas.
 func TestStatus_PauseUndoneAndControllerOwned(t *testing.T) {
-	const owns = "Mattermost chat controls it, so if that sets its replicas, it will undo each pause"
+	const owns = "Mattermost/chat controls it. If that sets the replicas, it will undo each pause"
 	chat := statusWorkloadObj("shop", "chat", v1alpha1.TargetKindDeployment, v1alpha1.PhaseIdle, time.Minute)
 	undoneAtOnce(chat, 1, 10*time.Minute)
 	chat.Status.Conditions = append(chat.Status.Conditions,

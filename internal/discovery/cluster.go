@@ -188,7 +188,7 @@ type Workload struct {
 	// replicas couldn't be checked, when it couldn't.
 	GitOpsUnchecked string `json:"gitOpsUnchecked,omitempty"`
 	// ControlledBy is the kind and name of the controller that owns it,
-	// such as an operator's custom resource, as "Mattermost chat". If that
+	// such as an operator's custom resource, as "Mattermost/chat", as kubectl writes it. If that
 	// sets its replicas, it will undo each pause.
 	ControlledBy string `json:"controlledBy,omitempty"`
 	// OnSpot means a pod of it is on a spot node priced at its type's spot
@@ -586,7 +586,7 @@ const gitOpsGuide = "https://docs.napwake.dev/guides/gitops/"
 // recordOwner notes the controller that owns the workload, if one does.
 func (w *Workload) recordOwner(obj metav1.Object) {
 	if owner := metav1.GetControllerOf(obj); owner != nil {
-		w.ControlledBy = owner.Kind + " " + owner.Name
+		w.ControlledBy = owner.Kind + "/" + owner.Name
 	}
 }
 
@@ -604,15 +604,14 @@ func controlledNotes(workloads []Workload) []string {
 	if len(names) == 0 {
 		return nil
 	}
-	whose := "their"
+	owned := fmt.Sprintf("%d workloads are owned by controllers, which would undo each pause if they set", len(names))
 	if len(names) == 1 {
-		whose = "its"
+		owned = "1 workload is owned by a controller, which would undo each pause if it sets"
 	}
-	return []string{fmt.Sprintf("%s owned by a controller, which would undo each pause if it sets %s replicas: %s. "+
-		"See %s", plural(len(names), "workload is", "workloads are"), whose, listSome(names), scaledUpGuide)}
+	return []string{fmt.Sprintf("%s the replicas: %s. See %s", owned, listSome(names), scaledUpGuide)}
 }
 
-const scaledUpGuide = "https://docs.napwake.dev/guides/managed-workload/#scaled-up-outside-napwake"
+const scaledUpGuide = "https://docs.napwake.dev/guides/managed-workload/#a-pause-undone-at-once"
 
 // stateOrder lists idle workloads first, the ones worth acting on.
 var stateOrder = map[State]int{StateIdle: 0, StatePaused: 1, StateActive: 2, StateUnknown: 3}

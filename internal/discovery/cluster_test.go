@@ -736,13 +736,13 @@ func TestScanCluster_ControllerOwned(t *testing.T) {
 	require.NoError(t, err)
 
 	got := byName(report)
-	assert.Equal(t, "Mattermost chat", got["chat"].ControlledBy)
-	assert.Equal(t, "Elasticsearch search", got["logs"].ControlledBy)
+	assert.Equal(t, "Mattermost/chat", got["chat"].ControlledBy)
+	assert.Equal(t, "Elasticsearch/search", got["logs"].ControlledBy)
 	assert.Empty(t, got["shared"].ControlledBy, "an owner that isn't its controller")
 	assert.Empty(t, got["plain"].ControlledBy)
-	assert.Contains(t, report.Notes, "2 workloads are owned by a controller, which would undo each pause if it sets "+
-		"their replicas: "+testNamespace+"/chat (Mattermost chat), "+testNamespace+"/logs (Elasticsearch search). "+
-		"See https://docs.napwake.dev/guides/managed-workload/#scaled-up-outside-napwake")
+	assert.Contains(t, report.Notes, "2 workloads are owned by controllers, which would undo each pause if they set "+
+		"the replicas: "+testNamespace+"/chat (Mattermost/chat), "+testNamespace+"/logs (Elasticsearch/search). "+
+		"See https://docs.napwake.dev/guides/managed-workload/#a-pause-undone-at-once")
 }
 
 // A workload in a protected namespace is shown, but never counted as what
