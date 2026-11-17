@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A workload whose operator sets its replicas, such as mattermost-operator, was paused again after each idle hour, restarting its pods each time, with only a Normal `ScaledUp` event (P95). The operator set the replicas back within seconds of each pause, which Napwake took for a wake from outside, as `kubectl scale` is. Now a pause undone at once is reported: a field manager that sets the replicas within 5 minutes of the scale to zero, or at any time on a workload with a controller owner, sets a `PauseUndone` condition and warning. It says who did it, how soon, the owner, and when Napwake pauses again. Napwake waits 1 hour after the scale-up, doubling with each pause in a row undone, to at most 24 hours, counted in `status.lastScaledUp.undone`. A pause that holds an hour clears both. A `ControllerOwned` condition names a workload's controller owner before any pause, and `kubectl napwake status` and `scan` note it. `kubectl scale`, an HPA and KEDA scale through the scale subresource, so they never count. A GitOps tool's undo is a `GitOpsConflict`, as before
+
 ## [0.2.1] - 2026-11-16
 
 0.2.1 fixes what the test cluster found running 0.2.0 and its candidates. It also fixes what an audit of Napwake's events and caches turned up.

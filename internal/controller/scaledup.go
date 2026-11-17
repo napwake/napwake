@@ -32,27 +32,44 @@ import (
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
 	"github.com/napwake/napwake/internal/autoscaler"
 	"github.com/napwake/napwake/internal/gitops"
+	"github.com/napwake/napwake/internal/human"
 	"github.com/napwake/napwake/internal/metrics"
 )
 
-const conditionGitOpsConflict = "GitOpsConflict"
+const (
+	conditionGitOpsConflict  = "GitOpsConflict"
+	conditionPauseUndone     = "PauseUndone"
+	conditionControllerOwned = "ControllerOwned"
+
+	ReasonPauseUndone         = "PauseUndone"
+	ReasonPauseUndoneResolved = "PauseUndoneResolved"
+)
 
 // gitOpsRetryAfter is shared with kubectl napwake status, which shows when
 // the wait ends.
 const gitOpsRetryAfter = gitops.RetryAfter
 
+// undoneWithin is how soon after a pause's scale to zero a write of the
+// replicas undoes it at once, on a target with no controller owner. A
+// controller that sets them does so within seconds of the change it
+// watches. A deploy that comes later is a deploy.
+const undoneWithin = 5 * time.Minute
+
 // wakeOnScaleUp treats a paused workload scaled up outside Napwake as
 // woken: whoever did it wants it running. One still pausing counts once
 // Napwake has scaled it to zero, rather than being scaled back down. A
 // GitOps tool doing it means it sets the replicas from Git and will undo
-// every pause, which the workload reports with the fix. A pause that holds
-// clears that report.
+// every pause, which the workload reports with the fix. Anything else that
+// undoes the pause at once, as an operator that owns the workload and sets
+// its replicas does, will most likely undo the next too, so it's reported
+// as PauseUndone, and Napwake waits longer to pause again for each pause in
+// a row undone. A pause that holds clears either report.
 func (r *Reconciler) wakeOnScaleUp(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object) error {
 	if !scaledDownByNapwake(workload) {
 		return nil
 	}
 	if replicasFromTarget(target) == 0 {
-		return r.clearGitOpsConflictIfHeld(ctx, workload)
+		return r.clearUndoneIfHeld(ctx, workload)
 	}
 	// Just after a pause the cache can still hold the target as it was
 	// before it, which looks just like a scale-up. Only the API server can
@@ -73,6 +90,10 @@ func (r *Reconciler) wakeOnScaleUp(ctx context.Context, workload *v1alpha1.Manag
 		return nil
 	}
 
+	var pausedAt *metav1.Time
+	if pause := workload.Status.Pause; pause != nil {
+		pausedAt = pause.PausedAt
+	}
 	// Someone else woke it, so it's only released, never scaled.
 	if _, err := r.pauser.Restore(ctx, workload); err != nil {
 		return fmt.Errorf("releasing a workload scaled up outside Napwake: %w", err)
@@ -84,15 +105,23 @@ func (r *Reconciler) wakeOnScaleUp(ctx context.Context, workload *v1alpha1.Manag
 		by = "unknown"
 	}
 	now := r.clockTime()
-	workload.Status.LastScaledUp = &v1alpha1.ScaledUp{At: now, By: by, GitOps: string(writer.Tool), Replicas: replicas}
+	scaledUp := &v1alpha1.ScaledUp{At: now, By: by, GitOps: string(writer.Tool), Replicas: replicas,
+		Undone: undoneSoFar(workload)}
 	r.resetActivity(workload, v1alpha1.ActivitySourceScaledUp)
 	r.stampLastActed(workload)
-	var conflict string
-	if writer.FromGit() {
+	owner := metav1.GetControllerOf(target)
+	var conflict, undone string
+	switch {
+	case writer.FromGit():
 		conflict = fmt.Sprintf("%s set the replicas from Git, undoing the pause; Napwake pauses it again from %s. "+
 			"To stop it, %s", writer.Tool, now.Add(gitOpsRetryAfter).UTC().Format("15:04 UTC"), gitOpsFix(writer.Tool))
 		r.setCondition(workload, conditionGitOpsConflict, metav1.ConditionTrue, "PauseUndone", conflict)
+	case undoneAtOnce(found, owner, pausedAt, now.Time):
+		scaledUp.Undone++
+		undone = pauseUndoneMessage(by, owner, pausedAt, now.Time, now.Add(gitops.UndoneRetryAfter(scaledUp.Undone)))
+		r.setCondition(workload, conditionPauseUndone, metav1.ConditionTrue, "ReplicasSetBack", undone)
 	}
+	workload.Status.LastScaledUp = scaledUp
 
 	r.wakeDependencies(ctx, workload)
 	if err := r.transition(ctx, workload, v1alpha1.PhaseRunning, "ScaledUp"); err != nil {
@@ -107,7 +136,52 @@ func (r *Reconciler) wakeOnScaleUp(ctx context.Context, workload *v1alpha1.Manag
 	if conflict != "" {
 		r.emitEvent(workload, false, "Warning", ReasonGitOpsConflict, actionCheckReplicas, "%s", conflict)
 	}
+	if undone != "" {
+		r.emitEvent(workload, false, "Warning", ReasonPauseUndone, actionCheckReplicas, "%s", undone)
+	}
 	return nil
+}
+
+// undoneAtOnce says a scale-up that isn't a GitOps tool's undid the pause
+// at once: a writer of the replicas is recorded, so it wrote the workload
+// itself, and either the target has a controller owner, which reconciles
+// what it owns as soon as it changes, or it came within undoneWithin of the
+// scale to zero. A scale through the scale subresource, as kubectl scale,
+// an HPA and KEDA make, records no writer, so it never counts.
+func undoneAtOnce(found bool, owner *metav1.OwnerReference, pausedAt *metav1.Time, now time.Time) bool {
+	if !found {
+		return false
+	}
+	return owner != nil || pausedAt != nil && now.Sub(pausedAt.Time) < undoneWithin
+}
+
+// undoneSoFar is how many pauses in a row have been undone at once, until
+// a pause holds.
+func undoneSoFar(workload *v1alpha1.ManagedWorkload) int32 {
+	s := workload.Status.LastScaledUp
+	if s == nil || !meta.IsStatusConditionTrue(workload.Status.Conditions, conditionPauseUndone) {
+		return 0
+	}
+	return s.Undone
+}
+
+const scaledUpGuide = "https://docs.napwake.dev/guides/managed-workload/#a-pause-undone-at-once"
+
+// pauseUndoneMessage says, in a line, who set the replicas back and how
+// soon after the pause, the target's controller owner, when Napwake pauses
+// it again, and where the guide says what to do.
+func pauseUndoneMessage(by string, owner *metav1.OwnerReference, pausedAt *metav1.Time, at, again time.Time) string {
+	soon := ""
+	if pausedAt != nil {
+		soon = " " + human.Duration(at.Sub(pausedAt.Time))
+	}
+	controls, setter := "", by
+	if owner != nil {
+		controls, setter = fmt.Sprintf(" %s/%s controls the workload.", owner.Kind, owner.Name), "its owner"
+	}
+	return fmt.Sprintf("%s set the replicas back%s after the pause, undoing it.%s Napwake can pause it again from %s. "+
+		"To stop this, opt the workload out, or have %s leave the replicas alone: %s", by, soon, controls,
+		again.UTC().Format("15:04 UTC"), setter, scaledUpGuide)
 }
 
 const gitOpsGuide = "https://docs.napwake.dev/guides/gitops/"
@@ -255,52 +329,113 @@ func scaledUpBy(w gitops.Writer) string {
 	return strings.ReplaceAll(strings.ToLower(string(w.Tool)), " ", "-")
 }
 
-// gitOpsHold is when Napwake may pause a workload whose last pause a
-// GitOps tool undid, and true until then.
-func gitOpsHold(workload *v1alpha1.ManagedWorkload, now time.Time) (time.Time, bool) {
+// undoneHolds are how long Napwake waits to pause a workload again after
+// its last pause was undone, by the condition that reports it, or zero
+// without it: an hour after a GitOps tool, and for anything else, longer
+// for each pause in a row it undid. Each is timed from the scale-up.
+type undoneHolds struct {
+	gitOps, undone time.Duration
+}
+
+func undoneHoldsOf(workload *v1alpha1.ManagedWorkload) undoneHolds {
+	var holds undoneHolds
 	s := workload.Status.LastScaledUp
-	if s == nil || !meta.IsStatusConditionTrue(workload.Status.Conditions, conditionGitOpsConflict) {
+	if s == nil {
+		return holds
+	}
+	if meta.IsStatusConditionTrue(workload.Status.Conditions, conditionGitOpsConflict) {
+		holds.gitOps = gitOpsRetryAfter
+	}
+	if meta.IsStatusConditionTrue(workload.Status.Conditions, conditionPauseUndone) {
+		holds.undone = gitops.UndoneRetryAfter(s.Undone)
+	}
+	return holds
+}
+
+// pauseHold is when Napwake may pause a workload whose last pause a GitOps
+// tool, or anything else at once, undid, and true until then.
+func pauseHold(workload *v1alpha1.ManagedWorkload, now time.Time) (time.Time, bool) {
+	holds := undoneHoldsOf(workload)
+	hold := max(holds.gitOps, holds.undone)
+	if hold == 0 {
 		return time.Time{}, false
 	}
-	until := s.At.Add(gitOpsRetryAfter)
+	until := workload.Status.LastScaledUp.At.Add(hold)
 	return until, now.Before(until)
 }
 
-// clearGitOpsConflictIfHeld clears the conflict once a pause made after it
-// has held for as long as Napwake waits to retry: the tool now leaves the
+// undoneResolved is what a pause that held cleared: a GitOps conflict, with
+// the tool it was with, and a pause undone at once.
+type undoneResolved struct {
+	gitOps bool
+	tool   string
+	undone bool
+}
+
+// clearUndoneIfHeld clears the conflict, and a pause undone at once, once a
+// pause made after it has held an hour: whatever undid it now leaves the
 // replicas alone.
-func (r *Reconciler) clearGitOpsConflictIfHeld(ctx context.Context, workload *v1alpha1.ManagedWorkload) error {
-	tool, cleared := r.clearGitOpsConflict(workload)
-	if !cleared {
+func (r *Reconciler) clearUndoneIfHeld(ctx context.Context, workload *v1alpha1.ManagedWorkload) error {
+	resolved := r.clearUndone(workload)
+	if !resolved.gitOps && !resolved.undone {
 		return nil
 	}
 	if err := r.Status().Update(ctx, workload); err != nil {
-		return fmt.Errorf("clearing the GitOps conflict: %w", err)
+		return fmt.Errorf("clearing the undone pause: %w", err)
 	}
-	r.announceGitOpsConflictResolved(workload, tool)
+	r.announceUndoneResolved(workload, resolved)
 	return nil
 }
 
-// clearGitOpsConflict removes the conflict once the workload's pause has
-// held for as long as Napwake waits to retry, which shows it's over, and
-// returns the GitOps tool it was with, or false if it's not cleared. Scaling
-// up clears the pause, so any pause since began after the conflict.
-func (r *Reconciler) clearGitOpsConflict(workload *v1alpha1.ManagedWorkload) (string, bool) {
-	s := workload.Status.LastScaledUp
-	if s == nil || !meta.IsStatusConditionTrue(workload.Status.Conditions, conditionGitOpsConflict) {
-		return "", false
-	}
+// clearUndone removes GitOpsConflict and PauseUndone, and the count of
+// pauses undone, once the workload's pause has held an hour, which shows
+// it's over, and returns what it cleared. An hour, not as long as Napwake
+// waited to pause again: a workload in daily use is woken before a pause
+// holds the longer waits, which would leave PauseUndone, and its count,
+// long after whatever undid the pauses stopped. Scaling up clears the
+// pause, so any pause since began after the scale-up that undid the last.
+func (r *Reconciler) clearUndone(workload *v1alpha1.ManagedWorkload) undoneResolved {
+	holds := undoneHoldsOf(workload)
 	pause := workload.Status.Pause
-	if pause == nil || pause.PausedAt == nil || r.now().Sub(pause.PausedAt.Time) < gitOpsRetryAfter {
-		return "", false
+	if holds == (undoneHolds{}) || pause == nil || pause.PausedAt == nil ||
+		r.now().Sub(pause.PausedAt.Time) < gitOpsRetryAfter {
+		return undoneResolved{}
 	}
-	meta.RemoveStatusCondition(&workload.Status.Conditions, conditionGitOpsConflict)
-	return s.GitOps, true
+	var resolved undoneResolved
+	if holds.gitOps > 0 {
+		meta.RemoveStatusCondition(&workload.Status.Conditions, conditionGitOpsConflict)
+		resolved.gitOps, resolved.tool = true, workload.Status.LastScaledUp.GitOps
+	}
+	if holds.undone > 0 {
+		meta.RemoveStatusCondition(&workload.Status.Conditions, conditionPauseUndone)
+		workload.Status.LastScaledUp.Undone = 0
+		resolved.undone = true
+	}
+	return resolved
 }
 
-func (r *Reconciler) announceGitOpsConflictResolved(workload *v1alpha1.ManagedWorkload, tool string) {
-	r.emitEvent(workload, false, "Normal", ReasonGitOpsConflictResolved, actionCheckReplicas,
-		"a pause held, so %s leaves the replicas to Napwake now", tool)
+func (r *Reconciler) announceUndoneResolved(workload *v1alpha1.ManagedWorkload, resolved undoneResolved) {
+	if resolved.gitOps {
+		r.emitEvent(workload, false, "Normal", ReasonGitOpsConflictResolved, actionCheckReplicas,
+			"a pause held, so %s leaves the replicas to Napwake now", resolved.tool)
+	}
+	if resolved.undone {
+		r.emitEvent(workload, false, "Normal", ReasonPauseUndoneResolved, actionCheckReplicas,
+			"a pause held for an hour, so its pauses aren't being undone any more")
+	}
+}
+
+// reportControllerOwner says, before any pause, which controller owns the
+// target, as an operator owns what it makes. If it sets the replicas, it
+// will undo each pause, which PauseUndone then reports.
+func (r *Reconciler) reportControllerOwner(workload *v1alpha1.ManagedWorkload, target client.Object) {
+	owner := metav1.GetControllerOf(target)
+	if owner == nil {
+		meta.RemoveStatusCondition(&workload.Status.Conditions, conditionControllerOwned)
+		return
+	}
+	r.setCondition(workload, conditionControllerOwned, metav1.ConditionTrue, "ControllerReference",
+		fmt.Sprintf("%s/%s controls it. If that sets the replicas, it will undo each pause", owner.Kind, owner.Name))
 }
 
 const conditionAutoscaled = "Autoscaled"

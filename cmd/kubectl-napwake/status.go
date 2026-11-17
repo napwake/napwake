@@ -260,6 +260,11 @@ type statusWorkload struct {
 	// before any wake has taken that long, which IngressTimeoutShort would
 	// put under Needs attention.
 	shortTimeouts []string
+	// ControllerOwned names the controller that owns its target, as the
+	// operator's ControllerOwned condition says, and that it undoes each
+	// pause if it sets the replicas. A note, not a problem: one that leaves
+	// them alone doesn't.
+	ControllerOwned string `json:"controllerOwned,omitempty"`
 }
 
 // lettingGo is a workload Napwake is letting go of, as its ManagedWorkload
@@ -330,6 +335,7 @@ type happening struct {
 // problem when False.
 var troubles = map[string]metav1.ConditionStatus{
 	"GitOpsConflict":       metav1.ConditionTrue,
+	"PauseUndone":          metav1.ConditionTrue,
 	"DependencyCycle":      metav1.ConditionTrue,
 	"DependencyNotFound":   metav1.ConditionTrue,
 	"DependencyNotAllowed": metav1.ConditionTrue,
@@ -825,6 +831,10 @@ func workloadStatus(w *v1alpha1.ManagedWorkload, targetActiveUntil, now time.Tim
 		row.TurnedAway = &v1alpha1.TurnedAway{PausedAt: metav1.NewTime(away.PausedAt.UTC()), Requests: away.Requests}
 	}
 	row.shortTimeouts = shortTimeouts(w)
+	if c := meta.FindStatusCondition(w.Status.Conditions, "ControllerOwned"); c != nil &&
+		c.Status == metav1.ConditionTrue {
+		row.ControllerOwned = c.Message
+	}
 	return row
 }
 
@@ -942,8 +952,8 @@ func conditionReason(conditions []metav1.Condition, condType string, status meta
 }
 
 // pausesNext says when a workload that may pause does: now, for one Idle,
-// unless the hour after a GitOps conflict or the forecast holds it, or when
-// its clock runs out.
+// unless the wait after its last pause was undone or the forecast holds
+// it, or when its clock runs out.
 func pausesNext(w *v1alpha1.ManagedWorkload, idle bool, now time.Time) string {
 	conditions := w.Status.Conditions
 	a := w.Status.Activity
@@ -951,8 +961,8 @@ func pausesNext(w *v1alpha1.ManagedWorkload, idle bool, now time.Time) string {
 	if discovery.DryRun(w) {
 		verb = "would pause"
 	}
-	retryAt, heldByGitOps := gitOpsHold(w, now)
-	afterGitOps := "pauses at " + clockTime(retryAt) + " (after GitOps conflict)"
+	retryAt, after, heldByGitOps := pauseHold(w, now)
+	afterGitOps := "pauses at " + clockTime(retryAt) + " (" + after + ")"
 	if idle {
 		// The pause is due now, whatever the clock recorded: a pause request
 		// or the forecast may have brought it forward, without an idle policy
@@ -984,16 +994,30 @@ func pausesNext(w *v1alpha1.ManagedWorkload, idle bool, now time.Time) string {
 	return "overdue to pause"
 }
 
-// gitOpsHold is when the operator pauses a workload again whose last pause
-// a GitOps tool undid, and true until then. Dry-run never pauses, so it
-// has none.
-func gitOpsHold(w *v1alpha1.ManagedWorkload, now time.Time) (time.Time, bool) {
+// pauseHold is when the operator pauses a workload again whose last pause
+// a GitOps tool, or anything else at once, undid, after which of them, and
+// true until then: an hour after a GitOps tool, and for anything else,
+// longer for each pause in a row it undid. Dry-run never pauses, so it has
+// none.
+func pauseHold(w *v1alpha1.ManagedWorkload, now time.Time) (time.Time, string, bool) {
 	s := w.Status.LastScaledUp
-	if discovery.DryRun(w) || s == nil || !meta.IsStatusConditionTrue(w.Status.Conditions, "GitOpsConflict") {
-		return time.Time{}, false
+	if discovery.DryRun(w) || s == nil {
+		return time.Time{}, "", false
 	}
-	until := s.At.Add(gitops.RetryAfter)
-	return until, now.Before(until)
+	var hold time.Duration
+	var after string
+	if meta.IsStatusConditionTrue(w.Status.Conditions, "GitOpsConflict") {
+		hold, after = gitops.RetryAfter, "after GitOps conflict"
+	}
+	if undone := gitops.UndoneRetryAfter(s.Undone); meta.IsStatusConditionTrue(w.Status.Conditions, "PauseUndone") &&
+		undone > hold {
+		hold, after = undone, "after its pause was undone"
+	}
+	if hold == 0 {
+		return time.Time{}, "", false
+	}
+	until := s.At.Add(hold)
+	return until, after, now.Before(until)
 }
 
 // heldByDependents names the dependents that hold a workload awake, until
@@ -1399,6 +1423,7 @@ func writeStatusTable(w io.Writer, result statusResult, now time.Time, pl palett
 	_, _ = io.WriteString(p, pl.paintTable(table.String(), result.Workloads))
 	writeTurnedAway(p, result.Workloads, now)
 	writeShortTimeouts(p, result.Workloads)
+	writeControllerOwned(p, result.Workloads)
 
 	p.line("")
 	switch {
@@ -1442,6 +1467,27 @@ func writeTurnedAway(p *printer, workloads []statusWorkload, now time.Time) {
 		_, name, _ := strings.Cut(wl.Target, "/")
 		_, _ = fmt.Fprintf(tw, "  %s/%s\t%s during the pause from %s\n", wl.Namespace, name,
 			countOf(int(wl.TurnedAway.Requests), "request"), ago(wl.TurnedAway.PausedAt.Time, now))
+	}
+	_ = tw.Flush() // writes through p, which keeps the first error
+}
+
+// writeControllerOwned lists the workloads a controller of their own owns,
+// as an operator owns what it makes, as the operator found them. It's
+// plain, not attention: one undoes each pause only if it sets the
+// replicas, which PauseUndone then puts under Needs attention.
+func writeControllerOwned(p *printer, workloads []statusWorkload) {
+	if !slices.ContainsFunc(workloads, func(wl statusWorkload) bool { return wl.ControllerOwned != "" }) {
+		return
+	}
+	p.line("")
+	p.line("Owned by a controller:")
+	tw := tabwriter.NewWriter(p, 0, 0, 3, ' ', 0)
+	for _, wl := range workloads {
+		if wl.ControllerOwned == "" {
+			continue
+		}
+		_, name, _ := strings.Cut(wl.Target, "/")
+		_, _ = fmt.Fprintf(tw, "  %s/%s\t%s\n", wl.Namespace, name, oneLine(wl.ControllerOwned))
 	}
 	_ = tw.Flush() // writes through p, which keeps the first error
 }

@@ -45,6 +45,25 @@ const (
 // restart each time until then.
 const RetryAfter = time.Hour
 
+// UndoneRetryAfter is how long Napwake waits to pause a workload again
+// after pauses in a row undone at once by something other than a GitOps
+// tool, such as an operator that owns the workload and sets its replicas:
+// RetryAfter after the first, doubling with each after it, to at most
+// maxUndoneRetryAfter. Pausing is how it finds out the replicas are left
+// alone now, so it keeps trying, but an owner that undoes every pause
+// restarts the pods a few times a day at most.
+func UndoneRetryAfter(undone int32) time.Duration {
+	wait := RetryAfter
+	for n := int32(1); n < undone; n++ {
+		if wait *= 2; wait >= maxUndoneRetryAfter {
+			return maxUndoneRetryAfter
+		}
+	}
+	return wait
+}
+
+const maxUndoneRetryAfter = 24 * time.Hour
+
 // Writer is the field manager that last set a field, such as a workload's
 // replicas.
 type Writer struct {

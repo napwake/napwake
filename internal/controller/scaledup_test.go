@@ -559,3 +559,136 @@ func TestResume_ScaledToZeroWhileResumingIsLeftOff(t *testing.T) {
 	_, held := pausedScaledObject(t, r)
 	assert.False(t, held, "KEDA is released")
 }
+
+// undoneBefore is a workload whose last pause was undone at once undone
+// times in a row, by a scale-up an hour before fixedTime.
+func undoneBefore(w *v1alpha1.ManagedWorkload, undone int32) *v1alpha1.ManagedWorkload {
+	w.Status.LastScaledUp = &v1alpha1.ScaledUp{At: metav1.NewTime(fixedTime.Add(-time.Hour)), By: "stand-in-operator",
+		Replicas: 3, Undone: undone}
+	meta.SetStatusCondition(&w.Status.Conditions, metav1.Condition{Type: conditionPauseUndone,
+		Status: metav1.ConditionTrue, Reason: "ReplicasSetBack"})
+	return w
+}
+
+// A pause undone at once, by anything but a GitOps tool, is reported with
+// who did it, how soon, the target's controller owner, when Napwake pauses
+// it again, and where the guide says what to do, and counted. A GitOps
+// tool's is a GitOpsConflict, as before, owner or not. A scale-up that
+// doesn't undo a pause at once neither counts nor ends the run: only a
+// pause that holds does.
+func TestWakeOnScaleUp_UndoneAtOnce(t *testing.T) {
+	owner := []metav1.OwnerReference{{APIVersion: "installation.mattermost.com/v1beta1", Kind: "Mattermost",
+		Name: "chat", UID: "6f1d3c2e", Controller: ptr.To(true)}}
+	tests := []struct {
+		name      string
+		before    int32
+		by        string
+		owned     bool
+		pausedAgo time.Duration
+		want      string
+		undone    int32
+		gitOps    bool
+	}{
+		{name: "by its owner", by: "stand-in-operator", owned: true, pausedAgo: 3 * time.Second, undone: 1,
+			want: "stand-in-operator set the replicas back 3 seconds after the pause, undoing it. Mattermost/chat " +
+				"controls the workload. Napwake can pause it again from 13:00 UTC. To stop this, opt the workload " +
+				"out, or have its owner leave the replicas alone: " + scaledUpGuide},
+		{name: "within 5 minutes, no owner", by: "deploy-script", pausedAgo: 4 * time.Minute, undone: 1,
+			want: "deploy-script set the replicas back 4 minutes after the pause, undoing it. Napwake can pause it " +
+				"again from 13:00 UTC. To stop this, opt the workload out, or have deploy-script leave the replicas " +
+				"alone: " + scaledUpGuide},
+		{name: "the fourth in a row", before: 3, by: "stand-in-operator", owned: true, pausedAgo: 3 * time.Second,
+			undone: 4,
+			want: "stand-in-operator set the replicas back 3 seconds after the pause, undoing it. Mattermost/chat " +
+				"controls the workload. Napwake can pause it again from 20:00 UTC. To stop this, opt the workload " +
+				"out, or have its owner leave the replicas alone: " + scaledUpGuide},
+		{name: "a GitOps tool, on an owned target", by: "argocd-controller", owned: true, pausedAgo: 3 * time.Second,
+			gitOps: true},
+		{name: "a write after 5 minutes, in a run, keeps its count", before: 3, by: "kubectl-edit",
+			pausedAgo: 6 * time.Minute, undone: 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workload := pausedWorkload(v1alpha1.PhasePaused)
+			workload.Status.Pause.PausedAt = ptr.To(metav1.NewTime(fixedTime.Add(-tt.pausedAgo)))
+			if tt.before > 0 {
+				undoneBefore(workload, tt.before)
+			}
+			r := newTestReconcilerWithReplicas(t, workload, &stubPauser{}, 3)
+			target := scaledBy(tt.by, 3)
+			if tt.owned {
+				target.OwnerReferences = owner
+			}
+
+			require.NoError(t, r.wakeOnScaleUp(context.Background(), getWorkload(t, r, "api"), target))
+
+			w := getWorkload(t, r, "api")
+			assert.Equal(t, v1alpha1.PhaseRunning, w.Status.Phase)
+			assert.Equal(t, tt.undone, w.Status.LastScaledUp.Undone)
+			assert.Equal(t, tt.gitOps, meta.IsStatusConditionTrue(w.Status.Conditions, conditionGitOpsConflict))
+			events := drainEvents(t, r)
+			c := meta.FindStatusCondition(w.Status.Conditions, conditionPauseUndone)
+			switch {
+			case tt.want != "":
+				require.NotNil(t, c)
+				assert.Equal(t, tt.want, c.Message)
+				assert.Contains(t, events, "Warning PauseUndone api: "+tt.want)
+			case tt.before > 0:
+				require.NotNil(t, c, "only a pause that holds ends the run")
+				assert.NotContains(t, events, "Warning PauseUndone")
+			default:
+				assert.Nil(t, c)
+				assert.NotContains(t, events, "Warning PauseUndone")
+			}
+		})
+	}
+}
+
+// After pauses in a row undone at once, the idle clock waits an hour from
+// the scale-up, doubling with each, before pausing again. With a GitOps
+// conflict too, the longer wait holds.
+func TestIdleClock_WaitsLongerForEachPauseUndone(t *testing.T) {
+	tests := []struct {
+		name     string
+		undone   int32
+		ago      time.Duration
+		gitOps   bool
+		wantWait time.Duration
+	}{
+		{name: "the first, a minute into its hour", undone: 1, ago: time.Minute, wantWait: 59 * time.Minute},
+		{name: "the first, after its hour", undone: 1, ago: time.Hour + time.Second},
+		{name: "the third, an hour into its 4", undone: 3, ago: time.Hour, wantWait: 3 * time.Hour},
+		{name: "the third, after a GitOps conflict's hour", undone: 3, ago: time.Hour, gitOps: true,
+			wantWait: 3 * time.Hour},
+		{name: "the second, after its 2 hours", undone: 2, ago: 2*time.Hour + time.Second},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workload := undoneBefore(pausedWorkload(v1alpha1.PhaseIdle), tt.undone)
+			workload.Status.Pause = nil
+			workload.Status.LastScaledUp.At = metav1.NewTime(fixedTime.Add(-tt.ago))
+			if tt.gitOps {
+				meta.SetStatusCondition(&workload.Status.Conditions, metav1.Condition{Type: conditionGitOpsConflict,
+					Status: metav1.ConditionTrue, Reason: "PauseUndone"})
+			}
+			workload.Spec.IdlePolicy = &v1alpha1.IdlePolicySpec{IdleAfter: &metav1.Duration{Duration: time.Hour}}
+			workload.Status.LastTransitionTime = ptr.To(metav1.NewTime(fixedTime.Add(-time.Minute)))
+			workload.Status.Activity = &v1alpha1.ActivityStatus{
+				LastActivityTime:  metav1.NewTime(fixedTime.Add(-2 * time.Hour)),
+				LastEvaluatedTime: ptr.To(metav1.NewTime(fixedTime.Add(-30 * time.Second))),
+			}
+			pauser := &stubPauser{}
+			r := newTestReconcilerWithReplicas(t, workload, pauser, 3)
+
+			result, err := r.Reconcile(context.Background(), reconcileFor("api"))
+
+			require.NoError(t, err)
+			if tt.wantWait == 0 {
+				assert.Positive(t, pauser.pauseCalls, "its wait is over")
+				return
+			}
+			assert.Zero(t, pauser.pauseCalls)
+			assert.Equal(t, tt.wantWait, toTheMillisecond(result.RequeueAfter), "until its wait ends")
+		})
+	}
+}

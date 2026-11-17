@@ -414,11 +414,13 @@ func (r *Reconciler) scaleUpHandler() handler.EventHandler {
 }
 
 // observeTarget takes in what's changed on the target Napwake manages:
-// a scale-up outside it, and the autoscaler that scales it.
+// a scale-up outside it, the autoscaler that scales it, and the controller
+// that owns it.
 func (r *Reconciler) observeTarget(ctx context.Context, workload *v1alpha1.ManagedWorkload, target client.Object) error {
 	if err := r.wakeOnScaleUp(ctx, workload, target); err != nil {
 		return err
 	}
+	r.reportControllerOwner(workload, target)
 	return r.reportAutoscaler(ctx, workload)
 }
 
@@ -895,7 +897,7 @@ func (r *Reconciler) handleResume(ctx context.Context, workload *v1alpha1.Manage
 		slowWake = r.judgeWakeTime(workload, r.now())
 	}
 	r.resetActivity(workload, source)
-	tool, resolved := r.clearGitOpsConflict(workload)
+	resolved := r.clearUndone(workload)
 	short := resumed.Ready < resumed.Replicas
 	var shortfall string
 	if short {
@@ -910,9 +912,7 @@ func (r *Reconciler) handleResume(ctx context.Context, workload *v1alpha1.Manage
 		return nil, err
 	}
 	metrics.LifecycleActionDuration.WithLabelValues("resume").Observe(took.Seconds())
-	if resolved {
-		r.announceGitOpsConflictResolved(workload, tool)
-	}
+	r.announceUndoneResolved(workload, resolved)
 	if short {
 		r.emitEvent(workload, false, "Warning", ReasonResumeIncomplete, actionResume, "%s", shortfall)
 	} else {

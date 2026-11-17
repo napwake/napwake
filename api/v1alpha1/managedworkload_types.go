@@ -641,6 +641,17 @@ type ScaledUp struct {
 	// +optional
 	GitOps   string `json:"gitOps,omitempty"`
 	Replicas int32  `json:"replicas"`
+	// Undone counts the pauses in a row undone at once by something other
+	// than a GitOps tool, as the PauseUndone condition reports them: their
+	// replicas were set back within 5 minutes of the scale to zero, or at
+	// any time while the target has a controller owner, such as an
+	// operator that sets them. Napwake waits an hour after the first to
+	// pause again, doubling with each after it, to at most 24 hours. A
+	// pause that holds an hour sets it back to zero, and removes the
+	// condition.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	Undone int32 `json:"undone,omitempty"`
 }
 
 // ActivityStatus records the state of the activity clock.

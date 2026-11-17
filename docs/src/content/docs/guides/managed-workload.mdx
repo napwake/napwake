@@ -102,6 +102,46 @@ A paused workload scaled up by anything else, such as `kubectl scale` or a deplo
 
 While it runs, Napwake leaves its replicas to its team or HPA. For GitOps, see [GitOps tools](/guides/gitops/).
 
+### A pause undone at once
+
+An operator that owns a workload and sets its replicas, such as mattermost-operator, sets them back within seconds of each pause. Napwake counts a scale-up as undoing the pause at once when a field manager set the replicas, and either:
+
+- the workload has a controller owner, at any time, or
+- it came within 5 minutes of the scale to zero.
+
+`kubectl scale`, an HPA and KEDA scale through the scale subresource, which records no field manager, so they never count. A GitOps tool gets a [`GitOpsConflict`](/guides/gitops/#what-napwake-does) instead.
+
+The workload still wakes, as for any scale-up. A `PauseUndone` condition and warning event say who, how soon, its owner, and when Napwake pauses it again:
+
+```text
+PauseUndone=True   mattermost-operator set the replicas back 3 seconds after the pause, undoing it. Mattermost/chat controls the workload. Napwake can pause it again from 15:00 UTC. To stop this, opt the workload out, or have its owner leave the replicas alone: https://docs.napwake.dev/guides/managed-workload/#a-pause-undone-at-once
+```
+
+Each pause undone in a row doubles the wait, so the pods restart a few times a day at most:
+
+| Undone in a row (`status.lastScaledUp.undone`) | Napwake pauses again after the scale-up, in |
+|---|---|
+| 1 | 1 hour |
+| 2 | 2 hours |
+| 3 | 4 hours |
+| 4 | 8 hours |
+| 5 | 16 hours |
+| 6 or more | 24 hours |
+
+A pause that holds an hour clears the condition and the count, with a `PauseUndoneResolved` event. A scale-up that doesn't count, such as `kubectl scale`, leaves both. [`kubectl napwake status`](/getting-started/kubectl-plugin/#see-what-napwake-is-doing) lists it under Needs attention, and NEXT shows `pauses at 15:00 UTC (after its pause was undone)`.
+
+To stop it, take the workload out of Napwake:
+
+| It's opted in by | Do this |
+|---|---|
+| A ManagedWorkload you wrote | Delete the ManagedWorkload |
+| A label, on it or its namespace | Label it `napwake.dev/ignore: "true"` through its owner, such as in the labels its custom resource sets on the Deployment. A label put on by hand goes at the owner's next write |
+| Its namespace's label, with an owner that can't label it | Narrow the opt-in. Remove the namespace's label, and label the workloads you want one by one ([Opting in](/guides/opt-in/)) |
+
+If the owner can be told to leave the replicas alone, that stops it too.
+
+Before any pause, a `ControllerOwned` condition names the workload's controller owner. `kubectl napwake status` and [`kubectl napwake scan`](/getting-started/scan/) note it. An owner that leaves the replicas alone never undoes a pause.
+
 ## One workload per target
 
 Only one ManagedWorkload can manage a Deployment or StatefulSet. A newer one for the same target gets a `DuplicateTarget` condition naming the other. It does nothing until the older one is gone.

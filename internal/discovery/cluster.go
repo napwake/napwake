@@ -187,6 +187,10 @@ type Workload struct {
 	// GitOpsUnchecked says why whether that tool is told to leave the
 	// replicas couldn't be checked, when it couldn't.
 	GitOpsUnchecked string `json:"gitOpsUnchecked,omitempty"`
+	// ControlledBy is the kind and name of the controller that owns it,
+	// such as an operator's custom resource, as "Mattermost/chat", as kubectl writes it. If that
+	// sets its replicas, it will undo each pause.
+	ControlledBy string `json:"controlledBy,omitempty"`
 	// OnSpot means a pod of it is on a spot node priced at its type's spot
 	// price, or, with none on a node, Napwake last priced it at spot.
 	// SpotAtOnDemand means one is on a spot node of a type without a spot
@@ -486,6 +490,7 @@ func (s *Scanner) ScanCluster(ctx context.Context, opts ClusterOptions) (*Cluste
 		// depends on what, and what GitOps would undo, are the scan's.
 		report.Notes = append(report.Notes, dependencyNotes...)
 		report.Notes = append(report.Notes, gitOpsNotes(report.Workloads)...)
+		report.Notes = append(report.Notes, controlledNotes(report.Workloads)...)
 	}
 
 	slices.SortFunc(report.Workloads, func(a, b Workload) int {
@@ -577,6 +582,36 @@ func gitOpsNotes(workloads []Workload) []string {
 }
 
 const gitOpsGuide = "https://docs.napwake.dev/guides/gitops/"
+
+// recordOwner notes the controller that owns the workload, if one does.
+func (w *Workload) recordOwner(obj metav1.Object) {
+	if owner := metav1.GetControllerOf(obj); owner != nil {
+		w.ControlledBy = owner.Kind + "/" + owner.Name
+	}
+}
+
+// controlledNotes name the workloads a controller of their own owns, with
+// it, in one note, or none. Napwake pauses a workload by scaling it, so an
+// owner that sets the replicas, as an operator does from its custom
+// resource, will undo each pause.
+func controlledNotes(workloads []Workload) []string {
+	var names []string
+	for _, w := range workloads {
+		if w.ControlledBy != "" {
+			names = append(names, fmt.Sprintf("%s/%s (%s)", w.Namespace, w.Name, w.ControlledBy))
+		}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	owned := fmt.Sprintf("%d workloads are owned by controllers, which would undo each pause if they set", len(names))
+	if len(names) == 1 {
+		owned = "1 workload is owned by a controller, which would undo each pause if it sets"
+	}
+	return []string{fmt.Sprintf("%s the replicas: %s. See %s", owned, listSome(names), scaledUpGuide)}
+}
+
+const scaledUpGuide = "https://docs.napwake.dev/guides/managed-workload/#a-pause-undone-at-once"
 
 // stateOrder lists idle workloads first, the ones worth acting on.
 var stateOrder = map[State]int{StateIdle: 0, StatePaused: 1, StateActive: 2, StateUnknown: 3}

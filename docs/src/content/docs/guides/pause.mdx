@@ -71,7 +71,7 @@ The request runs the idle clock out now, and the pause follows the rules of an i
 | `Running`, `Idle` or `Resuming` | Pauses it, after the wake if it's `Resuming`, with a `PauseRequested` event, then `Paused` | `True`, `Paused` |
 | A request comes as it pauses | [Calls the pause off](#a-request-calls-the-pause-off), and says so. `kubectl napwake pause` says it wasn't paused | `False`, `PauseCancelled` |
 | `Pausing` or `Paused` | Finishes any pause under way, then marks the request handled | `True`, `AlreadyPaused` |
-| In the hour Napwake waits after a GitOps tool undid its last pause | Pauses it, since you asked. If the tool undoes it again, that's a new [`GitOpsConflict`](/guides/gitops/) | `True`, `Paused` |
+| In the wait after a GitOps tool, or anything else at once, undid its last pause | Pauses it, since you asked. If it's undone again, that's a new [`GitOpsConflict`](/guides/gitops/) or [`PauseUndone`](/guides/managed-workload/#a-pause-undone-at-once) | `True`, `Paused` |
 | Busy within the hour, by a confident forecast | Leaves it running and says when, since it would likely be woken straight back. `kubectl napwake pause` asks whether to pause anyway, and `--yes` does | `False`, `ForecastExpectsDemand` |
 | In dry-run | Never scales it, and [counts a would-be pause](/guides/dry-run/#what-happens-in-dry-run) | `False`, `DryRun` |
 | With pausing [off](#stop-all-pausing-now) for its install | As in dry-run | `False`, `PausingOff` |
