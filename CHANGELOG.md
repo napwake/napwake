@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.1] - Unreleased
+## [0.2.1] - 2026-11-16
 
 0.2.1 fixes what the test cluster found running 0.2.0 and its candidates. It also fixes what an audit of Napwake's events and caches turned up.
 
@@ -24,6 +24,7 @@ To upgrade, see [Upgrading](https://docs.napwake.dev/operations/upgrading/).
 - The operator caches less of what it watches, managed or not (P82). Of each Deployment and StatefulSet it keeps only what it reads of the pod template, with the hash of the whole that tells a deploy apart, as before: about 9.6 KB for a chart's with a service mesh, from 14 KB. Of each pod bound to a node, its requests are held without a container: about 2.3 KB, from 2.7 KB. A NEG forwarder's Deployment, which the operator patches from its cache, is kept whole, and ManagedWorkloads, which it updates from its cache, as before
 - The operator's default memory limit is 1280Mi, from 512Mi, measured on the operator binary as the chart runs it, at its peak resident memory, with ManagedWorkloads that have weeks of forecasts behind them (P82). 512Mi covered some 4,000 workloads with a Deployment, a pod and a Service each. 1280Mi covers 10,000 (790 MiB), or 100,000 pods behind 10,000 Deployments (954 MiB), with a fifth to spare. Raise `resources.limits.memory` beyond, by about 75Mi for each 1,000 more workloads, or 90Mi for each 1,000 more Deployments of 10 pods. The request stays 128Mi. The kustomize install, `install.yaml`, gets the same limit. `go test -tags sizing ./test/sizing` measures them
 - Builds use Go 1.26.11, which fixes GO-2026-6859, a crash in `net/http`'s `MaxBytesReader`. govulncheck reports it as reachable. Napwake uses `MaxBytesReader` once, for the doorman's **Wake it** click, and that use can't trigger it, since it passes no response writer.
+- The plugin is in krew-index, so `kubectl krew install napwake` installs it, and `kubectl krew upgrade` keeps it current. The docs no longer install it from a release's manifest URL. A plugin installed that way isn't upgraded by krew: run `kubectl krew uninstall napwake` once, then install it again.
 
 ### Fixed
 
