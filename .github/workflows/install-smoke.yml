@@ -124,11 +124,19 @@ jobs:
           tar zxvf "${KREW}.tar.gz"
           ./"${KREW}" install krew
           echo "${KREW_ROOT:-$HOME/.krew}/bin" >> "$GITHUB_PATH"
+      # From krew-index, which takes a release only once a pull request
+      # there bumps it, so this can be the release before.
       - name: Install as the docs say
         run: |
-          kubectl krew install --manifest-url \
-            https://github.com/napwake/napwake/releases/download/v${VERSION}/krew-napwake.yaml
+          kubectl krew install napwake
           kubectl napwake version
+      # The release's own manifest, which that pull request copies into
+      # krew-index.
+      - name: Install the release's manifest
+        run: |
+          kubectl krew uninstall napwake
+          kubectl krew install --manifest-url \
+            "https://github.com/napwake/napwake/releases/download/v${VERSION}/krew-napwake.yaml"
       - name: It's the release checked
         run: kubectl napwake version | grep -Fx "kubectl-napwake v${VERSION}"
 
