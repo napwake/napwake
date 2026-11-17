@@ -21,7 +21,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/netip"
@@ -32,10 +31,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	v1alpha1 "github.com/napwake/napwake/api/v1alpha1"
+	"github.com/napwake/napwake/internal/dialrace"
 	opmetrics "github.com/napwake/napwake/internal/metrics"
 )
 
 const (
+	// dialTimeout bounds connecting to the workload's pods, however many
+	// are tried (see dialAny).
 	dialTimeout = 5 * time.Second
 
 	// silentWake is how long a caller may stay connected without sending
@@ -242,9 +244,12 @@ func (h *heldConn) hold(ctx context.Context) (net.Conn, string) {
 	// another workload's pods: the connection goes straight through, a
 	// health check's included, since what it checks is up. That's decided
 	// before reading anything, since a client of a protocol where the
-	// server speaks first, such as MySQL, sends nothing until it has.
-	if addrs, _, err := h.backends.get(waitCtx, key); err == nil && len(addrs) > 0 {
-		if upstream, _ := h.dial(waitCtx, addrs); upstream != nil {
+	// server speaks first, such as MySQL, sends nothing until it has. A
+	// pod a pause has just scaled away can still be listed as it's dialed.
+	// Once it leaves the endpoints, the connection is held, or turned away,
+	// as for a workload with none Ready.
+	if addrs, changed, err := h.backends.get(waitCtx, key); err == nil && len(addrs) > 0 {
+		if upstream, err := h.dial(waitCtx, addrs, changed); err == nil {
 			h.passedOn = true
 			return upstream, resultSuccess
 		}
@@ -302,15 +307,22 @@ func (h *heldConn) await(ctx, waitCtx context.Context, wakeErr error) (net.Conn,
 	for {
 		current := h.currentRoute(h.port, h.route)
 		addrs, changed, err := h.backends.get(waitCtx, key)
-		if len(addrs) > 0 {
-			upstream, limited := h.dial(waitCtx, addrs)
-			if upstream != nil {
+		switch {
+		case len(addrs) > 0:
+			upstream, dialErr := h.dial(waitCtx, addrs, changed)
+			if dialErr == nil {
 				return upstream, resultSuccess
 			}
-			proxyLimited = limited
-			dialFailed = !limited
-		} else if current.draining() && err == nil {
-			return nil, resultDrained
+			proxyLimited = errors.Is(dialErr, errProxyLimited)
+			dialFailed = !proxyLimited && !errors.Is(dialErr, dialrace.ErrNoneLeft)
+		case err == nil:
+			// With no pod Ready, what the last dial found no longer holds:
+			// a wait that ends now is a wake too slow, not pods that
+			// couldn't be reached or places that weren't free (P93).
+			dialFailed, proxyLimited = false, false
+			if current.draining() {
+				return nil, resultDrained
+			}
 		}
 		if wakeErr != nil && !current.draining() && h.now().Sub(lastWake) >= wakeRetryInterval {
 			lastWake = h.now()
@@ -349,35 +361,42 @@ func (h *heldConn) await(ctx, waitCtx context.Context, wakeErr error) (net.Conn,
 
 // passThrough handles a connection to a draining route: it goes to a Ready
 // pod if there is one, or is refused at once, as it would be without the
-// doorman. It never wakes the workload, which has stopped being routed for
-// a reason: it's awake, or no longer wakes on request.
+// doorman, and so is one whose last Ready pod leaves as it's dialed. It
+// never wakes the workload, which has stopped being routed for a reason:
+// it's awake, or no longer wakes on request.
 func (h *heldConn) passThrough(ctx context.Context) (net.Conn, string) {
-	addrs, _, err := h.backends.get(ctx, h.route.backendKey())
+	addrs, changed, err := h.backends.get(ctx, h.route.backendKey())
 	if err != nil || len(addrs) == 0 {
 		return nil, resultRefused
 	}
-	upstream, limited := h.dial(ctx, addrs)
+	upstream, err := h.dial(ctx, addrs, changed)
 	switch {
-	case upstream != nil:
+	case err == nil:
 		return upstream, resultSuccess
-	case limited:
+	case errors.Is(err, errProxyLimited):
 		return nil, resultLimited
+	case errors.Is(err, dialrace.ErrNoneLeft):
+		return nil, resultRefused
 	default:
 		return nil, resultError
 	}
 }
 
-// dial connects to one of addrs, once a proxied place is free for the
-// connection. It reports whether none was.
-func (h *heldConn) dial(ctx context.Context, addrs []string) (net.Conn, bool) {
+// dial connects to one of addrs, the Ready addresses the backends listed
+// with changed, once a proxied place is free for the connection: it fails
+// with errProxyLimited if none is, and with dialrace.ErrNoneLeft if the
+// endpoints change to list none as it dials.
+func (h *heldConn) dial(ctx context.Context, addrs []string, changed <-chan struct{}) (net.Conn, error) {
 	if !h.admission.proxy(h.from, h.now()) {
-		return nil, true
+		return nil, errProxyLimited
 	}
-	upstream := dialAny(ctx, addrs)
-	if upstream == nil {
+	key := h.route.backendKey()
+	list := func(ctx context.Context) ([]string, <-chan struct{}, error) { return h.backends.get(ctx, key) }
+	upstream, err := dialAny(ctx, h.dialPod, addrs, changed, list)
+	if err != nil {
 		h.admission.unproxy(h.from, h.now())
 	}
-	return upstream, false
+	return upstream, err
 }
 
 // streamClient starts reading the caller in the background.
@@ -558,19 +577,6 @@ func readHead(conn net.Conn, silent time.Duration) ([]byte, headState) {
 		}
 	}
 	return head, headSent
-}
-
-// dialAny connects to one of addrs, trying them in random order so held
-// connections spread over the workload's pods.
-func dialAny(ctx context.Context, addrs []string) net.Conn {
-	dialer := net.Dialer{Timeout: dialTimeout}
-	for _, i := range rand.Perm(len(addrs)) {
-		conn, err := dialer.DialContext(ctx, "tcp", addrs[i])
-		if err == nil {
-			return conn
-		}
-	}
-	return nil
 }
 
 func remoteAddr(conn net.Conn) netip.Addr {
