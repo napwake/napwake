@@ -43,7 +43,7 @@ func TestInstallSmokeRunsTheDocsCommands(t *testing.T) {
 
 	for _, c := range []struct{ page, command string }{
 		{"getting-started/kubectl-plugin.mdx", "brew install napwake/tap/kubectl-napwake"},
-		{"getting-started/kubectl-plugin.mdx", "kubectl krew install --manifest-url"},
+		{"getting-started/kubectl-plugin.mdx", "kubectl krew install napwake"},
 		{"getting-started/installation.mdx", "helm install napwake oci://"},
 		{"getting-started/installation.mdx", "kubectl apply -f https://github.com/napwake/napwake/releases/download/"},
 		{"reference/security.mdx", "cosign verify $IMAGE"},
