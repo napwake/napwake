@@ -404,7 +404,7 @@ Stop managing workloads while the operator still runs, so it can scale paused on
 
     These delete the CRD too, unguarded, so first check `kubectl get managedworkloads -A` lists none.
 
-4. After `helm uninstall`, delete the namespace. Helm doesn't delete one that `--create-namespace` made:
+4. After `helm uninstall`, delete the namespace. Helm doesn't delete one that `--create-namespace` made, and it still holds the operator's leader-election Lease:
 
     ```bash
     kubectl delete namespace napwake-system
