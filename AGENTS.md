@@ -17,6 +17,7 @@ A Kubernetes operator that pauses idle workloads in non-production clusters, sca
 | `internal/lifecycle/` | Pausing and resuming a Deployment or StatefulSet through its scale subresource, with a pause record so every step can be repeated and undone |
 | `internal/doorman/` | Holds connections to a paused workload, wakes it, passes them through once it's Ready, and serves the asleep and waking-up pages |
 | `internal/forwarder/` | Passes connections, bytes untouched, from a paused workload's namespace to the doorman, for GKE's NEGs |
+| `internal/dialrace/` | Connects to one of several addresses, trying the next beside one slow to answer: the doorman's dial to a workload's pods, and the forwarder's to the doorman's |
 | `internal/forecast/` | The per-workload Holt-Winters model (daily and weekly seasonality), its confidence and phases, and the rules that act on it |
 | `internal/forecast/sim/` | Runs the forecast and the operator's rules through simulated time. The forecasting page's tables come from it |
 | `internal/signal/` | Prometheus activity queries |
