@@ -7,13 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - Unreleased
+
+0.2.2 warns when a workload's own operator undoes its pauses, and waits longer before each new one. It also fixes what testing 0.2.1 found.
+
+- A workload whose operator sets its replicas, such as a Mattermost server run by mattermost-operator, is no longer paused and put back every idle hour with no warning. Napwake now warns with `PauseUndone`, naming who set the replicas back and the workload's owner. After each pause that's undone, it waits longer before pausing again, up to 24 hours. `kubectl napwake status` and the scan show which workloads a controller owns.
+- A request that reaches the doorman in the second a workload pauses is now held, and served once the workload wakes. Before, it could hang until its client gave up.
+- After an upgrade, the two doormen no longer end up on the same node.
+- The docs now say where the ingress-nginx query's label names come from, and that any TCP connection wakes a workload behind an HPA or KEDA. They also say that `helm uninstall` leaves Napwake's namespace behind, with the operator's Lease in it, for you to delete.
+
+To upgrade, see [Upgrading](https://docs.napwake.dev/operations/upgrading/).
+
+### Changed
+
+- The operator and plugin are built with controller-runtime 0.25.3, a patch release. The operator's image is built on refreshed `distroless/static` and Go 1.26.11 images.
+
 ### Fixed
 
 - A workload whose operator sets its replicas, such as mattermost-operator, was paused again after each idle hour, restarting its pods each time, with only a Normal `ScaledUp` event (P95). The operator set the replicas back within seconds of each pause, which Napwake took for a wake from outside, as `kubectl scale` is. Now a pause undone at once is reported: a field manager that sets the replicas within 5 minutes of the scale to zero, or at any time on a workload with a controller owner, sets a `PauseUndone` condition and warning. It says who did it, how soon, the owner, and when Napwake pauses again. Napwake waits 1 hour after the scale-up, doubling with each pause in a row undone, to at most 24 hours, counted in `status.lastScaledUp.undone`. A pause that holds an hour clears both. A `ControllerOwned` condition names a workload's controller owner before any pause, and `kubectl napwake status` and `scan` note it. `kubectl scale`, an HPA and KEDA scale through the scale subresource, so they never count. A GitOps tool's undo is a `GitOpsConflict`, as before
 - A request that reached the doorman in the second a workload paused could hang until its client gave up (P89). For a moment after the pause scales the workload to zero, its EndpointSlices can still list a pod that has gone. The doorman passed the connection to that pod, and waited 5 seconds for each such pod before reading the request. A client with a shorter timeout gave up first, and the doorman counted it as `ignored`. Now it gives up on a pod as soon as the pod leaves the EndpointSlices, and answers as it does for a paused workload. It holds the request and wakes the workload. For a workload that asks first, it shows a browser the asleep page, and answers anything else `503`, counted as turned away. A pod that doesn't answer within a quarter of a second has the next Ready pod tried beside it, and the first to answer gets the connection. The dial as a whole still gives up after 5 seconds.
+- After an upgrade, both doormen could run on one node until they next restarted. The chart's default spread counted the doormen the upgrade was replacing. If that node went, every wake on request failed until they moved. The default spread, in the chart and `install.yaml`, now counts only the current revision's doormen (P90).
 - The GKE NEG forwarder could hold a connection for 5 seconds on a doorman pod that had gone, as in a doorman rollout or a node drain, before trying the next (P92). It passes each connection to a doorman pod its last check found, and checks every 5 seconds. So for up to 5 seconds after a doorman pod went, a connection could be sent to it, and a client with a shorter timeout lost its request. Now a doorman pod that doesn't answer within a quarter of a second has the next tried beside it, and the first to answer gets the connection, as the doorman does with a workload's pods. The dial as a whole still gives up after 5 seconds.
 - A request held for a wake, whose dial to a Ready pod had failed once, was reported as unreachable when it timed out, though the pod had gone and none was Ready by then (P93). `napwake_doorman_wakes_total` counted it as `error`, and its `RequestNotServed` warning said the workload's Ready pods couldn't be reached. One whose dial had found every proxied place taken was counted as `limited`, with no warning. Now such a request is counted as `timeout`, and its warning says the workload wasn't Ready within `maxWait`.
-- After an upgrade, both doormen could run on one node until they next restarted. The chart's default spread counted the doormen the upgrade was replacing. If that node went, every wake on request failed until they moved. The default spread, in the chart and `install.yaml`, now counts only the current revision's doormen (P90).
 - When a GitOps tool undid a pause and something else, such as `kubectl scale`, then woke the workload before a pause held, the `GitOpsConflictResolved` event and `kubectl napwake status` named no tool, and status gave that wake's time as Git's. Now the event says "the GitOps tool", and status names the tool that sets the replicas from Git, with no time (P96).
 
 ## [0.2.1] - 2026-11-16
