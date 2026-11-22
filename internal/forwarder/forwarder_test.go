@@ -469,3 +469,90 @@ func TestRoutes(t *testing.T) {
 		assert.Error(t, err, "%q", bad)
 	}
 }
+
+// doormanPods stands in for the cluster network between the forwarder and
+// the doorman's pods: a dial to any pod's address reaches the fake doorman
+// on loopback, on the same port. Once goneNext is called, the next dial is
+// never answered, as one to a doorman pod that has gone isn't: it ends only
+// when its context does.
+type doormanPods struct {
+	mu   sync.Mutex
+	gone bool
+
+	// dialing has a value as the dial that's never answered starts, and
+	// ended why it ended: given up, or out of time.
+	dialing chan struct{}
+	ended   chan error
+}
+
+func newDoormanPods() *doormanPods {
+	return &doormanPods{dialing: make(chan struct{}, 1), ended: make(chan error, 1)}
+}
+
+func (p *doormanPods) goneNext() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.gone = true
+}
+
+func (p *doormanPods) dial(ctx context.Context, network, address string) (net.Conn, error) {
+	_, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, err
+	}
+	p.mu.Lock()
+	gone := p.gone
+	p.gone = false
+	p.mu.Unlock()
+	if !gone {
+		var d net.Dialer
+		return d.DialContext(ctx, network, net.JoinHostPort("127.0.0.1", port))
+	}
+	p.dialing <- struct{}{}
+	<-ctx.Done()
+	p.ended <- ctx.Err()
+	return nil, ctx.Err()
+}
+
+// In a doorman rollout or a node drain, the addresses the forwarder's last
+// check found can include a doorman pod that has gone, which never answers.
+// Tried first, it costs a forwarded connection a moment, not dialTimeout:
+// the next pod is tried beside it, and the first to answer has the
+// connection (P92).
+func TestForwarder_PassesAConnectionOnPastADoormanPodThatNeverAnswers(t *testing.T) {
+	// answerBound is how soon the connection must reach the live doorman
+	// pod: far more than trying it beside the gone one takes, a quarter of
+	// a second, and far less than the dialTimeout the gone one cost before.
+	const answerBound = time.Second
+	pods := newDoormanPods()
+	f := start(t, fakeDoorman(t, echo), func(f *Forwarder) {
+		f.resolver = &staticResolver{addrs: []netip.Addr{netip.MustParseAddr("10.244.0.5"), netip.MustParseAddr("10.244.0.6")}}
+		f.dialer = pods.dial
+		f.dialTimeout = dialTimeout
+		// The first check finds both pods, and none follows within the
+		// test, so the dial that's never answered is the connection's.
+		f.checkEvery = time.Hour
+	})
+	pods.goneNext()
+
+	conn := f.dial(t)
+	_, err := conn.Write([]byte("hello\n"))
+	require.NoError(t, err)
+	select {
+	case <-pods.dialing:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the forwarder never dialed the doorman pod that's gone")
+	}
+
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(answerBound)))
+	got := make([]byte, len("hello\n"))
+	_, err = io.ReadFull(conn, got)
+	require.NoError(t, err, "passed to the live doorman pod within %s", answerBound)
+	assert.Equal(t, "hello\n", string(got))
+	select {
+	case err := <-pods.ended:
+		assert.ErrorIs(t, err, context.Canceled, "the dial to the gone doorman pod is given up, not timed out")
+	case <-time.After(dialTimeout + 5*time.Second):
+		t.Fatal("the dial to the gone doorman pod never ended")
+	}
+}
