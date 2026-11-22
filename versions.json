@@ -1,5 +1,13 @@
 [
   {
+    "version": "next",
+    "title": "0.2.2-rc.1",
+    "aliases": [],
+    "properties": {
+      "release": "0.2.2-rc.1"
+    }
+  },
+  {
     "version": "0.2",
     "title": "0.2",
     "aliases": [
