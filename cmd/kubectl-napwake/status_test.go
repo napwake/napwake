@@ -580,6 +580,69 @@ func TestStatus_GitOpsConflictAsItIsNow(t *testing.T) {
 	}
 }
 
+// P96: a GitOps tool undid a pause at 09:00, then something else woke the
+// workload through the scale subresource, as kubectl scale does, so the
+// operator's lastScaledUp is that scale-up, with no tool, while
+// GitOpsConflict stands. Once the tool syncs again, it sets the replicas
+// from Git once more. Status told the conflict from lastScaledUp, as " set
+// the replicas from Git at" the scale-up's time. It names the tool that sets
+// them from Git, gives no time, since when Git undid the pause isn't
+// recorded any more, and tells it as past at once: the condition's "pauses
+// it again from" was timed from Git's undo, and Napwake waits from the
+// scale-up instead.
+func TestStatus_GitOpsConflictAfterAScaleUpNotFromGit(t *testing.T) {
+	const argoGuide = "https://docs.napwake.dev/guides/gitops/#argo-cd"
+	unfixed := []client.Object{argoApplication(map[string]any{}), argoFixed()[1]}
+	tests := []struct {
+		name     string
+		tool     string
+		manager  string
+		scaledUp time.Duration
+		want     string
+	}{
+		{name: "the tool's undo the last scale-up", tool: "Argo CD", manager: "argocd-controller",
+			want: "Argo CD set the replicas from Git at 09:00 UTC, undoing the last pause, and isn't told to leave " +
+				"them, so it will undo the next: " + argoGuide},
+		{name: "scaled up since, within Napwake's wait", tool: "Argo CD", manager: "argocd-controller",
+			scaledUp: 10 * time.Minute,
+			want: "Argo CD set the replicas from Git, undoing an earlier pause, and isn't told to leave them, so it " +
+				"will undo the next: " + argoGuide},
+		{name: "scaled up since, once the wait is over", tool: "Argo CD", manager: "argocd-controller",
+			scaledUp: 90 * time.Minute,
+			want: "Argo CD set the replicas from Git, undoing an earlier pause, and isn't told to leave them, so it " +
+				"will undo the next: " + argoGuide},
+		{name: "scaled up since, can't be checked", tool: "kapp", manager: "kapp", scaledUp: 90 * time.Minute,
+			want: "kapp set the replicas from Git, undoing an earlier pause; whether it's told to leave them now " +
+				"couldn't be checked: kapp's rebase rules aren't recorded on the workload. If it isn't, it will " +
+				"undo the next: https://docs.napwake.dev/guides/gitops/#kapp"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := statusWorkloadObj("preview-42", "api", v1alpha1.TargetKindDeployment, v1alpha1.PhaseRunning, time.Hour)
+			undoneBy(w, tt.tool, 3*time.Hour)
+			w.Status.Conditions[0].Message = tt.tool + " set the replicas from Git, undoing the pause; Napwake " +
+				"pauses it again from 10:00 UTC"
+			if tt.scaledUp > 0 {
+				w.Status.LastScaledUp = &v1alpha1.ScaledUp{At: *before(tt.scaledUp), By: "unknown", Replicas: 2}
+			}
+			api := trackedByArgoCD(&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "preview-42"}})
+			c := newStatusClient(t, replicasSetBy(tt.manager), append([]client.Object{w, api}, unfixed...)...)
+
+			result, err := clusterStatus(context.Background(), c, "preview-42", statusOpts())
+
+			require.NoError(t, err)
+			require.Len(t, result.Problems, 1, "listed while the tool sets the replicas from Git")
+			require.Equal(t, "GitOpsConflict", result.Problems[0].Type)
+			got := result.Problems[0].Message
+			assert.Equal(t, tt.want, got)
+			assert.True(t, strings.HasPrefix(got, tt.tool+" "), "names the tool: %q", got)
+			if tt.scaledUp > 0 {
+				assert.NotRegexp(t, `\d\d:\d\d UTC`, got, "neither the scale-up's time nor the wait Git's undo began")
+			}
+		})
+	}
+}
+
 // A pause the forecast brought forward, before idleAfter ran out, says so,
 // and until when the forecast expected quiet, so a workload paused 20
 // minutes after its last activity isn't a puzzle.

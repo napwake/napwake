@@ -1106,6 +1106,12 @@ func later(a, b time.Time) time.Time {
 // though the operator only clears it when a pause holds, which a workload
 // in dry-run never makes. Once Napwake's wait to pause again is over,
 // the condition's "pauses it again from" is past, so it's told as past.
+//
+// A scale-up since the tool's, by anything else, such as kubectl scale,
+// leaves lastScaledUp naming no tool, and Napwake waits from it instead.
+// Then the conflict names the tool that sets the replicas from Git now,
+// without the time of its undo, which isn't recorded any more, and is told
+// as past at once, since the condition's wait was timed from that undo.
 func reviewGitOpsConflict(ctx context.Context, c client.Client, checker *gitops.Checker,
 	w *v1alpha1.ManagedWorkload, problems []problem, now time.Time) []problem {
 	i := slices.IndexFunc(problems, func(p problem) bool { return p.Type == "GitOpsConflict" })
@@ -1121,12 +1127,16 @@ func reviewGitOpsConflict(ctx context.Context, c client.Client, checker *gitops.
 	if r.Undo == gitops.Leaves {
 		return slices.Delete(problems, i, i+1)
 	}
-	if now.Before(undone.At.Add(gitops.RetryAfter)) {
+	scaledUpSince := undone.GitOps == ""
+	if !scaledUpSince && now.Before(undone.At.Add(gitops.RetryAfter)) {
 		return problems
 	}
 	guide := gitOpsGuide + "#" + gitOpsAnchors[r.Writer.Tool]
 	past := fmt.Sprintf("%s set the replicas from Git at %s, undoing the last pause", undone.GitOps,
 		clockTime(undone.At.Time))
+	if scaledUpSince {
+		past = fmt.Sprintf("%s set the replicas from Git, undoing an earlier pause", r.Writer.Tool)
+	}
 	if r.Undo == gitops.Undoes {
 		problems[i].Message = fmt.Sprintf("%s, and isn't told to leave them, so it will undo the next: %s", past, guide)
 	} else {
