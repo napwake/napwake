@@ -207,6 +207,13 @@ check-chart: ## Lint the Helm chart, render it for each provider's Kubernetes ve
 		echo "rendering for Kubernetes $$v"; \
 		helm template napwake charts/napwake --kube-version $$v >/dev/null || exit 1; \
 	done
+	@# The doormen's default spread counts only the current revision's: during a
+	@# rolling update, counting the ones being replaced puts the new ones on
+	@# one node (P90).
+	@test "$$(helm template napwake charts/napwake --show-only templates/doorman.yaml | grep -c 'matchLabelKeys: \[pod-template-hash\]')" = 1 || { \
+		echo "the doorman's default spread counts the revision an upgrade replaces, so both doormen can land on one node"; exit 1; }
+	@grep -q 'matchLabelKeys: \[pod-template-hash\]' config/manager/doorman.yaml || { \
+		echo "config/manager/doorman.yaml's spread counts the revision an upgrade replaces, so both doormen can land on one node"; exit 1; }
 	@! helm template napwake charts/napwake --kube-version v1.29.9 >/dev/null 2>&1 || { \
 		echo "the chart installs on Kubernetes 1.29, below the 1.30 it supports"; exit 1; }
 	@for d in 0s 0.0m 0h0m0s 59s 0.5m 500ms; do \
