@@ -142,6 +142,9 @@ spec:
       scheduler scores no node for spread when any of a pod's constraints
       names a key some nodes lack, so a zone constraint on nodes without
       zone labels, as on kind and many on-premises clusters, spread nothing.
+      It counts only the current revision's doormen: during a rolling
+      update, counting the ones being replaced put both new ones on one node
+      (P90).
       */}}
       topologySpreadConstraints:
         {{- with .Values.doorman.topologySpreadConstraints }}
@@ -153,6 +156,7 @@ spec:
           labelSelector:
             matchLabels:
               {{- include "napwake.doormanSelectorLabels" . | nindent 14 }}
+          matchLabelKeys: [pod-template-hash]
         {{- end }}
 {{- if and .Values.doorman.podDisruptionBudget.enabled (gt (int .Values.doorman.replicaCount) 1) }}
 ---
