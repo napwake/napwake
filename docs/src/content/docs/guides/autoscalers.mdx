@@ -64,7 +64,7 @@ Napwake releases KEDA only once the wake is done. Released sooner, a ScaledObjec
 | Taken to zero by KEDA, such as on an empty queue | Leaves it to KEDA, as [already at zero](/guides/pause/#workloads-already-at-zero). Pausing it would stop KEDA's triggers from starting it. It gains little |
 | With a `minReplicaCount` above zero, such as one kept warm in working hours | Pauses it once idle, which frees its capacity |
 
-On top of KEDA, Napwake adds waking on the first HTTP request, holding dependencies awake, and the forecast. It also judges idle from the activity it sees, with no trigger to set up.
+On top of KEDA, Napwake adds waking on the first request, of any TCP protocol, holding dependencies awake, and the forecast. It also judges idle from the activity it sees, with no trigger to set up.
 
 If KEDA isn't installed, Napwake looks for ScaledObjects every 10 minutes, in case it's installed later. `Autoscaled` shows a ScaledObject change within 15 seconds, and a pause or wake reads them afresh.
 
