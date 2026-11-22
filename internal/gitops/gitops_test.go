@@ -133,3 +133,36 @@ func TestFix(t *testing.T) {
 	}
 	assert.Empty(t, Fix(""))
 }
+
+// After pauses in a row undone at once by something other than a GitOps
+// tool, Napwake waits an hour after the first, then 2, 4, 8 and 16 hours,
+// and at most a day, so an owner that undoes every pause restarts the pods
+// a few times a day at most.
+func TestUndoneRetryAfter(t *testing.T) {
+	for undone, want := range map[int32]time.Duration{
+		1: time.Hour, 2: 2 * time.Hour, 3: 4 * time.Hour, 4: 8 * time.Hour, 5: 16 * time.Hour, 6: 24 * time.Hour,
+		7: 24 * time.Hour,
+	} {
+		assert.Equal(t, want, UndoneRetryAfter(undone), "after %d undone", undone)
+	}
+}
+
+// Across every count a status could hold, the wait is never under the
+// hour a GitOps tool gets, never over a day, and never shorter for more.
+func TestUndoneRetryAfter_StaysBetweenAnHourAndADay(t *testing.T) {
+	last := time.Duration(0)
+	check := func(undone int32) {
+		got := UndoneRetryAfter(undone)
+		if got < RetryAfter || got > 24*time.Hour || got < last {
+			t.Fatalf("after %d undone, waits %s, after %s for one fewer", undone, got, last)
+		}
+		last = got
+	}
+	for undone := int32(-2); undone <= 1000; undone++ {
+		check(undone)
+	}
+	for _, undone := range []int32{1 << 20, 1<<31 - 2, 1<<31 - 1} {
+		check(undone)
+	}
+	assert.Equal(t, RetryAfter, UndoneRetryAfter(-1<<31), "a count below one is the first")
+}

@@ -32,6 +32,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
@@ -1615,4 +1616,36 @@ func TestWriteTable_IdleNapwakeNeverPauses(t *testing.T) {
 	assert.NotContains(t, got, "each hour asleep frees that")
 	assert.NotContains(t, got, "depends on how often they'd be woken", "nothing is left to opt in")
 	assert.NotContains(t, got, "below")
+}
+
+// The scan notes a Deployment or StatefulSet a controller of its own owns,
+// as an operator owns what it makes, naming the owner: if it sets the
+// replicas, it would undo each pause.
+func TestScan_NotesAControllerOwner(t *testing.T) {
+	writeKubeconfig(t, "https://127.0.0.1:1", "chat")
+	labels := map[string]string{"app": "chat"}
+	chat := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "chat", Namespace: "chat", OwnerReferences: []metav1.OwnerReference{{
+			APIVersion: "installation.mattermost.com/v1beta1", Kind: "Mattermost", Name: "chat", UID: "6f1d3c2e",
+			Controller: ptr.To(true)}}},
+		Spec: appsv1.DeploymentSpec{Replicas: ptr.To(int32(1)), Selector: &metav1.LabelSelector{MatchLabels: labels},
+			Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "app", Image: "mattermost"}}}}},
+	}
+	c := newStatusClient(t, interceptor.Funcs{}, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "chat"}}, chat)
+	kube := addKubeFlags(pflag.NewFlagSet("scan", pflag.ContinueOnError),
+		func(*rest.Config) (client.Client, error) { return c, nil })
+	opts := scanOptions{kube: kube, namespaces: namespaceFlags{names: []string{"chat"}}, cpuThreshold: 10,
+		now: func() time.Time { return statusNow }}
+
+	result, err := scanCluster(context.Background(), 0, prometheusSetup{}, opts)
+	require.NoError(t, err)
+	var out bytes.Buffer
+	require.NoError(t, writeScan(&out, result, scanOptions{output: "table"}))
+
+	assert.Contains(t, out.String(), "\n  - 1 workload is owned by a controller, which would undo each pause if it sets "+
+		"the replicas: chat/chat (Mattermost/chat). See "+
+		"https://docs.napwake.dev/guides/managed-workload/#a-pause-undone-at-once\n")
+	require.Len(t, result.Workloads, 1)
+	assert.Equal(t, "Mattermost/chat", result.Workloads[0].ControlledBy, "in -o json as controlledBy")
 }
