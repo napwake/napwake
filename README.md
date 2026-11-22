@@ -51,7 +51,7 @@ Change `Europe/London` to your users' time zone. It defaults to UTC, which puts 
 
 ```bash
 printf '\ntimezone: Europe/London\n' >> napwake-values.yaml
-helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.1 \
+helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.2-rc.1 \
   --namespace napwake-system --create-namespace -f napwake-values.yaml
 kubectl get pods -n napwake-system
 ```
@@ -170,7 +170,7 @@ Every flag is in the [kubectl plugin reference](https://docs.napwake.dev/referen
 
 ## How it's built
 
-Napwake is at 0.2.1. Its API is `napwake.dev/v1alpha1`, which may change before 1.0. It has no telemetry, usage reporting or update checks.
+Napwake is at 0.2.2-rc.1. Its API is `napwake.dev/v1alpha1`, which may change before 1.0. It has no telemetry, usage reporting or update checks.
 
 Code lands through pull requests. Each one runs the unit tests, and end-to-end tests on kind with Kubernetes 1.30 and 1.37. Napwake is also tested by hand on GKE Standard. EKS, AKS and GKE Autopilot aren't tested yet.
 
