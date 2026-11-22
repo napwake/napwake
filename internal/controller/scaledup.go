@@ -365,7 +365,7 @@ func pauseHold(workload *v1alpha1.ManagedWorkload, now time.Time) (time.Time, bo
 }
 
 // undoneResolved is what a pause that held cleared: a GitOps conflict, with
-// the tool it was with, and a pause undone at once.
+// the tool lastScaledUp names, if it still does, and a pause undone at once.
 type undoneResolved struct {
 	gitOps bool
 	tool   string
@@ -414,10 +414,17 @@ func (r *Reconciler) clearUndone(workload *v1alpha1.ManagedWorkload) undoneResol
 	return resolved
 }
 
+// announceUndoneResolved says what a pause that held cleared. A scale-up
+// since the tool's, by anything else, such as kubectl scale, leaves
+// lastScaledUp naming no tool, so the conflict's is said plainly.
 func (r *Reconciler) announceUndoneResolved(workload *v1alpha1.ManagedWorkload, resolved undoneResolved) {
-	if resolved.gitOps {
+	switch {
+	case resolved.gitOps && resolved.tool != "":
 		r.emitEvent(workload, false, "Normal", ReasonGitOpsConflictResolved, actionCheckReplicas,
 			"a pause held, so %s leaves the replicas to Napwake now", resolved.tool)
+	case resolved.gitOps:
+		r.emitEvent(workload, false, "Normal", ReasonGitOpsConflictResolved, actionCheckReplicas,
+			"a pause held, so the GitOps tool that set the replicas from Git leaves them to Napwake now")
 	}
 	if resolved.undone {
 		r.emitEvent(workload, false, "Normal", ReasonPauseUndoneResolved, actionCheckReplicas,
