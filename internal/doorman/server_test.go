@@ -1281,7 +1281,8 @@ func TestDialAny_SpreadsConnectionsOverPods(t *testing.T) {
 	}
 
 	for range 40 {
-		conn := dialAny(context.Background(), addrs)
+		conn, err := dialAny(context.Background(), (&net.Dialer{}).DialContext, addrs, nil, nil)
+		require.NoError(t, err)
 		require.NotNil(t, conn)
 		require.NoError(t, conn.Close())
 	}

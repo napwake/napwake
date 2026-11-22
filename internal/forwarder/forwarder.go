@@ -31,7 +31,6 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/netip"
@@ -43,9 +42,13 @@ import (
 	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/napwake/napwake/internal/dialrace"
 )
 
 const (
+	// dialTimeout bounds connecting to the doorman, however many of its
+	// pods are tried (see dialAny).
 	dialTimeout = 5 * time.Second
 
 	// checkInterval paces the checks that the doorman answers on every
@@ -98,6 +101,9 @@ type Forwarder struct {
 	doorman  string
 	resolver resolver
 	listen   func(port int32) (net.Listener, error)
+	// dialer connects to a doorman pod: a net.Dialer's, but for tests,
+	// which stand in pods that have gone and never answer.
+	dialer dialrace.DialFunc
 
 	dialTimeout time.Duration
 	checkEvery  time.Duration
@@ -127,6 +133,7 @@ func New(opts Options) *Forwarder {
 		listen: func(port int32) (net.Listener, error) {
 			return net.Listen("tcp", net.JoinHostPort("", strconv.Itoa(int(port))))
 		},
+		dialer:      (&net.Dialer{}).DialContext,
 		dialTimeout: dialTimeout,
 		checkEvery:  checkInterval,
 		idle:        idleTimeout,
@@ -273,18 +280,17 @@ func (f *Forwarder) reachEveryPort(ctx context.Context, addrs []netip.Addr) erro
 }
 
 // dialAny connects to one of addrs on port, trying them in random order so
-// connections spread over the doorman's pods.
+// connections spread over the doorman's pods. Each has dialrace.Stagger to
+// answer before the next is tried beside it, so a pod that has gone, as in
+// a rollout or a node drain, costs a caller a moment, not dialTimeout (P92).
+// The addresses are the last check's, read again every checkEvery, so
+// nothing tells a dial they've changed.
 func (f *Forwarder) dialAny(ctx context.Context, addrs []netip.Addr, port int32) (net.Conn, error) {
-	dialer := net.Dialer{Timeout: f.dialTimeout}
-	var errs []error
-	for _, i := range rand.Perm(len(addrs)) {
-		conn, err := dialer.DialContext(ctx, "tcp", netip.AddrPortFrom(addrs[i], uint16(port)).String())
-		if err == nil {
-			return conn, nil
-		}
-		errs = append(errs, err)
+	hostPorts := make([]string, len(addrs))
+	for i, addr := range addrs {
+		hostPorts[i] = netip.AddrPortFrom(addr, uint16(port)).String()
 	}
-	return nil, errors.Join(errs...)
+	return dialrace.Dialer{Dial: f.dialer, Timeout: f.dialTimeout}.DialAny(ctx, hostPorts, nil, nil)
 }
 
 // dialDoorman connects to a doorman pod on port: one of those the last check
