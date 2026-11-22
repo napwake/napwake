@@ -70,7 +70,7 @@ func TestGitOpsConflictResolved_AfterAScaleUpNotFromGit(t *testing.T) {
 		{name: "the tool's undo the last scale-up",
 			want: "a pause held, so Argo CD leaves the replicas to Napwake now"},
 		{name: "scaled up since through the scale subresource", scaledSince: true,
-			want: "a pause held, so the GitOps tool that set the replicas from Git leaves them to Napwake now"},
+			want: "a pause held, so the GitOps tool leaves the replicas to Napwake now"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			tc := env.create(t, fmt.Sprintf("gitops-%d", i), false)

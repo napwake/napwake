@@ -424,7 +424,7 @@ func (r *Reconciler) announceUndoneResolved(workload *v1alpha1.ManagedWorkload, 
 			"a pause held, so %s leaves the replicas to Napwake now", resolved.tool)
 	case resolved.gitOps:
 		r.emitEvent(workload, false, "Normal", ReasonGitOpsConflictResolved, actionCheckReplicas,
-			"a pause held, so the GitOps tool that set the replicas from Git leaves them to Napwake now")
+			"a pause held, so the GitOps tool leaves the replicas to Napwake now")
 	}
 	if resolved.undone {
 		r.emitEvent(workload, false, "Normal", ReasonPauseUndoneResolved, actionCheckReplicas,
