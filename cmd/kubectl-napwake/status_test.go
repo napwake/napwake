@@ -631,9 +631,9 @@ func TestStatus_GitOpsConflictAfterAScaleUpNotFromGit(t *testing.T) {
 			result, err := clusterStatus(context.Background(), c, "preview-42", statusOpts())
 
 			require.NoError(t, err)
-			i := slices.IndexFunc(result.Problems, func(p problem) bool { return p.Type == "GitOpsConflict" })
-			require.GreaterOrEqual(t, i, 0, "listed while the tool sets the replicas from Git")
-			got := result.Problems[i].Message
+			require.Len(t, result.Problems, 1, "listed while the tool sets the replicas from Git")
+			require.Equal(t, "GitOpsConflict", result.Problems[0].Type)
+			got := result.Problems[0].Message
 			assert.Equal(t, tt.want, got)
 			assert.True(t, strings.HasPrefix(got, tt.tool+" "), "names the tool: %q", got)
 			if tt.scaledUp > 0 {
