@@ -224,18 +224,21 @@ It uses the signals Napwake uses to pause.
 
 ### What the notes list, and what the scan leaves out
 
-| In the notes                     | What it means                                                                                                           |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Replicas set from Git            | A GitOps tool last set the workload’s replicas, by the field managers the API server records                            |
-| Which tools                      | Argo CD, Flux, Fleet, kapp or Kluctl. Workloads are listed by tool                                                      |
-| Why it matters                   | The tool would undo every pause until told, once, to leave replicas to Napwake. See [GitOps tools](https://docs.napwake.dev/0.2/guides/gitops/) |
-| Once the tool is told            | The workload isn’t listed                                                                                               |
-| For Argo CD                      | The scan reads that from the Application and `argocd-cm`, as [`enable`](https://docs.napwake.dev/0.2/reference/cli/#enable) does                                   |
-| Without access to them           | The note says so, and lists the workload to check                                                                       |
-| In JSON                          | The tool in `replicasFromGit`, `gitOpsLeavesReplicas` once told, and `gitOpsUnchecked` for why it couldn’t check        |
-| In the next steps                | Never suggested, as the tool would revert a label put on by hand too                                                    |
-| The cluster’s own infrastructure | Left out of the table, the totals and the next steps. A note counts it by namespace                                     |
-| Infrastructure in JSON and YAML  | Listed in `platform`, each with what it is                                                                              |
+| In the notes                     | What it means                                                                                                                                |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Replicas set from Git            | A GitOps tool last set the workload’s replicas, by the field managers the API server records                                                 |
+| Which tools                      | Argo CD, Flux, Fleet, kapp or Kluctl. Workloads are listed by tool                                                                           |
+| Why it matters                   | The tool would undo every pause until told, once, to leave replicas to Napwake. See [GitOps tools](https://docs.napwake.dev/0.2/guides/gitops/)                      |
+| Once the tool is told            | The workload isn’t listed                                                                                                                    |
+| For Argo CD                      | The scan reads that from the Application and `argocd-cm`, as [`enable`](https://docs.napwake.dev/0.2/reference/cli/#enable) does                                                        |
+| Without access to them           | The note says so, and lists the workload to check                                                                                            |
+| In JSON                          | The tool in `replicasFromGit`, `gitOpsLeavesReplicas` once told, and `gitOpsUnchecked` for why it couldn’t check                             |
+| In the next steps                | Never suggested, as the tool would revert a label put on by hand too                                                                         |
+| Owned by a controller            | A Deployment or StatefulSet whose controller owner reference names another object, such as an operator’s custom resource. The note names it  |
+| Why that matters                 | If the owner sets the replicas, it would undo each pause. See [A pause undone at once](https://docs.napwake.dev/0.2/guides/managed-workload/#a-pause-undone-at-once) |
+| The owner in JSON                | Its kind and name in `controlledBy`                                                                                                          |
+| The cluster’s own infrastructure | Left out of the table, the totals and the next steps. A note counts it by namespace                                                          |
+| Infrastructure in JSON and YAML  | Listed in `platform`, each with what it is                                                                                                   |
 
 | Left out                                                   | Found by                                                                                                                                              |
 | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -601,7 +604,7 @@ Its flags, with their defaults. [Replay the forecast](https://docs.napwake.dev/0
 | No history                              | It fails                                                                                                                                                                                                                                                                                      |
 | Under two days                          | A day to learn and a day to replay. It says so, and when there will be enough                                                                                                                                                                                                                 |
 | The same, managed                       | It says how to see the workload’s own forecast, which needs no history                                                                                                                                                                                                                        |
-| Left out                                | Scan’s notes on dependencies, GitOps tools and infrastructure, which are about what pausing could free                                                                                                                                                                                        |
+| Left out                                | Scan’s notes on dependencies, GitOps tools, controller owners and infrastructure, which are about what pausing could free                                                                                                                                                                     |
 | A managed workload’s routing            | What its operator found at its last pause, including Services served by other workloads’ pods                                                                                                                                                                                                 |
 | An unmanaged workload’s routing         | Judged by the ManagedWorkload that opting in would make                                                                                                                                                                                                                                       |
 | Its `napwake.dev/wake`                  | From its own annotations, then its namespace’s, then the operator’s `--default-wake`, as opting in does. A value that can’t be read asks                                                                                                                                                      |
@@ -670,6 +673,7 @@ Its flags, with their defaults. [See what Napwake is doing](https://docs.napwake
 | Needs attention shows                                                                                                                                                       | Shown as                                                                                                                                           |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A GitOps tool undoing pauses                                                                                                                                                | `GitOpsConflict`                                                                                                                                   |
+| Anything else undoing pauses at once, such as an operator that owns it                                                                                                      | `PauseUndone` ([A pause undone at once](https://docs.napwake.dev/0.2/guides/managed-workload/#a-pause-undone-at-once))                                                     |
 | A `dependsOn` cycle through it                                                                                                                                              | `DependencyCycle`                                                                                                                                  |
 | A dependency that doesn’t exist, or can’t be seen                                                                                                                           | `DependencyNotFound`                                                                                                                               |
 | A dependency in a namespace that doesn’t allow it                                                                                                                           | `DependencyNotAllowed`                                                                                                                             |
@@ -716,6 +720,7 @@ Not shown, as each is set up on purpose or normal:
 | `pauses now, early: the forecast expects quiet until Fri 20:00 UTC`                                              | The forecast [brought the pause forward](https://docs.napwake.dev/0.2/concepts/forecasting/#pausing-early)                                                                                                                                                 |
 | `expected`, for `expects`                                                                                        | That time has passed, as for a dry-run would-be pause, which stays `Idle` until activity                                                                                                                                           |
 | `pauses at 14:20 UTC (after GitOps conflict)`                                                                    | A GitOps tool undid its last pause, so Napwake waits an hour. See [GitOps tools](https://docs.napwake.dev/0.2/guides/gitops/#what-napwake-does)                                                                                                            |
+| `pauses at 15:00 UTC (after its pause was undone)`                                                               | Something else undid its last pause at once, so Napwake waits 1 hour, doubling with each pause undone in a row, to at most 24. See [A pause undone at once](https://docs.napwake.dev/0.2/guides/managed-workload/#a-pause-undone-at-once)                  |
 | `pauses soon`                                                                                                    | Still running up to 7 minutes past the time shown, as status is written every few minutes                                                                                                                                          |
 | `overdue to pause`                                                                                               | After that. Something the table can’t see holds it                                                                                                                                                                                 |
 | `held awake while preview-7/worker uses it`                                                                      | Not yet. Its dependents hold it, until they pause                                                                                                                                                                                  |
@@ -770,6 +775,17 @@ Behind ingress-nginx, which answers a write held longer than it waits with a 504
 ingress-nginx ignores a `proxy-read-timeout` that isn’t whole seconds, such as `"120s"`, and waits its default. That Ingress’s line says so, and what to write.
 
 It’s a note, not a problem, since most wakes take seconds. Once a wake by a request has taken longer, `IngressTimeoutShort` lists it under Needs attention instead. It’s read from the ManagedWorkload’s `status.nginxIngresses`, recorded once it has paused ([A wake that outlasts ingress-nginx’s timeout](https://docs.napwake.dev/0.2/concepts/wake-on-request/#a-wake-that-outlasts-ingress-nginxs-timeout)).
+
+### Owned by a controller
+
+Under the table, each workload a controller owns, such as an operator’s custom resource, from its `ControllerOwned` condition:
+
+```text
+Owned by a controller:
+  chat/chat   Mattermost/chat controls it. If that sets the replicas, it will undo each pause
+```
+
+It’s a note, not a problem. An owner undoes pauses only if it sets the replicas, and then `PauseUndone` lists it under Needs attention. `-o json` has it as `controllerOwned`, and the `--html` page in its notes ([A pause undone at once](https://docs.napwake.dev/0.2/guides/managed-workload/#a-pause-undone-at-once)).
 
 ### Recent pauses and wakes
 

@@ -35,7 +35,7 @@ Metrics are served over HTTPS, only to a scraper whose token may `get` the `/met
   Apply the ServiceMonitors and alerting rules into `napwake-system` from the `config/prometheus` base, pinned to your release:
 
   ```bash
-  kubectl apply -k "https://github.com/napwake/napwake//config/prometheus?ref=v0.2.1"
+  kubectl apply -k "https://github.com/napwake/napwake//config/prometheus?ref=v0.2.2"
   ```
 
   Then bind your Prometheus’s ServiceAccount to the `napwake-metrics-reader` ClusterRole:
@@ -53,7 +53,7 @@ Metrics are served over HTTPS, only to a scraper whose token may `get` the `/met
 
   ```yaml
   resources:
-    - https://github.com/napwake/napwake//config/prometheus?ref=v0.2.1
+    - https://github.com/napwake/napwake//config/prometheus?ref=v0.2.2
   ```
 
   Then bind your Prometheus’s ServiceAccount to the `napwake-metrics-reader` ClusterRole:
@@ -148,7 +148,7 @@ The chart creates these with `metrics.prometheusRule.enabled: true`. For `instal
 | `NapwakeDoormanWakesFailing` | More than 3 requests to one paused workload timed out or failed in 15 minutes, for 5 minutes. That’s `result` `timeout`, `error` or `drained`                                                                                   | warning  |
 | `NapwakeWakesSlow`           | For 5 minutes, one in ten requests the doorman held in the last 30 minutes waited over a minute. A minute is half the default `wake.maxWait`. Requests passed straight to woken pods don’t count, and it takes 3 waits at least | warning  |
 | `NapwakeDoormanNearCapacity` | For 5 minutes, a doorman pod carries over 80% of the 2048 held or 1024 proxied connections it takes. Past them it refuses or delays requests ([Limits](https://docs.napwake.dev/latest/concepts/wake-on-request/#limits))                               | warning  |
-| `NapwakePausesUndone`        | Something outside Napwake, such as a GitOps tool, scaled a paused workload back up. It did so at least 3 times in 6 hours                                                                                                       | warning  |
+| `NapwakePausesUndone`        | Something outside Napwake, such as a GitOps tool or an operator that owns the workload, scaled a paused workload back up. It did so at least 3 times in 6 hours                                                                 | warning  |
 | `NapwakeActivityUnreadable`  | For 30 minutes, Napwake can’t read a workload’s CPU while it’s awake, or its Prometheus activity queries. Until it can, it doesn’t pause the workload                                                                           | warning  |
 | `NapwakeResumeIncomplete`    | A woken workload has run with replicas not Ready for 15 minutes (`ResumeIncomplete`)                                                                                                                                            | warning  |
 | `NapwakePausedWhileInUse`    | At least 3 times in a day, Napwake paused a workload while it was in use. Each time, something soon woke it                                                                                                                     | warning  |

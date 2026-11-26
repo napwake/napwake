@@ -17,7 +17,7 @@ Install from the OCI registry, with no `helm repo` to add. Change `Europe/London
 
 ```bash
 printf '\ntimezone: Europe/London\n' >> napwake-values.yaml
-helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.1 \
+helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.2 \
   --namespace napwake-system --create-namespace -f napwake-values.yaml
 ```
 
@@ -45,7 +45,7 @@ Check any install this way.
 
 Keep the file and upgrade with it. An upgrade given `--set` alone drops your other values ([Keeping your settings](https://docs.napwake.dev/latest/operations/upgrading/#keeping-your-settings)). The chart installs and upgrades the ManagedWorkload CRD.
 
-The chart’s version has no `v`. Its image’s tag has one, such as `v0.2.1`. [Helm values](https://docs.napwake.dev/latest/reference/helm-values/) lists every value.
+The chart’s version has no `v`. Its image’s tag has one, such as `v0.2.2`. [Helm values](https://docs.napwake.dev/latest/reference/helm-values/) lists every value.
 
 ### On EKS Fargate
 
@@ -104,7 +104,7 @@ The chart is only in an OCI registry, which Argo CD and Flux name differently. C
     source:
       repoURL: ghcr.io/napwake/charts
       chart: napwake
-      targetRevision: 0.2.1
+      targetRevision: 0.2.2
       helm:
         valuesObject:
           timezone: Europe/London
@@ -135,7 +135,7 @@ The chart is only in an OCI registry, which Argo CD and Flux name differently. C
     interval: 1h
     url: oci://ghcr.io/napwake/charts/napwake
     ref:
-      tag: 0.2.1
+      tag: 0.2.2
     layerSelector:
       mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
       operation: copy
@@ -219,7 +219,7 @@ All three install the CRD, RBAC, the operator (`deployment/napwake-controller-ma
 * install.yaml
 
   ```bash
-  kubectl apply -f https://github.com/napwake/napwake/releases/download/v0.2.1/install.yaml
+  kubectl apply -f https://github.com/napwake/napwake/releases/download/v0.2.2/install.yaml
   ```
 
   `install.yaml` is the Kustomize manifests in one file. Set your users’ [time zone](https://docs.napwake.dev/latest/getting-started/installation/#time-zone) on the operator:
@@ -239,7 +239,7 @@ All three install the CRD, RBAC, the operator (`deployment/napwake-controller-ma
   apiVersion: kustomize.config.k8s.io/v1beta1
   kind: Kustomization
   resources:
-    - https://github.com/napwake/napwake//config/default?ref=v0.2.1
+    - https://github.com/napwake/napwake//config/default?ref=v0.2.2
   patches:
     - target:
         kind: Deployment
@@ -287,7 +287,7 @@ All three install the CRD, RBAC, the operator (`deployment/napwake-controller-ma
 Two more bases, pinned to the same release, add what these chart values turn on. Add them to your kustomization’s `resources`, or apply one alone:
 
 ```bash
-kubectl apply -k "https://github.com/napwake/napwake//config/prometheus?ref=v0.2.1"
+kubectl apply -k "https://github.com/napwake/napwake//config/prometheus?ref=v0.2.2"
 ```
 
 From a clone:
@@ -299,8 +299,8 @@ kubectl apply -k config/network-policy
 
 | Base                                                                   | Adds                                                                                                                                                                                                                                                        | Chart values                                                       |
 | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `https://github.com/napwake/napwake//config/prometheus?ref=v0.2.1`     | ServiceMonitors for the operator and the doorman, and the [alerting rules](https://docs.napwake.dev/latest/operations/monitoring/#alerting-rules). Needs the Prometheus Operator’s CRDs, and your Prometheus [allowed to read the metrics](https://docs.napwake.dev/latest/operations/monitoring/#scraping) | `metrics.serviceMonitor.enabled`, `metrics.prometheusRule.enabled` |
-| `https://github.com/napwake/napwake//config/network-policy?ref=v0.2.1` | NetworkPolicies. Only namespaces labelled `metrics: enabled` may scrape the operator and the doorman. The doorman’s routing ports (TCP 20000-29999) stay open to every caller of a paused workload’s Services                                               | `networkPolicy.enabled`                                            |
+| `https://github.com/napwake/napwake//config/prometheus?ref=v0.2.2`     | ServiceMonitors for the operator and the doorman, and the [alerting rules](https://docs.napwake.dev/latest/operations/monitoring/#alerting-rules). Needs the Prometheus Operator’s CRDs, and your Prometheus [allowed to read the metrics](https://docs.napwake.dev/latest/operations/monitoring/#scraping) | `metrics.serviceMonitor.enabled`, `metrics.prometheusRule.enabled` |
+| `https://github.com/napwake/napwake//config/network-policy?ref=v0.2.2` | NetworkPolicies. Only namespaces labelled `metrics: enabled` may scrape the operator and the doorman. The doorman’s routing ports (TCP 20000-29999) stay open to every caller of a paused workload’s Services                                               | `networkPolicy.enabled`                                            |
 
 ## Time zone
 
@@ -324,7 +324,7 @@ timezone: America/New_York
 
 ```bash
 helm upgrade napwake oci://ghcr.io/napwake/charts/napwake \
-  --version 0.2.1 \
+  --version 0.2.2 \
   --namespace napwake-system \
   -f napwake-values.yaml
 ```
@@ -386,7 +386,7 @@ Stop managing workloads while the operator still runs, so it can scale paused on
 
    These delete the CRD too, unguarded, so first check `kubectl get managedworkloads -A` lists none.
 
-4. After `helm uninstall`, delete the namespace. Helm doesn’t delete one that `--create-namespace` made:
+4. After `helm uninstall`, delete the namespace. Helm doesn’t delete one that `--create-namespace` made, and it still holds the operator’s leader-election Lease:
 
    ```bash
    kubectl delete namespace napwake-system

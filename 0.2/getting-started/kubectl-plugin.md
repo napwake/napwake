@@ -68,7 +68,7 @@ The rest answer narrower questions. Every flag, JSON field, exit status and perm
 
   Krew installs it on Linux and macOS (amd64 and arm64) and Windows (amd64). It installs the newest release [krew-index](https://github.com/kubernetes-sigs/krew-index/blob/master/plugins/napwake.yaml) has, and each release reaches it soon after it’s out. `kubectl krew upgrade` keeps it current.
 
-  If you installed it from a release’s manifest URL, as these docs said before 0.2.1, `kubectl krew upgrade` won’t upgrade it. Run `kubectl krew uninstall napwake` once, then install it as above.
+  If you installed it from a release’s manifest URL, as these docs said before krew-index listed it, `kubectl krew upgrade` won’t upgrade it. Run `kubectl krew uninstall napwake` once, then install it as above.
 
 * Download
 
@@ -77,13 +77,13 @@ The rest answer narrower questions. Every flag, JSON field, exit status and perm
   ```bash
   os=$(uname -s | tr '[:upper:]' '[:lower:]')
   arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
-  curl -fLO "https://github.com/napwake/napwake/releases/download/v0.2.1/kubectl-napwake-${os}-${arch}.tar.gz"
+  curl -fLO "https://github.com/napwake/napwake/releases/download/v0.2.2/kubectl-napwake-${os}-${arch}.tar.gz"
   tar xzf "kubectl-napwake-${os}-${arch}.tar.gz"
   sudo install "kubectl-napwake-${os}-${arch}" /usr/local/bin/kubectl-napwake
   kubectl napwake version
   ```
 
-  On Windows, download `kubectl-napwake-windows-amd64.tar.gz` from the [release](https://github.com/napwake/napwake/releases/tag/v0.2.1) and extract it with `tar xzf`. Rename `kubectl-napwake-windows-amd64.exe` to `kubectl-napwake.exe`, in a folder on your `PATH`. To check an archive came from the release workflow, see [Verifying a release](https://docs.napwake.dev/0.2/reference/security/#verifying-a-release).
+  On Windows, download `kubectl-napwake-windows-amd64.tar.gz` from the [release](https://github.com/napwake/napwake/releases/tag/v0.2.2) and extract it with `tar xzf`. Rename `kubectl-napwake-windows-amd64.exe` to `kubectl-napwake.exe`, in a folder on your `PATH`. To check an archive came from the release workflow, see [Verifying a release](https://docs.napwake.dev/0.2/reference/security/#verifying-a-release).
 
 * Source
 

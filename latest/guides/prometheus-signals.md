@@ -82,6 +82,8 @@ Any result above zero keeps the workload awake, and [wakes it](https://docs.napw
 
    This one needs ingress-nginx’s metrics, which are off by default. Turn them on with `--enable-metrics=true`, or `controller.metrics.enabled: true` in its chart.
 
+   Its label names are what kube-prometheus’s ServiceMonitor gives. That scrape sets its own `namespace` and `service` labels on each series, so ingress-nginx’s become `exported_namespace` and `exported_service`. Another scrape may keep either as it is. Step 3 shows which names yours has.
+
    There’s no annotation for queries. On a ManagedWorkload created from the `napwake.dev/managed` label, add them to its `spec.idlePolicy.activity.prometheus`. The opt-in controller keeps them when it updates the rest from the annotations.
 
 3. Test the same query in Prometheus.
@@ -92,6 +94,13 @@ Any result above zero keeps the workload awake, and [wakes it](https://docs.napw
    ```
 
    A result above zero is activity ([How a result counts](https://docs.napwake.dev/latest/guides/prometheus-signals/#how-a-result-counts)).
+
+   An empty result while requests come in usually means your series name the namespace or Service under other labels, and Napwake would report [a query that matches nothing](https://docs.napwake.dev/latest/guides/prometheus-signals/#a-query-that-matches-nothing). This shows one series, with the labels it has:
+
+   ```bash
+   curl -s 'http://prometheus:9090/api/v1/query' \
+     --data-urlencode 'query=topk(1, nginx_ingress_controller_requests)'
+   ```
 
 4. Once the workload has had requests, check what kept it awake.
 

@@ -6,14 +6,14 @@ Source: https://docs.napwake.dev/latest/reference/helm-values/
 
 ```bash
 printf '\ntimezone: Europe/London\n' >> napwake-values.yaml
-helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.1 \
+helm install napwake oci://ghcr.io/napwake/charts/napwake --version 0.2.2 \
   --namespace napwake-system --create-namespace -f napwake-values.yaml
 ```
 
 Change `Europe/London` to your users’ [time zone](https://docs.napwake.dev/latest/getting-started/installation/#time-zone). Any other value you set goes in `napwake-values.yaml` too. Install with it, and upgrade with it to [keep your settings](https://docs.napwake.dev/latest/operations/upgrading/#keeping-your-settings).
 
 ```bash
-helm show values oci://ghcr.io/napwake/charts/napwake --version 0.2.1
+helm show values oci://ghcr.io/napwake/charts/napwake --version 0.2.2
 ```
 
 Every default.
@@ -24,11 +24,11 @@ Every default.
 
 * Chart version
 
-  `0.2.1`, no `v`
+  `0.2.2`, no `v`
 
 * Image tags
 
-  `v0.2.1`, with a `v`
+  `v0.2.2`, with a `v`
 
 What the schema catches
 
@@ -40,7 +40,6 @@ Values are checked against `values.schema.json`.
 | An unknown one, such as `watchNamespace` for `watchNamespaces`, which Helm would ignore                               | The same                                                                                                                                                                  |
 | What passes through as is, such as `resources`, `affinity`, `tolerations`, `nodeSelector`, pod annotations and labels | Kubernetes only                                                                                                                                                           |
 | An unknown `timezone`                                                                                                 | The operator, at startup, as the schema can’t list every IANA zone. It exits with `invalid --timezone` and `unknown time zone` in its log, and the rollout doesn’t finish |
-| :::                                                                                                                   |                                                                                                                                                                           |
 
 [Names 2](https://docs.napwake.dev/latest/reference/helm-values/#names)
 
@@ -187,7 +186,7 @@ The names and labels the chart gives.
 | Value              | Default                                          | Description                                 |
 | ------------------ | ------------------------------------------------ | ------------------------------------------- |
 | `image.repository` | `ghcr.io/napwake/napwake`                        | Container image repository                  |
-| `image.tag`        | `""`, the chart’s `appVersion`, such as `v0.2.1` | Image tag, for the operator and the doorman |
+| `image.tag`        | `""`, the chart’s `appVersion`, such as `v0.2.2` | Image tag, for the operator and the doorman |
 | `image.pullPolicy` | `IfNotPresent`                                   | Image pull policy                           |
 | `imagePullSecrets` | `[]`                                             | Private registry credentials                |
 
@@ -207,7 +206,7 @@ For Argo CD, which ignores that, it also carries `argocd.argoproj.io/sync-option
 
 | Value             | Default                              | Description                                                                                                                              |
 | ----------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `defaultsVersion` | the chart’s version, such as `0.2.1` | Which chart version Helm’s defaults are from. Leave it. See [Keeping your settings](https://docs.napwake.dev/latest/operations/upgrading/#keeping-your-settings) |
+| `defaultsVersion` | the chart’s version, such as `0.2.2` | Which chart version Helm’s defaults are from. Leave it. See [Keeping your settings](https://docs.napwake.dev/latest/operations/upgrading/#keeping-your-settings) |
 
 What it’s for
 
@@ -355,7 +354,7 @@ The doorman holds requests to paused workloads and wakes them ([Wake on request]
 | `doorman.nodeSelector`                           | `{}`    | Empty uses the operator’s                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `doorman.tolerations`                            | `[]`    | Empty uses the operator’s                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `doorman.affinity`                               | `{}`    | Empty uses the operator’s                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `doorman.topologySpreadConstraints`              | `[]`    | Empty spreads them across nodes where it can, softly, on `kubernetes.io/hostname`. Set yours to replace it. Add a zone constraint only if every node has `topology.kubernetes.io/zone`, or the scheduler spreads for none                                                                                                                                                                                                                                                                                                                                                                     |
+| `doorman.topologySpreadConstraints`              | `[]`    | Empty spreads them across nodes where it can, softly, on `kubernetes.io/hostname`, counting only the current revision’s, so an upgrade doesn’t leave them on one node. Set yours to replace it, with `matchLabelKeys: [pod-template-hash]` for the same. Add a zone constraint only if every node has `topology.kubernetes.io/zone`, or the scheduler spreads for none                                                                                                                                                                                                                        |
 | `doorman.podAnnotations`                         | `{}`    | Empty uses the operator’s                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `doorman.podLabels`                              | `{}`    | Empty uses the operator’s                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `doorman.priorityClassName`                      | `""`    | Empty uses the operator’s                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
@@ -578,7 +577,7 @@ affinity:
 
 ```bash
 helm install napwake oci://ghcr.io/napwake/charts/napwake \
-  --version 0.2.1 \
+  --version 0.2.2 \
   -f values-ha.yaml \
   -n napwake-system --create-namespace
 ```

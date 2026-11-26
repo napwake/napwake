@@ -77,7 +77,7 @@ That’s 10 minutes by default. A StatefulSet has no such field, so it gets 10 m
 | Pausing → Resuming → Running       | `kubectl napwake wake` as it pauses, which calls the pause off, with a `PauseCancelled` event                                                                                                        |
 | Idle → Running                     | The same in dry-run, ending a would-be pause. Awake, a wake request restarts the idle clock                                                                                                          |
 
-A request runs the idle clock out at once, and the rules of an idle pause apply. The hour after a GitOps conflict doesn’t hold it back. A forecast expecting demand within the hour declines it, saying when, unless the request overrides the forecast.
+A request runs the idle clock out at once, and the rules of an idle pause apply. The wait after a GitOps conflict, or a [pause undone at once](https://docs.napwake.dev/0.2/guides/managed-workload/#a-pause-undone-at-once), doesn’t hold it back. A forecast expecting demand within the hour declines it, saying when, unless the request overrides the forecast.
 
 ## Idempotency
 
